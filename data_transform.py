@@ -44,18 +44,24 @@ def merge_data(data_dir, left_shank_path, right_shank_path, merge_type):
     
 
 
-def metrics(data_dir, merge_type):
+def time_domain_features(data_dir, merge_type):
     """
     Calculate the metrics for the gyroscope data.
     Args:
         data_dir (str): Directory where the merged gyroscope data is saved.
         merge_type (str): Type of data to be merged (accelerometer or gyroscope).
     """
+    # Check if the files exist
+    if not os.path.exists(data_dir + '{}.csv'.format(merge_type)):
+        raise FileNotFoundError(f"{merge_type}.csv file not found.")
+    
     # Read the merged gyroscope data
     gyroscope = pd.read_csv(data_dir + '{}.csv'.format(merge_type))
     gyroscope.dropna(inplace=True)
     
     # Calculate the metrics
+    # Mean, Standard Deviation, Maximum, Minimum, Root Mean Square, Median Absolute Deviation, Range,
+    # Interquartile Range, Skewness & Kurtosis, Zero-crossing rate, Peak count / amplitude
     metrics = {}
     
     # Right Shank
@@ -63,8 +69,6 @@ def metrics(data_dir, merge_type):
     metrics['right-std']  = gyroscope["right-z-axis (deg/s)"].std()
     metrics['right-max']  = gyroscope["right-z-axis (deg/s)"].max()
     metrics['right-min']  = gyroscope["right-z-axis (deg/s)"].min()
-    
-    # Root Mean Square - Median Absolute Deviation - Range - Interquartile Range - Skewness & Kurtosis - Zero-crossing rate	- Peak count / amplitude
     metrics['right-rms']   = gyroscope["right-z-axis (deg/s)"].apply(lambda x: np.sqrt(np.mean(x**2)))
     metrics['right-mad']   = gyroscope["right-z-axis (deg/s)"].apply(lambda x: np.median(np.abs(x - np.median(x))))
     metrics['right-range'] = metrics['right-max'] - metrics['right-min']
@@ -75,15 +79,13 @@ def metrics(data_dir, merge_type):
     metrics['right-pkcnt'] = ((gyroscope["right-z-axis (deg/s)"][:-1] * gyroscope["right-z-axis (deg/s)"][1:]) < 0).sum()
     metrics['right-pkamp'] = gyroscope["right-z-axis (deg/s)"].max() - gyroscope["right-z-axis (deg/s)"].min()
     
+    
     # Left Shank
     metrics['left-mean'] = gyroscope["left-z-axis (deg/s)"].mean()
     metrics['left-std']  = gyroscope["left-z-axis (deg/s)"].std()
     metrics['left-max']  = gyroscope["left-z-axis (deg/s)"].max()
     metrics['left-min']  = gyroscope["left-z-axis (deg/s)"].min()
-    metrics['left-rms']  = gyroscope["left-z-axis (deg/s)"].apply(lambda x: np.sqrt(np.mean(x**2)))
-    
-    
-    # Root Mean Square - Median Absolute Deviation - Range - Interquartile Range - Skewness & Kurtosis - Zero-crossing rate	- Peak count / amplitude
+    metrics['left-rms']  = gyroscope["left-z-axis (deg/s)"].apply(lambda x: np.sqrt(np.mean(x**2)))    
     metrics['left-rms']   = gyroscope["left-z-axis (deg/s)"].apply(lambda x: np.sqrt(np.mean(x**2)))
     metrics['left-mad']   = gyroscope["left-z-axis (deg/s)"].apply(lambda x: np.median(np.abs(x - np.median(x))))
     metrics['left-range'] = metrics['left-max'] - metrics['left-min']
@@ -97,5 +99,9 @@ def metrics(data_dir, merge_type):
     # Save the metrics to a CSV file
     metrics_df = pd.DataFrame(metrics)
     metrics_df.to_csv(os.path.join(data_dir + f'metrics_{merge_type}.csv'), index=False)
+    
+    
+    
+def frequency_domain_features(data_dir, merge_type))
     
     
