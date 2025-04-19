@@ -38,9 +38,13 @@ def merge_data(data_dir, left_shank_path, right_shank_path, merge_type):
     right_shank_data.rename(columns=right_columns_names, inplace=True)
     right_shank_data.drop(columns=['epoc (ms)'], inplace=True)
 
-    gyroscope = left_shank_data.merge(right_shank_data, on="timestamp (+0700)", how="outer").sort_values("timestamp (+0700)").ffill()
+    # Merge the data on the timestamp, sort by timestamp and convert to datetime
+    data = left_shank_data.merge(right_shank_data, on="timestamp (+0700)", how="outer").sort_values("timestamp (+0700)").ffill()
+    data["timestamp (+0700)"] = data["timestamp (+0700)"].apply(lambda x: x.replace("T", " "))
+    data["timestamp (+0700)"] = data["timestamp (+0700)"].apply(lambda x: x.replace(".", ":"))
+    data["timestamp (+0700)"] = pd.to_datetime(data['timestamp (+0700)'].str.strip(), format="%Y-%m-%d %H:%M:%S:%f")
 
-    gyroscope.to_csv(data_dir + '{}.csv'.format(merge_type), index=False)
+    data.to_csv(data_dir + '{}.csv'.format(merge_type), index=False)
     
 
 
@@ -102,6 +106,6 @@ def time_domain_features(data_dir, merge_type):
     
     
     
-def frequency_domain_features(data_dir, merge_type))
+    
     
     
