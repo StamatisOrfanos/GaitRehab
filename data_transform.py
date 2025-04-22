@@ -202,7 +202,16 @@ def gait_features(data_dir, merge_type):
     
 
 
-def extract_cross_limb_features_safe(data, fs=100):
+def cross_limb_features(data_dir, merge_type, fs=100):
+    # Check if the files exist
+    if not os.path.exists(data_dir + '{}.csv'.format(merge_type)):
+        raise FileNotFoundError(f'{merge_type}.csv file not found.')
+    
+    # Read the merged gyroscope/accelerometer data
+    data = pd.read_csv(data_dir + '{}.csv'.format(merge_type))
+    data.dropna(inplace=True)
+    
+    
     data['left_z_filtered'] = butter_low_pass(data['left-z-axis (deg/s)'], fs=fs)
     data['right_z_filtered'] = butter_low_pass(data['right-z-axis (deg/s)'], fs=fs)
     
@@ -225,7 +234,7 @@ def extract_cross_limb_features_safe(data, fs=100):
         left_stride_duration  = data['left-elapsed (s)'].iloc[l_end]  - data['left-elapsed (s)'].iloc[l_start]
         right_stride_duration = data['right-elapsed (s)'].iloc[r_end] - data['right-elapsed (s)'].iloc[r_start]
 
-        f = {
+        feature = {
             "left_stride_duration": left_stride_duration,
             "right_stride_duration": right_stride_duration,
             "stride_duration_diff": abs(left_stride_duration - right_stride_duration),
@@ -238,9 +247,11 @@ def extract_cross_limb_features_safe(data, fs=100):
                 r_cycle['right_z_filtered'].values[:min_len]
             )[0,1]
         }
-        features.append(f)
+        features.append(feature)
 
-    return pd.DataFrame(features)  
+    # Save the cross limb metrics to a CSV file
+    cross_limb_features = pd.DataFrame(features)
+    cross_limb_features.to_csv(os.path.join(data_dir, 'cross_limb_metrics.csv'), index=False)
 
 
 def butter_low_pass(data, cutoff=6, fs=100, order=2):
