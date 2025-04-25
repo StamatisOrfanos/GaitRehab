@@ -202,6 +202,7 @@ def gait_features(data_dir, data_type):
 def cross_limb_features(data_dir, data_type, fs=100):
     '''
     Calculate the cross limb features for the gyroscope data.
+    Left and right stride durations, stride duration difference, stride duration symmetry ratio,
     Args:
         data_dir (str): Directory where the merged gyroscope data is saved.
         data_type (str): Type of data to be merged (accelerometer or gyroscope).
