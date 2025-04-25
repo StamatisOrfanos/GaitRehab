@@ -232,8 +232,7 @@ def cross_limb_features(data_dir, data_type, fs=100):
 
         # Truncate to shortest cycle
         min_len = min(len(l_cycle), len(r_cycle))
-        if min_len < 5:
-            continue  # skip very short cycles to avoid noise
+        if min_len < 5: continue
 
         left_stride_duration  = data['left-elapsed (s)'].iloc[l_end]  - data['left-elapsed (s)'].iloc[l_start]
         right_stride_duration = data['right-elapsed (s)'].iloc[r_end] - data['right-elapsed (s)'].iloc[r_start]
