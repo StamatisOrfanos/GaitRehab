@@ -1,4 +1,5 @@
 # Libraries
+import datetime
 import os
 import numpy as np
 import pandas as pd
@@ -68,10 +69,10 @@ def time_domain_features(data_dir, data_type):
     
     # Calculate the time domain metrics
     metrics = {}
-    measurement_unit = 's' if data_type == 'accelerometer' else 'deg/s'
+    measurement_unit = 'deg/s' if data_type == 'gyroscope' else 's'
     
     for side in ['left', 'right']:
-        z_axis = data[f'{side}-z-axis (s)'] if data_type == 'accelerometer' else data[f'{side}-z-axis (deg/s)']
+        z_axis = data[f'{side}-z-axis (deg/s)'] if data_type == 'gyroscope' else data[f'{side}-z-axis (s)'] 
         metrics[f'{side}-z-axis-({measurement_unit})-mean']  = z_axis.mean()
         metrics[f'{side}-z-axis-({measurement_unit})-std']   = z_axis.std()
         metrics[f'{side}-z-axis-({measurement_unit})-max']   = z_axis.max()
@@ -91,7 +92,7 @@ def time_domain_features(data_dir, data_type):
     metrics_df.to_csv(os.path.join(data_dir + f'time_domain_metrics_{data_type}.csv'), index=False)
     
 
-def frequency_domain_features(data_dir, data_type, fs=100, window_duration_sec=120):
+def frequency_domain_features(data_dir, data_type, fs=100, window_duration_sec=30):
     '''
     Calculate the frequency domain features for the gyroscope data.
     Dominant frequency, Spectral entropy, Gait band energy
@@ -112,13 +113,13 @@ def frequency_domain_features(data_dir, data_type, fs=100, window_duration_sec=1
 
     start_time = data['timestamp (+0700)'].iloc[0]
     end_time   = data['timestamp (+0700)'].iloc[-1]
-    
+        
     window_features = []
     window_id = 0
     delta = pd.Timedelta(seconds=window_duration_sec)
     current_start = start_time
 
-    # Loop through the data in windows of 2 minutes / 120 seconds and get the important frequency domain features
+    # Loop through the data in windows of 30 seconds and get the important frequency domain features
     while current_start + delta <= end_time:
         current_end = current_start + delta
         window = data[(data['timestamp (+0700)'] >= current_start) & (data['timestamp (+0700)'] < current_end)]
@@ -161,6 +162,7 @@ def frequency_domain_features(data_dir, data_type, fs=100, window_duration_sec=1
 def gait_features(data_dir, data_type):
     '''
     Calculate the gait features for the gyroscope data.
+    Stride times, Stance/swing times, Asymmetry index, Symmetry ratio
     Args:
         data_dir (str): Directory where the merged gyroscope data is saved.
         data_type (str): Type of data to be merged (accelerometer or gyroscope).
@@ -171,32 +173,29 @@ def gait_features(data_dir, data_type):
     
     # Read the merged gyroscope/accelerometer data
     data = pd.read_csv(data_dir + '{}.csv'.format(data_type))
-    data.dropna(inplace=True)
-    
+    data.dropna()
     
     # Calculate the gait metrics including stride times, stance/swing times, asymmetry index, and symmetry ratio
-    left_peaks = signal.find_peaks(data['left-z-axis (deg/s)'], height=0.5, distance=100)
+    left_peaks  = signal.find_peaks(data['left-z-axis (deg/s)'], height=0.5, distance=100)
     right_peaks = signal.find_peaks(data['right-z-axis (deg/s)'], height=0.5, distance=100)
-    left_stride_times = np.diff(left_peaks[0])
+    left_stride_times  = np.diff(left_peaks[0])
     right_stride_times = np.diff(right_peaks[0])
-    
-    left_stance_swing = detect_stance_swing(data['left-z-axis (deg/s)'], data['timestamp (+0700)'])
-    right_stance_swing = detect_stance_swing(data['right-z-axis (deg/s)'], data['timestamp (+0700)'])
-    
+    left_stance_swing  = detect_stance_swing_fast(data['left-z-axis (deg/s)'], data['timestamp (+0700)'])
+    right_stance_swing = detect_stance_swing_fast(data['right-z-axis (deg/s)'], data['timestamp (+0700)'])
     asymmetry = asymmetry_index(left_stride_times, right_stride_times)
     symmetry = symmetry_ratio(left_stride_times, right_stride_times)
-    gait_metrics = {
-        'left_stride_times': left_stride_times,
-        'right_stride_times': right_stride_times,
-        'left_stance_swing': left_stance_swing,
-        'right_stance_swing': right_stance_swing,
-        'asymmetry_index': asymmetry,
-        'symmetry_ratio': symmetry
-    }
     
-    # Save the gait metrics to a CSV file
-    gait_metrics_df = pd.DataFrame(gait_metrics)
-    gait_metrics_df.to_csv(os.path.join(data_dir, 'gait_metrics.csv'), index=False)
+    output_dir = os.path.join(data_dir, "gait_features")
+    os.makedirs(output_dir, exist_ok=True) 
+    
+    
+    # Save each metric into the gait_features directory
+    pd.DataFrame({'left_stride_times': left_stride_times}).to_csv(os.path.join(output_dir, f'left_stride_{data_type}.csv'), index=False)
+    pd.DataFrame({'right_stride_times': right_stride_times}).to_csv(os.path.join(output_dir, f'right_stride_{data_type}.csv'), index=False)
+    pd.DataFrame(left_stance_swing).to_csv(os.path.join(output_dir, f'left_stance_swing_{data_type}.csv'), index=False)
+    pd.DataFrame(right_stance_swing).to_csv(os.path.join(output_dir, f'right_stance_swing_{data_type}.csv'), index=False)
+    pd.DataFrame({'asymmetry_index': asymmetry, 'symmetry_ratio': symmetry}).to_csv(os.path.join(output_dir, f'summary_gait_metrics_{data_type}.csv'), index=False)
+
     
 
 
@@ -274,24 +273,33 @@ def butter_low_pass(data, cutoff=6, fs=100, order=2):
     return filtfilt(b, a, data)
 
 
-def detect_stance_swing(z_filtered, time):
+def detect_stance_swing_fast(z_filtered, time):
     '''
-    Detect stance and swing phases from the gyroscope data.
+    Vectorized stance and swing phase detection from filtered z-axis gyro signal.
     Args:
         z_filtered (np.array): Filtered z-axis gyroscope data.
-        time (np.array): Corresponding time values.
+        time (np.array or Series): Corresponding time values.
     '''
+    time = pd.to_datetime(pd.Series(time))    
     zero_crossings = np.where(np.diff(np.sign(z_filtered)))[0]
-    phases = []
-    for i in range(len(zero_crossings) - 1):
-        start = zero_crossings[i]
-        end = zero_crossings[i+1]
+    if len(zero_crossings) < 2: return []
+    
+    start_idxs = zero_crossings[:-1]
+    end_idxs = zero_crossings[1:]
+    
+    valid_pairs = [(s, e) for s, e in zip(start_idxs, end_idxs) if e - s > 1]
+    stance_times = []
+    swing_times = []
+
+    for start, end in valid_pairs:
         min_idx = np.argmin(z_filtered[start:end]) + start
-        phases.append({
-            "stance_time": time[min_idx] - time[start],
-            "swing_time": time[end] - time[min_idx]
-        })
-    return phases
+        stance = (time.iloc[min_idx] - time.iloc[start]).total_seconds()
+        swing  = (time.iloc[end] - time.iloc[min_idx]).total_seconds()
+        stance_times.append(stance)
+        swing_times.append(swing)
+
+    return [{"stance_time": st, "swing_time": sw} for st, sw in zip(stance_times, swing_times)]
+
 
 def asymmetry_index(left, right):
     '''
