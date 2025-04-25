@@ -49,68 +49,69 @@ def merge_data(data_dir, left_shank_path, right_shank_path, merge_type):
     
 
 
-def time_domain_features(data_dir, merge_type):
+def time_domain_features(data_dir, data_type):
     '''
     Calculate the metrics for the gyroscope/accelerometer data.
+    Mean, Standard Deviation, Maximum, Minimum, Root Mean Square, Median Absolute Deviation, Range,
+    Interquartile Range, Skewness & Kurtosis, Zero-crossing rate, Peak count / amplitude
     Args:
         data_dir (str): Directory where the merged gyroscope/accelerometer data is saved.
-        merge_type (str): Type of data to be merged (accelerometer or gyroscope).
+        data_type (str): Type of data to be merged (accelerometer or gyroscope).
     '''
     # Check if the files exist
-    if not os.path.exists(data_dir + '{}.csv'.format(merge_type)):
-        raise FileNotFoundError(f'{merge_type}.csv file not found.')
+    if not os.path.exists(data_dir + '{}.csv'.format(data_type)):
+        raise FileNotFoundError(f'{data_type}.csv file not found.')
     
     # Read the merged gyroscope/accelerometer data
-    data = pd.read_csv(data_dir + '{}.csv'.format(merge_type))
+    data = pd.read_csv(data_dir + '{}.csv'.format(data_type))
     data.dropna(inplace=True)
     
     # Calculate the time domain metrics
-    # Mean, Standard Deviation, Maximum, Minimum, Root Mean Square, Median Absolute Deviation, Range,
-    # Interquartile Range, Skewness & Kurtosis, Zero-crossing rate, Peak count / amplitude
     metrics = {}
-    sides = ['left', 'right']
+    measurement_unit = 's' if data_type == 'accelerometer' else 'deg/s'
     
-    for side in sides:
-        metrics[f'{side}-mean']  = data[f'{side}-z-axis (deg/s)'].mean()
-        metrics[f'{side}-std']   = data[f'{side}-z-axis (deg/s)'].std()
-        metrics[f'{side}-max']   = data[f'{side}-z-axis (deg/s)'].max()
-        metrics[f'{side}-min']   = data[f'{side}-z-axis (deg/s)'].min()
-        metrics[f'{side}-rms']   = data[f'{side}-z-axis (deg/s)'].apply(lambda x: np.sqrt(np.mean(x**2)))
-        metrics[f'{side}-mad']   = data[f'{side}-z-axis (deg/s)'].apply(lambda x: np.median(np.abs(x - np.median(x))))
-        metrics[f'{side}-range'] = metrics[f'{side}-max'] - metrics[f'{side}-min']
-        metrics[f'{side}-iqr']   = data[f'{side}-z-axis (deg/s)'].apply(lambda x: np.percentile(x, 75) - np.percentile(x, 25))
-        metrics[f'{side}-skew']  = data[f'{side}-z-axis (deg/s)'].apply(lambda x: ((x - np.mean(x))**3).mean() / (np.std(x)**3))
-        metrics[f'{side}-kurt']  = data[f'{side}-z-axis (deg/s)'].apply(lambda x: ((x - np.mean(x))**4).mean() / (np.std(x)**4))
-        metrics[f'{side}-zcr']   = ((data[f'{side}-z-axis (deg/s)'][:-1] * data[f'{side}-z-axis (deg/s)'][1:]) < 0).sum()
-        metrics[f'{side}-pkcnt'] = ((data[f'{side}-z-axis (deg/s)'][:-1] * data[f'{side}-z-axis (deg/s)'][1:]) < 0).sum()
-        metrics[f'{side}-pkamp'] = data['f{side}-z-axis (deg/s)'].max() - data[f'{side}-z-axis (deg/s)'].min()
+    for side in ['left', 'right']:
+        z_axis = data[f'{side}-z-axis (s)'] if data_type == 'accelerometer' else data[f'{side}-z-axis (deg/s)']
+        metrics[f'{side}-z-axis-({measurement_unit})-mean']  = z_axis.mean()
+        metrics[f'{side}-z-axis-({measurement_unit})-std']   = z_axis.std()
+        metrics[f'{side}-z-axis-({measurement_unit})-max']   = z_axis.max()
+        metrics[f'{side}-z-axis-({measurement_unit})-min']   = z_axis.min()        
+        metrics[f'{side}-z-axis-({measurement_unit})-rms']   = np.sqrt(np.mean(z_axis ** 2))
+        metrics[f'{side}-z-axis-({measurement_unit})-mad']   = np.median(np.abs(z_axis - np.median(z_axis)))
+        metrics[f'{side}-z-axis-({measurement_unit})-range'] = metrics[f'{side}-z-axis-({measurement_unit})-max'] - metrics[f'{side}-z-axis-({measurement_unit})-min']
+        metrics[f'{side}-z-axis-({measurement_unit})-iqr']   = np.percentile(z_axis, 75) - np.percentile(z_axis, 25)
+        metrics[f'{side}-z-axis-({measurement_unit})-skew']  = ((z_axis - z_axis.mean())**3).mean() / (z_axis.std()**3)
+        metrics[f'{side}-z-axis-({measurement_unit})-kurt']  = ((z_axis - z_axis.mean())**4).mean() / (z_axis.std()**4)
+        metrics[f'{side}-z-axis-({measurement_unit})-zcr']   = ((z_axis[:-1] * z_axis[1:]) < 0).sum()
+        metrics[f'{side}-z-axis-({measurement_unit})-pkcnt'] = ((z_axis[:-1] * z_axis[1:]) < 0).sum()
+        metrics[f'{side}-z-axis-({measurement_unit})-pkamp'] = z_axis.max() - z_axis.min()
     
     # Save the metrics to a CSV file
-    metrics_df = pd.DataFrame(metrics)
-    metrics_df.to_csv(os.path.join(data_dir + f'metrics_{merge_type}.csv'), index=False)
+    metrics_df = pd.DataFrame(metrics, index=[0])
+    metrics_df.to_csv(os.path.join(data_dir + f'time_domain_metrics_{data_type}.csv'), index=False)
     
 
-def frequency_domain_features(data_dir, merge_type, output_path, fs=100, window_duration_sec=120):
+def frequency_domain_features(data_dir, data_type, fs=100, window_duration_sec=120):
     '''
     Calculate the frequency domain features for the gyroscope data.
+    Dominant frequency, Spectral entropy, Gait band energy
     Args:
         data_dir (str): Path to the gyroscope data CSV file.
-        merge_type (str): Type of data to be merged (accelerometer or gyroscope).
-        output_path (str): Directory where the frequency domain features will be saved.
+        data_type (str): Type of data to be merged (accelerometer or gyroscope).
         fs (int): Sampling frequency in Hz.
         window_duration_sec (int): Duration of the window in seconds.
     '''
     # Check if the files exist
-    if not os.path.exists(data_dir + '{}.csv'.format(merge_type)):
-        raise FileNotFoundError(f'{merge_type}.csv file not found.')
+    if not os.path.exists(data_dir + '{}.csv'.format(data_type)):
+        raise FileNotFoundError(f'{data_type}.csv file not found.')
     
     # Read data
-    data = pd.read_csv(data_dir + '{}.csv'.format(merge_type))
+    data = pd.read_csv(data_dir + '{}.csv'.format(data_type))
     data['timestamp (+0700)'] = pd.to_datetime(data['timestamp (+0700)'])
     data.dropna(inplace=True)
 
     start_time = data['timestamp (+0700)'].iloc[0]
-    end_time = data['timestamp (+0700)'].iloc[-1]
+    end_time   = data['timestamp (+0700)'].iloc[-1]
     
     window_features = []
     window_id = 0
@@ -118,30 +119,27 @@ def frequency_domain_features(data_dir, merge_type, output_path, fs=100, window_
     current_start = start_time
 
     # Loop through the data in windows of 2 minutes / 120 seconds and get the important frequency domain features
-    # Dominant frequency, Spectral entropy, Gait band energy
     while current_start + delta <= end_time:
         current_end = current_start + delta
         window = data[(data['timestamp (+0700)'] >= current_start) & (data['timestamp (+0700)'] < current_end)]
 
         for side in ['left', 'right']:
-            z_axis = f'{side}-z-axis (deg/s)'
+            z_axis = f'{side}-z-axis (deg/s)' if data_type == 'gyroscope' else f'{side}-z-axis (s)'
+            
             signal = window[z_axis].values
-            n = len(signal)
-            if n < 2:
-                continue
+            if len(signal) < 2: continue
 
-            fft_vals = fft(signal)
-            freqs = fftfreq(n, d=1/fs)
-            psd = np.abs(fft_vals)**2
+            fft_values  = fft(signal)
+            frequencies = fftfreq(len(signal), d=1/fs)
+            power_spectral_density = np.abs(fft_values)**2
 
-            pos_freqs = freqs[:n // 2]
-            pos_psd = psd[:n // 2]
+            pos_frequencies = frequencies[:len(signal) // 2]
+            pos_power_spectral_density   = power_spectral_density[:len(signal) // 2]
 
-            dominant_freq = pos_freqs[np.argmax(pos_psd)]
-            psd_norm = pos_psd / np.sum(pos_psd)
-            spectral_entropy = -np.sum(psd_norm * np.log2(psd_norm + 1e-10))
-
-            gait_band_energy = np.sum(pos_psd[(pos_freqs >= 0.5) & (pos_freqs <= 3)])
+            dominant_freq = pos_frequencies[np.argmax(pos_power_spectral_density)]
+            power_spectral_density_norm = pos_power_spectral_density / np.sum(pos_power_spectral_density)
+            spectral_entropy = -np.sum(power_spectral_density_norm * np.log2(power_spectral_density_norm + 1e-10))
+            gait_band_energy = np.sum(pos_power_spectral_density[(pos_frequencies >= 0.5) & (pos_frequencies <= 3)])
 
             window_features.append({
                 'window_id': window_id,
@@ -151,28 +149,28 @@ def frequency_domain_features(data_dir, merge_type, output_path, fs=100, window_
                 'dominant_freq': dominant_freq,
                 'spectral_entropy': spectral_entropy,
                 'gait_band_energy': gait_band_energy,
-                'samples': n
+                'samples': len(signal)
             })
         window_id += 1
         current_start += delta
 
     features_df = pd.DataFrame(window_features)
-    features_df.to_csv(os.path.join(output_path, 'windowed_frequency_features.csv'), index=False)
+    features_df.to_csv(os.path.join(data_dir, f'windowed_frequency_features_{data_type}.csv'), index=False)
 
     
-def gait_features(data_dir, merge_type):
+def gait_features(data_dir, data_type):
     '''
     Calculate the gait features for the gyroscope data.
     Args:
         data_dir (str): Directory where the merged gyroscope data is saved.
-        merge_type (str): Type of data to be merged (accelerometer or gyroscope).
+        data_type (str): Type of data to be merged (accelerometer or gyroscope).
     '''
     # Check if the files exist
-    if not os.path.exists(data_dir + '{}.csv'.format(merge_type)):
-        raise FileNotFoundError(f'{merge_type}.csv file not found.')
+    if not os.path.exists(data_dir + '{}.csv'.format(data_type)):
+        raise FileNotFoundError(f'{data_type}.csv file not found.')
     
     # Read the merged gyroscope/accelerometer data
-    data = pd.read_csv(data_dir + '{}.csv'.format(merge_type))
+    data = pd.read_csv(data_dir + '{}.csv'.format(data_type))
     data.dropna(inplace=True)
     
     
@@ -202,20 +200,27 @@ def gait_features(data_dir, merge_type):
     
 
 
-def cross_limb_features(data_dir, merge_type, fs=100):
+def cross_limb_features(data_dir, data_type, fs=100):
+    '''
+    Calculate the cross limb features for the gyroscope data.
+    Args:
+        data_dir (str): Directory where the merged gyroscope data is saved.
+        data_type (str): Type of data to be merged (accelerometer or gyroscope).
+        fs (int): Sampling frequency in Hz.
+    '''
     # Check if the files exist
-    if not os.path.exists(data_dir + '{}.csv'.format(merge_type)):
-        raise FileNotFoundError(f'{merge_type}.csv file not found.')
+    if not os.path.exists(data_dir + '{}.csv'.format(data_type)):
+        raise FileNotFoundError(f'{data_type}.csv file not found.')
     
     # Read the merged gyroscope/accelerometer data
-    data = pd.read_csv(data_dir + '{}.csv'.format(merge_type))
+    data = pd.read_csv(data_dir + '{}.csv'.format(data_type))
     data.dropna(inplace=True)
     
     
-    data['left_z_filtered'] = butter_low_pass(data['left-z-axis (deg/s)'], fs=fs)
+    data['left_z_filtered']  = butter_low_pass(data['left-z-axis (deg/s)'], fs=fs)
     data['right_z_filtered'] = butter_low_pass(data['right-z-axis (deg/s)'], fs=fs)
     
-    left_peaks, _ = find_peaks(data['left_z_filtered'], distance=fs*0.5)
+    left_peaks, _  = find_peaks(data['left_z_filtered'], distance=fs*0.5)
     right_peaks, _ = find_peaks(data['right_z_filtered'], distance=fs*0.5)
     
     features = []
@@ -241,7 +246,7 @@ def cross_limb_features(data_dir, merge_type, fs=100):
             "stride_duration_symmetry_ratio": min(left_stride_duration, right_stride_duration) / max(left_stride_duration, right_stride_duration),
             "left_peak": data['left_z_filtered'].iloc[l_start:l_end].max(),
             "right_peak": data['right_z_filtered'].iloc[r_start:r_end].max(),
-            "peak_diff": abs(data['left_z_filtered'].iloc[l_start:l_end].max() - df['right_z_filtered'].iloc[r_start:r_end].max()),
+            "peak_diff": abs(data['left_z_filtered'].iloc[l_start:l_end].max() - data['right_z_filtered'].iloc[r_start:r_end].max()),
             "z_corr": np.corrcoef(
                 l_cycle['left_z_filtered'].values[:min_len],
                 r_cycle['right_z_filtered'].values[:min_len]
