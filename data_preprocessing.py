@@ -92,7 +92,7 @@ def time_domain_features(data_dir, data_type):
     metrics_df.to_csv(os.path.join(data_dir + f'time_domain_metrics_{data_type}.csv'), index=False)
     
 
-def frequency_domain_features(data_dir, data_type, fs=100, window_duration_sec=30):
+def frequency_domain_features(data_dir, data_type, fs=100, window_duration_sec=2):
     '''
     Calculate the frequency domain features for the gyroscope data.
     Dominant frequency, Spectral entropy, Gait band energy
@@ -119,7 +119,7 @@ def frequency_domain_features(data_dir, data_type, fs=100, window_duration_sec=3
     delta = pd.Timedelta(seconds=window_duration_sec)
     current_start = start_time
 
-    # Loop through the data in windows of 30 seconds and get the important frequency domain features
+    # Loop through the data in windows of 2 seconds and get the important frequency domain features
     while current_start + delta <= end_time:
         current_end = current_start + delta
         window = data[(data['timestamp (+0700)'] >= current_start) & (data['timestamp (+0700)'] < current_end)]
