@@ -1,6 +1,6 @@
-# GaitRehab_Models
+# GaitRehab
 
-This projet focuses on gait abnormalities following a stroke, particularly hemiplegic gait, and how rehabilitation can help recover motor function.
+This project focuses on gait abnormalities following a stroke, particularly hemiplegic gait, and how rehabilitation can help recover motor function.
 The goal is to analyze and understand muscle performance and gait cycle using sensor data such as gyroscope and EMG (electromyography).
 This includes detecting abnormalities through parameters like stride time, stance time, and swing time.
 
