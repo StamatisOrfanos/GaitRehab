@@ -86,13 +86,7 @@ Feature selection method:
 
 ### Features Used (Spatiotemporal Parameters)
 
-1. Step Count
-2. Step Length (Euclidean distance between heel strikes)
-3. Step Width
-4. Step Frequency (steps/sec)
-5. Velocity (based on distance and time)
-6. Gait Cycle Duration
-7. Double Support Phase Duration
+Step Count, Step Length, Step Width, Step Frequency (steps/sec), Velocity (based on distance and time), Gait Cycle Duration, Double Support Phase Duration
 
 ### Models Used
 
