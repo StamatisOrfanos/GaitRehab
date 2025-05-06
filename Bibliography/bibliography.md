@@ -1,5 +1,7 @@
 # Bibliography
 
+<br><br/>
+
 ## 1. Machine Learning Based Abnormal Gait Classification with IMU Considering Joint Impairment
 
 This study aimed to develop and optimize an abnormal gait classification algorithm considering joint impairments using inertial measurement units (IMUs) and walkway systems. Based on these simulated gaits, we developed classification models: distinguishing abnormal gait due to joint impairments, identifying specific joint disorders, and a combined model for both tasks.
@@ -42,7 +44,12 @@ In this study, three different methods, support vector machine (SVM), random for
 
 The SVM configuration used a ‘linear’ kernel, with gamma set to ‘scale’ and the decision function shape set to ‘ovr’. RF combines decision trees to provide accurate predictions and utilizes parallel processing for faster computation. The RF configuration used the ‘gini’ criterion with a minimum sample split of 2. XGB constructs decision trees sequentially to correct errors, ensuring efficient processing even with large datasets. For XGB, the booster was set to ‘gbtree’, eta to 0.3, maximum depth to 6, and sampling method to ‘uniform’; the objective to minimize regression error.
 
+<br><br/>
+
 ## 2. Gait classification of stroke survivors - An analytical study
 
-Gait of post-stroke patients have been analyzed and classified in this paper. Data
-pertaining to gait of both post-stroke patients and healthy people of the same age group were obtained and analyzed. Xsens motion capture system was used for obtaining this data from 40 people belonging to both categories. Advanced modern machine learning techniques such as Logistic Regression, Multilayer Perceptron (MLP), Support Vector Machine (SVM), and Extreme Gradient Boosting (XGBoost) were employed for classifying the data obtained. Accurate spatiotemporal parameters values for gait were obtained. Amongst the different machine learning techniques, XGBoost gave the most accurate classification result of about 96%. The walking patterns of the patients who had undergone a stroke attack were analyzed. severity of abnormal gait patterns was a key factor that was taken into consideration and points were given accordingly. The data presented in this paper can be used to develop diagnostic tools for gait rehabilitation of stroke survivors, to evaluate and estimate their way of walking in order to understand their progress. It can be used to understand the different types of walking disorders post-stroke and thereafter select the right kind of treatment that needs to be implemented for proper recovery.
+Gait of post-stroke patients have been analyzed and classified in this paper. Data pertaining to gait of both post-stroke patients and healthy people of the same age group were obtained and analyzed. Xsens motion capture system was used for obtaining this data from 40 people belonging to both categories. Advanced modern machine learning techniques such as Logistic Regression, Multilayer Perceptron (MLP), Support Vector Machine (SVM), and Extreme Gradient Boosting (XGBoost) were employed for classifying the data obtained. Accurate spatiotemporal parameters values for gait were obtained. Amongst the different machine learning techniques, XGBoost gave the most accurate classification result of about 96%.
+
+### Methodology and materials used
+
+
