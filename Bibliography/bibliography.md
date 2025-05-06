@@ -44,7 +44,7 @@ Feature selection method:
 * Recursive Feature Elimination with Cross-Validation (RFECV)
 * Cross-validation: Group 5-fold CV
 
-### 📊 Performance
+### Performance
 
 | Classification Task              | Best Model | Accuracy | F1 Score |
 | -------------------------------- | ---------- | -------- | -------- |
@@ -165,7 +165,7 @@ Feature selection method:
   * Optimizer: Adam (lr=0.001)
   * Implemented in TensorFlow 2.11
 
-### 📊 Performance & Evaluation
+### Performance & Evaluation
 
 #### Model Performance
 
