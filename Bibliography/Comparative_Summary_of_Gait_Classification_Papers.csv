@@ -1,0 +1,8 @@
+Paper,Participants,Features,Model,Accuracy
+1. ML-Based Gait Classification (Joint Impairment),10 healthy males (simulated impairment),"Spatiotemporal, angular, symmetry (TSR, SSR1/2)","SVM, RF, XGBoost (with RFECV)","Up to 99% (binary), 91% (3-class)"
+2. Gait Classification of Stroke Survivors,"40 stroke, 40 healthy","Step count, length, width, frequency, velocity","XGBoost, SVM, MLP, Logistic Regression",XGBoost: 96%
+3. Unsupervised Feature Extraction with VAE,"107 stroke, 37 healthy","Raw IMU (6 channels), latent features (VAE)",Variational Autoencoder (CNN-based),Not applicable (unsupervised); effect sizes > gait speed
+4. Deep Learning for Pathological Gait (Simulated),19 healthy (simulated 5 gait types),"Raw 9-axis IMU (acc, gyro, mag), 1s windows","mCNN-1D, smCNN-1D, sCNN-1D",100% (5-class)
+5. Stroke Gait Classification via DNN,"8 stroke, 7 healthy",Shank angular velocity (y-axis),DNN (binary + multi-label branches),"Stroke detect: 99.35%, Classify: 97.3%"
+6. IMU-Based Post-Stroke Gait System,"10 stroke, 10 healthy","Step time, swing/stance, cadence, stride length",None (statistical analysis),~95% event detection
+7. Enhanced Gait via Vibrotactile Feedback,"10 stroke, 10 healthy","Step/stance/swing time, cadence, symmetry",None (real-time feedback system),Improved TSR; no ML model
