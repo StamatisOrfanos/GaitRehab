@@ -4,6 +4,7 @@ import shutil
 import numpy as np
 import pandas as pd
 
+# Merge gyroscope data from left and right shank ---------------------------------------------
 
 def merge_data(data_dir, left_shank_path, right_shank_path, merge_type):
     '''
@@ -45,6 +46,25 @@ def merge_data(data_dir, left_shank_path, right_shank_path, merge_type):
 
     data.to_csv(data_dir + '{}.csv'.format(merge_type), index=False)
 
+
+# Aggregate features from all the features files ---------------------------------------------
+
+def merge_all_types(health_dir, stroke_dir):
+    '''
+    Merge all types of data for each patient.
+    Args:
+        health_dir (str): Directory containing healthy patients' data.
+        stroke_dir (str): Directory containing stroke patients' data.
+    '''
+    output_path = 'final_dataset.csv'
+    healthy_df  = aggregate_features(base_dir=health_dir, label=0)
+    stroke_df   = aggregate_features(base_dir=stroke_dir, label=1)
+    
+    # Combine both datasets
+    full_df = pd.concat([healthy_df, stroke_df], ignore_index=True)
+    full_df.to_csv(output_path, index=False)
+    full_df.to_csv(output_path, index=False)
+    print(f'Saved dataset with shape {full_df.shape} to {output_path}')
 
 
 def aggregate_features(base_dir, label):
@@ -143,7 +163,9 @@ def process_cross_limb_metrics(patient_path, patient_features):
                 patient_features[f'{col}_std'] = cross_df[col].std()
 
 
-def clean_all_patients(base_dir='Healthy', data_type='gyroscope'):
+# Clean up function to delete all feature files ---------------------------------------------
+
+def clean_extra_files(base_dir, data_type='gyroscope'):
     '''
     Loop over all subdirectories in base_dir and delete feature files.
     Args:

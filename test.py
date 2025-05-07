@@ -20,4 +20,4 @@ if __name__ == "__main__":
 
     # Only healthy for now:
     full_df.to_csv(output_path, index=False)
-    print(f"✅ Saved dataset with shape {full_df.shape} to {output_path}")
+    print(f" Saved dataset with shape {full_df.shape} to {output_path}")
