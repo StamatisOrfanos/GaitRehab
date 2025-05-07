@@ -1,5 +1,6 @@
 # Libraries
 import os
+import shutil
 import numpy as np
 import pandas as pd
 
@@ -60,7 +61,7 @@ def aggregate_features(base_dir, label):
         if not os.path.isdir(patient_path):
             continue
 
-        patient_features = {"subject_id": patient_id}
+        patient_features = {'subject_id': patient_id}
 
         try:
             # Process individual feature types
@@ -70,17 +71,23 @@ def aggregate_features(base_dir, label):
             process_cross_limb_metrics(patient_path, patient_features)
 
             # Add Label, 0 = healthy, 1 = stroke
-            patient_features["label"] = label
+            patient_features['label'] = label
             all_features.append(patient_features)
 
         except Exception as e:
-            print(f"Error processing {patient_id}: {e}")
+            print(f'Error processing {patient_id}: {e}')
 
     return pd.DataFrame(all_features)
 
 
 def process_time_domain_features(patient_path, patient_features):
-    time_path = os.path.join(patient_path, "time_domain_metrics_gyroscope.csv")
+    '''
+    Get time domain features from the gyroscope data.
+    Args:
+        patient_path (str): Path to the patient's data directory.
+        patient_features (dict): Dictionary to store the features.
+    '''
+    time_path = os.path.join(patient_path, 'time_domain_metrics_gyroscope.csv')
     if os.path.exists(time_path):
         time_df = pd.read_csv(time_path)
         for col in time_df.columns:
@@ -88,20 +95,32 @@ def process_time_domain_features(patient_path, patient_features):
 
 
 def process_frequency_domain_features(patient_path, patient_features):
-    freq_path = os.path.join(patient_path, "windowed_frequency_features_gyroscope.csv")
+    '''
+    Get frequency domain features from the gyroscope data.
+    Args:
+        patient_path (str): Path to the patient's data directory.
+        patient_features (dict): Dictionary to store the features.
+    '''
+    freq_path = os.path.join(patient_path, 'windowed_frequency_features_gyroscope.csv')
     if os.path.exists(freq_path):
         freq_df = pd.read_csv(freq_path)
-        grouped = freq_df.groupby("side")
-        for side in ["left", "right"]:
+        grouped = freq_df.groupby('side')
+        for side in ['left', 'right']:
             if side in grouped.groups:
                 side_df = grouped.get_group(side)
-                for feat in ["dominant_freq", "spectral_entropy", "gait_band_energy"]:
-                    patient_features[f"{side}_{feat}_mean"] = side_df[feat].mean()
-                    patient_features[f"{side}_{feat}_std"] = side_df[feat].std()
+                for feat in ['dominant_freq', 'spectral_entropy', 'gait_band_energy']:
+                    patient_features[f'{side}_{feat}_mean'] = side_df[feat].mean()
+                    patient_features[f'{side}_{feat}_std'] = side_df[feat].std()
 
 
 def process_gait_summary_metrics(patient_path, patient_features):
-    gait_summary_path = os.path.join(patient_path, "gait_features", "summary_gait_metrics_gyroscope.csv")
+    '''
+    Get gait summary metrics from the gyroscope data.
+    Args:
+        patient_path (str): Path to the patient's data directory.
+        patient_features (dict): Dictionary to store the features.
+    '''
+    gait_summary_path = os.path.join(patient_path, 'gait_features', 'summary_gait_metrics_gyroscope.csv')
     if os.path.exists(gait_summary_path):
         gait_df = pd.read_csv(gait_summary_path)
         for col in gait_df.columns:
@@ -109,10 +128,59 @@ def process_gait_summary_metrics(patient_path, patient_features):
 
 
 def process_cross_limb_metrics(patient_path, patient_features):
-    cross_path = os.path.join(patient_path, "cross_limb_metrics.csv")
+    '''
+    Get cross-limb metrics from the gyroscope data.
+    Args:
+        patient_path (str): Path to the patient's data directory.
+        patient_features (dict): Dictionary to store the features.
+    '''
+    cross_path = os.path.join(patient_path, 'cross_limb_metrics.csv')
     if os.path.exists(cross_path):
         cross_df = pd.read_csv(cross_path)
         for col in cross_df.columns:
-            if col not in ["window_id", "start_time", "end_time", "side"]:
-                patient_features[f"{col}_mean"] = cross_df[col].mean()
-                patient_features[f"{col}_std"] = cross_df[col].std()
+            if col not in ['window_id', 'start_time', 'end_time', 'side']:
+                patient_features[f'{col}_mean'] = cross_df[col].mean()
+                patient_features[f'{col}_std'] = cross_df[col].std()
+
+
+def clean_all_patients(base_dir='Healthy', data_type='gyroscope'):
+    '''
+    Loop over all subdirectories in base_dir and delete feature files.
+    Args:
+        base_dir (str): Base directory containing patient folders.
+        data_type (str): Type of data to be cleaned (accelerometer or gyroscope).
+    '''
+    for patient_id in os.listdir(base_dir):
+        patient_path = os.path.join(base_dir, patient_id)
+        if os.path.isdir(patient_path):
+            delete_feature_files(patient_path, data_type=data_type)
+
+    print(f'\n Cleanup complete for all patients in {base_dir}')
+
+
+def delete_feature_files(patient_dir, data_type='gyroscope'):
+    '''
+    Deletes all feature CSVs generated inside a patient's folder.
+    Args:
+        patient_dir (str): Directory of the patient.
+        data_type (str): Type of data to be cleaned (accelerometer or gyroscope).
+    '''
+    # Files in the root directory
+    root_files = [
+        f'time_domain_metrics_{data_type}.csv',
+        f'windowed_frequency_features_{data_type}.csv',
+        'cross_limb_metrics.csv',
+        f'{data_type}.csv'
+    ]
+    
+    for f in root_files:
+        path = os.path.join(patient_dir, f)
+        if os.path.exists(path):
+            os.remove(path)
+            print(f'Deleted {f} in {patient_dir}')
+    
+    # Delete gait_features directory
+    gait_dir = os.path.join(patient_dir, 'gait_features')
+    if os.path.exists(gait_dir):
+        shutil.rmtree(gait_dir)
+        print(f'Deleted gait_features/ in {patient_dir}')
