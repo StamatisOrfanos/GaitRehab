@@ -57,8 +57,8 @@ def merge_all_types(health_dir, stroke_dir):
         stroke_dir (str): Directory containing stroke patients' data.
     '''
     output_path = 'final_dataset.csv'
-    healthy_df  = aggregate_features(base_dir=health_dir, label=0)
-    stroke_df   = aggregate_features(base_dir=stroke_dir, label=1)
+    healthy_df  = pd.read_csv(os.path.join(health_dir, 'healthy_features.csv'))
+    stroke_df   = pd.read_csv(os.path.join(stroke_dir, 'stroke_features.csv'))
     
     # Combine both datasets
     full_df = pd.concat([healthy_df, stroke_df], ignore_index=True)
