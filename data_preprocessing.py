@@ -17,9 +17,9 @@ def merge_data(data_dir, left_shank_path, right_shank_path, merge_type):
     '''
     # Check if the files exist
     if not os.path.exists(left_shank_path):
-        raise FileNotFoundError('LeftShank-Gyroscope.csv file not found.')
+        raise FileNotFoundError(f'LeftShank-{merge_type}.csv file not found.')
     if not os.path.exists(right_shank_path):
-        raise FileNotFoundError('RightShank-Gyroscope.csv file not found.')
+        raise FileNotFoundError(f'RightShank-{merge_type}.csv file not found.')
 
     # Read the CSV files
     left_shank_data  = pd.read_csv(left_shank_path)
