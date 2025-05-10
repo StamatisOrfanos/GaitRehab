@@ -26,8 +26,8 @@ def merge_data(data_dir, left_shank_path, right_shank_path, merge_type):
     right_shank_data = pd.read_csv(right_shank_path)
         
     if merge_type == 'accelerometer':
-        left_columns_names = {'elapsed (s)': 'left-elapsed (s)', 'x-axis (s)': 'left-x-axis (s)', 'y-axis (s)': 'left-y-axis (s)', 'z-axis (s)': 'left-z-axis (s)' }
-        right_columns_names = {'elapsed (s)': 'right-elapsed (s)', 'x-axis (s)': 'right-x-axis (s)', 'y-axis (s)': 'right-y-axis (s)', 'z-axis (s)': 'right-z-axis (s)' }
+        left_columns_names = {'elapsed (s)': 'left-elapsed (s)', 'x-axis (g)': 'left-x-axis (g)', 'y-axis (g)': 'left-y-axis (g)', 'z-axis (g)': 'left-z-axis (g)' }
+        right_columns_names = {'elapsed (s)': 'right-elapsed (s)', 'x-axis (g)': 'right-x-axis (g)', 'y-axis (g)': 'right-y-axis (g)', 'z-axis (g)': 'right-z-axis (g)' }
     else:
         left_columns_names = {'elapsed (s)': 'left-elapsed (s)', 'x-axis (deg/s)': 'left-x-axis (deg/s)', 'y-axis (deg/s)': 'left-y-axis (deg/s)', 'z-axis (deg/s)': 'left-z-axis (deg/s)' }
         right_columns_names = {'elapsed (s)': 'right-elapsed (s)', 'x-axis (deg/s)': 'right-x-axis (deg/s)', 'y-axis (deg/s)': 'right-y-axis (deg/s)', 'z-axis (deg/s)': 'right-z-axis (deg/s)' }
