@@ -1,4 +1,5 @@
 # Libraries
+from typing import List, Dict
 import datetime
 import os
 import numpy as np
@@ -7,6 +8,7 @@ import scipy.signal as signal
 from scipy.signal import butter, filtfilt, find_peaks
 from scipy.fft import fft, fftfreq
 
+# Feature Extraction Functions for Classification
 
 def time_domain_features(data_dir, data_type):
     '''
@@ -276,3 +278,53 @@ def symmetry_ratio(left, right):
         right (list): Right stride times.
     '''
     return [min(l, r) / max(l, r) if max(l, r) != 0 else 0 for l, r in zip(left, right)]
+
+
+# Feature Extraction for Gait Detection  
+
+def generate_rolling_windows(patient_path, window_sec = 2, stride_sec = 1, fs = 100):
+    '''
+    Generate three possible datasets for real time gait asymmetry detection from Left and Right Shank raw data.
+    Args:
+        patient_path (str): Patient directory where the left and right shank data are stored.
+        window_sec (int): Time window size of data.
+        stride_sec (int): Time stride for each window of data.
+        fs (int): Sampling frequency in Hz.
+    '''
+    
+    
+    
+    
+    gyroscope_df     = pd.read_csv(os.path.join(patient_path, 'gyroscope.csv'))
+    accelerometer_df = pd.read_csv(os.path.join(patient_path, 'accelerometer.csv'))
+
+    
+    window_size = int(window_sec * fs)
+    stride_size = int(stride_sec * fs)
+
+    min_length = min(len(gyroscope_df), len(accelerometer_df))
+    gyroscope_df = gyroscope_df.iloc[:min_length].reset_index(drop=True)
+    accelerometer_df = accelerometer_df.iloc[:min_length].reset_index(drop=True)
+
+    # time_domain_windows = []
+    windows = []
+    # symmetry_windows = []
+    
+    for start_idx in range(0, min_length - window_size + 1, stride_size):
+        end_idx = start_idx + window_size
+        
+        # 
+        
+        window = {
+            "window_id": len(windows),
+            "start_time": gyroscope_df.loc[start_idx, "timestamp (+0700)"],
+            "end_time": gyroscope_df.loc[end_idx - 1, "timestamp (+0700)"],
+            "gyro_left": gyroscope_df.loc[start_idx:end_idx - 1, ['left-x-axis (deg/s)', 'left-y-axis (deg/s)', 'left-z-axis (deg/s)']].values,
+            "gyro_right": gyroscope_df.loc[start_idx:end_idx - 1, ['right-x-axis (deg/s)', 'right-y-axis (deg/s)', 'right-z-axis (deg/s)']].values,
+            "accel_left": accelerometer_df.loc[start_idx:end_idx - 1, ['left-x-axis (g)', 'left-y-axis (g)', 'left-z-axis (g)']].values,
+            "accel_right": accelerometer_df.loc[start_idx:end_idx - 1, ['right-x-axis (g)', 'right-y-axis (g)', 'right-z-axis (g)']].values
+        }
+        windows.append(window)
+
+    return windows
+
