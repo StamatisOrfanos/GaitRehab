@@ -7,8 +7,9 @@ import pandas as pd
 import scipy.signal as signal
 from scipy.signal import butter, filtfilt, find_peaks
 from scipy.fft import fft, fftfreq
+from data_preprocessing import merge_data
 
-# Feature Extraction Functions for Classification
+# ------- Feature Extraction Functions for Classification ----------------------------------------------------------------------
 
 def time_domain_features(data_dir, data_type):
     '''
@@ -145,7 +146,7 @@ def gait_features(data_dir, data_type):
     asymmetry = asymmetry_index(left_stride_times, right_stride_times)
     symmetry = symmetry_ratio(left_stride_times, right_stride_times)
     
-    output_dir = os.path.join(data_dir, "gait_features")
+    output_dir = os.path.join(data_dir, 'gait_features')
     os.makedirs(output_dir, exist_ok=True) 
     
     
@@ -199,14 +200,14 @@ def cross_limb_features(data_dir, data_type, fs=100):
         right_stride_duration = data['right-elapsed (s)'].iloc[r_end] - data['right-elapsed (s)'].iloc[r_start]
 
         feature = {
-            "left_stride_duration": left_stride_duration,
-            "right_stride_duration": right_stride_duration,
-            "stride_duration_diff": abs(left_stride_duration - right_stride_duration),
-            "stride_duration_symmetry_ratio": min(left_stride_duration, right_stride_duration) / max(left_stride_duration, right_stride_duration),
-            "left_peak": data['left_z_filtered'].iloc[l_start:l_end].max(),
-            "right_peak": data['right_z_filtered'].iloc[r_start:r_end].max(),
-            "peak_diff": abs(data['left_z_filtered'].iloc[l_start:l_end].max() - data['right_z_filtered'].iloc[r_start:r_end].max()),
-            "z_corr": np.corrcoef(
+            'left_stride_duration': left_stride_duration,
+            'right_stride_duration': right_stride_duration,
+            'stride_duration_diff': abs(left_stride_duration - right_stride_duration),
+            'stride_duration_symmetry_ratio': min(left_stride_duration, right_stride_duration) / max(left_stride_duration, right_stride_duration),
+            'left_peak': data['left_z_filtered'].iloc[l_start:l_end].max(),
+            'right_peak': data['right_z_filtered'].iloc[r_start:r_end].max(),
+            'peak_diff': abs(data['left_z_filtered'].iloc[l_start:l_end].max() - data['right_z_filtered'].iloc[r_start:r_end].max()),
+            'z_corr': np.corrcoef(
                 l_cycle['left_z_filtered'].values[:min_len],
                 r_cycle['right_z_filtered'].values[:min_len]
             )[0,1]
@@ -258,7 +259,7 @@ def detect_stance_swing_fast(z_filtered, time):
         stance_times.append(stance)
         swing_times.append(swing)
 
-    return [{"stance_time": st, "swing_time": sw} for st, sw in zip(stance_times, swing_times)]
+    return [{'stance_time': st, 'swing_time': sw} for st, sw in zip(stance_times, swing_times)]
 
 
 def asymmetry_index(left, right):
@@ -280,7 +281,7 @@ def symmetry_ratio(left, right):
     return [min(l, r) / max(l, r) if max(l, r) != 0 else 0 for l, r in zip(left, right)]
 
 
-# Feature Extraction for Gait Detection  
+# ------- Feature Extraction for Gait Detection  ----------------------------------------------------------------------
 
 def generate_rolling_windows(patient_path, window_sec = 2, stride_sec = 1, fs = 100):
     '''
@@ -291,14 +292,14 @@ def generate_rolling_windows(patient_path, window_sec = 2, stride_sec = 1, fs = 
         stride_sec (int): Time stride for each window of data.
         fs (int): Sampling frequency in Hz.
     '''
-    
-    
-    
+    # Merge the left and right accelerometer and gyroscope data into two files
+    merge_data(patient_path, os.path.join(patient_path, 'LeftShank-Accelerometer.csv'), os.path.join(patient_path, 'RightShank-Accelerometer.csv'), 'accelerometer')
+    merge_data(patient_path, os.path.join(patient_path, 'LeftShank-Gyroscope.csv'), os.path.join(patient_path, 'RightShank-Gyroscope.csv'), 'gyroscope')
     
     gyroscope_df     = pd.read_csv(os.path.join(patient_path, 'gyroscope.csv'))
     accelerometer_df = pd.read_csv(os.path.join(patient_path, 'accelerometer.csv'))
-
     
+    # Define the window and stride size
     window_size = int(window_sec * fs)
     stride_size = int(stride_sec * fs)
 
@@ -306,25 +307,41 @@ def generate_rolling_windows(patient_path, window_sec = 2, stride_sec = 1, fs = 
     gyroscope_df = gyroscope_df.iloc[:min_length].reset_index(drop=True)
     accelerometer_df = accelerometer_df.iloc[:min_length].reset_index(drop=True)
 
-    # time_domain_windows = []
+    time_domain_windows = []
     windows = []
-    # symmetry_windows = []
     
     for start_idx in range(0, min_length - window_size + 1, stride_size):
         end_idx = start_idx + window_size
+        window_id  = len(windows)
+        start_time = gyroscope_df.loc[start_idx, 'timestamp (+0700)'],
+        end_time   = gyroscope_df.loc[end_idx - 1, 'timestamp (+0700)']
         
-        # 
+        # Create the time domain features per window 
+        time_d_window = {
+            'window_id': window_id,
+            'start_time': start_time,
+            'end_time': end_time,
+            'gyro-right-z-axis-max': gyroscope_df.loc[start_idx:end_idx - 1, ['right-z-axis (deg/s)']].max(),
+            'gyro-left-z-axis-max': gyroscope_df.loc[start_idx:end_idx - 1, ['left-z-axis (deg/s)']].max(),
+            'gyro-right-z-axis-min': gyroscope_df.loc[start_idx:end_idx - 1, ['right-z-axis (deg/s)']].min(),
+            'gyro-left-z-axis-min': gyroscope_df.loc[start_idx:end_idx - 1, ['left-z-axis (deg/s)']].min(),
+        }
+        time_domain_windows.append(time_d_window)
         
+        # Create the raw data/features per window
         window = {
-            "window_id": len(windows),
-            "start_time": gyroscope_df.loc[start_idx, "timestamp (+0700)"],
-            "end_time": gyroscope_df.loc[end_idx - 1, "timestamp (+0700)"],
-            "gyro_left": gyroscope_df.loc[start_idx:end_idx - 1, ['left-x-axis (deg/s)', 'left-y-axis (deg/s)', 'left-z-axis (deg/s)']].values,
-            "gyro_right": gyroscope_df.loc[start_idx:end_idx - 1, ['right-x-axis (deg/s)', 'right-y-axis (deg/s)', 'right-z-axis (deg/s)']].values,
-            "accel_left": accelerometer_df.loc[start_idx:end_idx - 1, ['left-x-axis (g)', 'left-y-axis (g)', 'left-z-axis (g)']].values,
-            "accel_right": accelerometer_df.loc[start_idx:end_idx - 1, ['right-x-axis (g)', 'right-y-axis (g)', 'right-z-axis (g)']].values
+            'window_id': window_id,
+            'start_time': start_time,
+            'end_time': end_time,
+            'gyro_left': gyroscope_df.loc[start_idx:end_idx - 1, ['left-x-axis (deg/s)', 'left-y-axis (deg/s)', 'left-z-axis (deg/s)']].values,
+            'gyro_right': gyroscope_df.loc[start_idx:end_idx - 1, ['right-x-axis (deg/s)', 'right-y-axis (deg/s)', 'right-z-axis (deg/s)']].values,
+            'accel_left': accelerometer_df.loc[start_idx:end_idx - 1, ['left-x-axis (g)', 'left-y-axis (g)', 'left-z-axis (g)']].values,
+            'accel_right': accelerometer_df.loc[start_idx:end_idx - 1, ['right-x-axis (g)', 'right-y-axis (g)', 'right-z-axis (g)']].values
         }
         windows.append(window)
+        
+        
+        
 
     return windows
 
