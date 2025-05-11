@@ -375,6 +375,9 @@ def generate_rolling_windows(patient_path, window_sec = 2, stride_sec = 1, fs = 
         }
         windows.append(window)
         
+        # Delete the gyroscope and accelerometer files we created
+        os.remove(os.path.join(patient_path, 'gyroscope.csv'))
+        os.remove(os.path.join(patient_path, 'accelerometer.csv'))
         
         # Save time-domain feature dataset
         pd.DataFrame(time_domain_windows).to_csv(os.path.join(patient_path, "detection_time_domain.csv"), index=False)
