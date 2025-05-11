@@ -308,6 +308,7 @@ def generate_rolling_windows(patient_path, window_sec = 2, stride_sec = 1, fs = 
     accelerometer_df = accelerometer_df.iloc[:min_length].reset_index(drop=True)
 
     time_domain_windows = []
+    asymmetry_domain_windows = []
     windows = []
     
     for start_idx in range(0, min_length - window_size + 1, stride_size):
@@ -317,25 +318,48 @@ def generate_rolling_windows(patient_path, window_sec = 2, stride_sec = 1, fs = 
         end_time   = gyroscope_df.loc[end_idx - 1, 'timestamp (+0700)']
         
         # Create the time domain features per window 
-        time_d_window = {
-            'window_id': window_id,
-            'start_time': start_time,
-            'end_time': end_time,
-            'gyro-right-z-axis-max': gyroscope_df.loc[start_idx:end_idx - 1, ['right-z-axis (deg/s)']].max(),
-            'gyro-left-z-axis-max': gyroscope_df.loc[start_idx:end_idx - 1, ['left-z-axis (deg/s)']].max(),
-            'gyro-right-z-axis-min': gyroscope_df.loc[start_idx:end_idx - 1, ['right-z-axis (deg/s)']].min(),
-            'gyro-left-z-axis-min': gyroscope_df.loc[start_idx:end_idx - 1, ['left-z-axis (deg/s)']].min(),
+        time_window = {
+            'window_id'             : window_id,
+            'start_time'            : start_time,
+            'end_time'              : end_time,
+            'gyro-right-z-axis-max' : gyroscope_df.loc[start_idx:end_idx - 1, ['right-z-axis (deg/s)']].max(),
+            'gyro-left-z-axis-max'  : gyroscope_df.loc[start_idx:end_idx - 1, ['left-z-axis (deg/s)']].max(),
+            'gyro-right-z-axis-min' : gyroscope_df.loc[start_idx:end_idx - 1, ['right-z-axis (deg/s)']].min(),
+            'gyro-left-z-axis-min'  : gyroscope_df.loc[start_idx:end_idx - 1, ['left-z-axis (deg/s)']].min(),
+            'accel-right-z-axis-max': accelerometer_df.loc[start_idx:end_idx - 1, ['right-z-axis (g)']].max(),
+            'accel-left-z-axis-max' : accelerometer_df.loc[start_idx:end_idx - 1, ['left-z-axis (g)']].max(),
+            'accel-right-z-axis-min': accelerometer_df.loc[start_idx:end_idx - 1, ['right-z-axis (g)']].min(),
+            'accel-left-z-axis-min' : accelerometer_df.loc[start_idx:end_idx - 1, ['left-z-axis (g)']].min()
         }
-        time_domain_windows.append(time_d_window)
+        time_domain_windows.append(time_window)
+        
+        # Create the asymmetry features per window
+        # Calculate the symmetry/asymmetry gait metrics including stride times, stance/swing times, asymmetry index, and symmetry ratio for the current window
+        left_peaks  = signal.find_peaks(gyroscope_df.loc[start_idx:end_idx - 1, ['left-z-axis (deg/s)']],  height=0.5, distance=100)
+        right_peaks = signal.find_peaks(gyroscope_df.loc[start_idx:end_idx - 1, ['right-z-axis (deg/s)']], height=0.5, distance=100)
+        left_stride_times  = np.diff(left_peaks[0])
+        right_stride_times = np.diff(right_peaks[0])
+        asymmetry = asymmetry_index(left_stride_times, right_stride_times)
+        symmetry = symmetry_ratio(left_stride_times, right_stride_times)
+        
+        
+        asymmetry_window = {
+            'window_id'             : window_id,
+            'start_time'            : start_time,
+            'end_time'              : end_time,
+            'gyro-asymmetry-z-axis' : asymmetry,
+            'gyro-symmetry-z-axis'  : symmetry
+        }
+        asymmetry_domain_windows.append(asymmetry_window)
         
         # Create the raw data/features per window
         window = {
-            'window_id': window_id,
-            'start_time': start_time,
-            'end_time': end_time,
-            'gyro_left': gyroscope_df.loc[start_idx:end_idx - 1, ['left-x-axis (deg/s)', 'left-y-axis (deg/s)', 'left-z-axis (deg/s)']].values,
-            'gyro_right': gyroscope_df.loc[start_idx:end_idx - 1, ['right-x-axis (deg/s)', 'right-y-axis (deg/s)', 'right-z-axis (deg/s)']].values,
-            'accel_left': accelerometer_df.loc[start_idx:end_idx - 1, ['left-x-axis (g)', 'left-y-axis (g)', 'left-z-axis (g)']].values,
+            'window_id'  : window_id,
+            'start_time' : start_time,
+            'end_time'   : end_time,
+            'gyro_left'  : gyroscope_df.loc[start_idx:end_idx - 1, ['left-x-axis (deg/s)', 'left-y-axis (deg/s)', 'left-z-axis (deg/s)']].values,
+            'gyro_right' : gyroscope_df.loc[start_idx:end_idx - 1, ['right-x-axis (deg/s)', 'right-y-axis (deg/s)', 'right-z-axis (deg/s)']].values,
+            'accel_left' : accelerometer_df.loc[start_idx:end_idx - 1, ['left-x-axis (g)', 'left-y-axis (g)', 'left-z-axis (g)']].values,
             'accel_right': accelerometer_df.loc[start_idx:end_idx - 1, ['right-x-axis (g)', 'right-y-axis (g)', 'right-z-axis (g)']].values
         }
         windows.append(window)
