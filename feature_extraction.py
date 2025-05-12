@@ -381,10 +381,10 @@ def generate_rolling_windows(patient_path, window_sec = 2, stride_sec = 1, fs = 
     os.remove(os.path.join(patient_path, 'accelerometer.csv'))
     
     # Save time-domain feature dataset
-    pd.DataFrame(time_domain_windows).to_csv(os.path.join(patient_path, "detection_time_domain.csv"), index=False)
+    pd.DataFrame(time_domain_windows).to_csv(os.path.join(patient_path, 'detection_time_domain.csv'), index=False)
     
     # Save asymmetry metric + label dataset
-    pd.DataFrame(asymmetry_domain_windows).to_csv(os.path.join(patient_path, "detection_asymmetry.csv"), index=False)
+    pd.DataFrame(asymmetry_domain_windows).to_csv(os.path.join(patient_path, 'detection_asymmetry.csv'), index=False)
     
     # Save raw windows as NumPy tensor
     raw_array = []
@@ -393,8 +393,19 @@ def generate_rolling_windows(patient_path, window_sec = 2, stride_sec = 1, fs = 
         raw_array.append(raw_tensor)
     raw_array = np.stack(raw_array)  # shape: (#windows, 200, 12)
     
-    np.savez_compressed(os.path.join(patient_path, "detection_raw_window.npz"), X=raw_array)
-    print(f"Generated and saved all 3 datasets to: {patient_path}")
+    np.savez_compressed(os.path.join(patient_path, 'detection_raw_window.npz'), X=raw_array)
+    print(f'Generated and saved all 3 datasets to: {patient_path}')
 
-        
+
+def clean_detection_datasets(patient_path):
+    '''
+    Cleans the base data from all the additional files we created
+    patient_path (str): String path of the patient data
+    '''
+    os.remove(os.path.join(patient_path, 'detection_time_domain.csv'))
+    os.remove(os.path.join(patient_path, 'detection_asymmetry.csv'))
+    os.remove(os.path.join(patient_path, 'detection_raw_window.npz'))
+
+    
+            
 
