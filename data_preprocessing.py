@@ -44,7 +44,7 @@ def merge_data(data_dir, left_shank_path, right_shank_path, merge_type):
     data['timestamp (+0700)'] = data['timestamp (+0700)'].apply(lambda x: x.replace('.', ':'))
     data['timestamp (+0700)'] = pd.to_datetime(data['timestamp (+0700)'].str.strip(), format='%Y-%m-%d %H:%M:%S:%f')
 
-    data.to_csv(data_dir + '{}.csv'.format(merge_type), index=False)
+    data.to_csv(data_dir + '/' + '{}.csv'.format(merge_type), index=False)
 
 
 # Aggregate features from all the features files ---------------------------------------------
