@@ -318,8 +318,8 @@ def generate_rolling_windows(patient_path, window_sec = 2, stride_sec = 1, fs = 
         end_time   = gyroscope_df.loc[end_idx - 1, 'timestamp (+0700)']
         
         # Calculate the symmetry/asymmetry gait metrics including stride times, stance/swing times, asymmetry index, and symmetry ratio for the current window
-        left_peaks  = signal.find_peaks(flatten_list(gyroscope_df.loc[start_idx:end_idx - 1, ['left-z-axis (deg/s)']].values.tolist()),  height=0.5, distance=100)
-        right_peaks = signal.find_peaks(flatten_list(gyroscope_df.loc[start_idx:end_idx - 1, ['right-z-axis (deg/s)']].values.tolist()), height=0.5, distance=100)
+        left_peaks  = signal.find_peaks(flatten_list(gyroscope_df.loc[start_idx:end_idx - 1, ['left-z-axis (deg/s)']].values.tolist()),  height=0.3, distance=80)
+        right_peaks = signal.find_peaks(flatten_list(gyroscope_df.loc[start_idx:end_idx - 1, ['right-z-axis (deg/s)']].values.tolist()), height=0.3, distance=80)
         left_stride_times  = np.diff(left_peaks[0])
         right_stride_times = np.diff(right_peaks[0])
         asymmetry = asymmetry_index(left_stride_times, right_stride_times)
@@ -400,16 +400,6 @@ def generate_rolling_windows(patient_path, window_sec = 2, stride_sec = 1, fs = 
     
     np.savez_compressed(os.path.join(patient_path, 'detection_raw_window.npz'), X=raw_array)
     print(f'Generated and saved all 3 datasets to: {patient_path}')
-
-
-def clean_detection_datasets(patient_path):
-    '''
-    Cleans the base data from all the additional files we created
-    patient_path (str): String path of the patient data
-    '''
-    os.remove(os.path.join(patient_path, 'detection_time_domain.csv'))
-    os.remove(os.path.join(patient_path, 'detection_asymmetry.csv'))
-    os.remove(os.path.join(patient_path, 'detection_raw_window.npz'))
 
     
 def flatten_list(gyro_data_list):

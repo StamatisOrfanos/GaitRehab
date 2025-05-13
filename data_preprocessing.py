@@ -49,6 +49,8 @@ def merge_data(data_dir, left_shank_path, right_shank_path, merge_type):
 
 # Aggregate features from all the features files ---------------------------------------------
 
+#  Classification Functions
+
 def merge_all_types(health_dir, stroke_dir):
     '''
     Merge all types of data for each patient.
@@ -163,6 +165,25 @@ def process_cross_limb_metrics(patient_path, patient_features):
                 patient_features[f'{col}_std'] = cross_df[col].std()
 
 
+#  Detection Functions
+def create_detection_dataset(base_dir):
+    '''
+    Args:
+        base_dir (str): 
+    '''
+    # Loop over each patient folder
+    for patient_folder in os.listdir(base_dir):
+        patient_path = os.path.join(base_dir, patient_folder)
+        
+        if not os.path.isdir(patient_path):
+            continue 
+
+        print(f"\nProcessing {patient_folder}...")
+                
+        
+        
+
+
 # Clean up function to delete all feature files ---------------------------------------------
 
 def clean_extra_files(base_dir, data_type='gyroscope'):
@@ -192,7 +213,10 @@ def delete_feature_files(patient_dir, data_type='gyroscope'):
         f'time_domain_metrics_{data_type}.csv',
         f'windowed_frequency_features_{data_type}.csv',
         'cross_limb_metrics.csv',
-        f'{data_type}.csv'
+        f'{data_type}.csv',
+        'detection_time_domain.csv',
+        'detection_asymmetry.csv',
+        'detection_raw_window.npz'
     ]
     
     for f in root_files:
