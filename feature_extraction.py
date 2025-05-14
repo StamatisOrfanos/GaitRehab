@@ -157,8 +157,6 @@ def gait_features(data_dir, data_type):
     pd.DataFrame(right_stance_swing).to_csv(os.path.join(output_dir, f'right_stance_swing_{data_type}.csv'), index=False)
     pd.DataFrame({'asymmetry_index': asymmetry, 'symmetry_ratio': symmetry}).to_csv(os.path.join(output_dir, f'summary_gait_metrics_{data_type}.csv'), index=False)
 
-    
-
 
 def cross_limb_features(data_dir, data_type, fs=100):
     '''

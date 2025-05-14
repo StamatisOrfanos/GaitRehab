@@ -3,6 +3,7 @@ import os
 import shutil
 import numpy as np
 import pandas as pd
+from feature_extraction import generate_rolling_windows
 
 # Merge gyroscope data from left and right shank ---------------------------------------------
 
@@ -168,8 +169,9 @@ def process_cross_limb_metrics(patient_path, patient_features):
 #  Detection Functions
 def create_detection_dataset(base_dir):
     '''
+    Loop over all subdirectories in base_dir and create the  feature files.
     Args:
-        base_dir (str): 
+        base_dir (str): Base directory containing patient folders.
     '''
     # Loop over each patient folder
     for patient_folder in os.listdir(base_dir):
@@ -179,6 +181,9 @@ def create_detection_dataset(base_dir):
             continue 
 
         print(f"\nProcessing {patient_folder}...")
+        # 1. Generate all the data for gait asymmetry 
+        generate_rolling_windows(patient_path)
+        
                 
         
         
