@@ -309,6 +309,11 @@ def generate_rolling_windows(patient_path, window_sec = 2, stride_sec = 1, fs = 
     asymmetry_domain_windows = []
     windows = []
     
+    # Add the patient_id to ensure that we know the source, when data is merged to single dataset
+    # and class label (healthy/stroke) to try and find any interesting correlations
+    patiend_id = patient_path.split('/')[-1].lower()
+    status = 0 if patient_path.__contains__('Healthy') else 1
+    
     for start_idx in range(0, min_length - window_size + 1, stride_size):
         end_idx = start_idx + window_size
         window_id  = len(windows)
@@ -335,6 +340,7 @@ def generate_rolling_windows(patient_path, window_sec = 2, stride_sec = 1, fs = 
 
         # Create the time domain features per window 
         time_window = {
+            'patient_id'            : patiend_id, 
             'window_id'             : window_id,
             'start_time'            : start_time[0],
             'end_time'              : end_time,
@@ -348,12 +354,14 @@ def generate_rolling_windows(patient_path, window_sec = 2, stride_sec = 1, fs = 
             'accel-left-z-axis-min' : accelerometer_df.loc[start_idx:end_idx - 1, ['left-z-axis (g)']].min().values[0],
             'label_strict'          : label_strict, 
             'label_moderate'        : label_moderate, 
-            'label_lenient'         : label_lenient
+            'label_lenient'         : label_lenient,
+            'class_label'           : status
         }
         time_domain_windows.append(time_window)
         
         # Create the asymmetry features per window
         asymmetry_window = {
+            'patient_id'                      : patiend_id, 
             'window_id'                       : window_id,
             'start_time'                      : start_time[0],
             'end_time'                        : end_time,
@@ -361,12 +369,14 @@ def generate_rolling_windows(patient_path, window_sec = 2, stride_sec = 1, fs = 
             'gyro-symmetry-ratio-stride-times': symmetry,
             'label_strict'                    : label_strict, 
             'label_moderate'                  : label_moderate, 
-            'label_lenient'                   : label_lenient
+            'label_lenient'                   : label_lenient,
+            'class_label'                     : status
         }
         asymmetry_domain_windows.append(asymmetry_window)
         
         # Create the raw data/features per window
         window = {
+            'patient_id'    : patiend_id,
             'window_id'     : window_id,
             'start_time'    : start_time[0],
             'end_time'      : end_time,
@@ -376,7 +386,8 @@ def generate_rolling_windows(patient_path, window_sec = 2, stride_sec = 1, fs = 
             'accel_right'   : accelerometer_df.loc[start_idx:end_idx - 1, ['right-x-axis (g)', 'right-y-axis (g)', 'right-z-axis (g)']].values,
             'label_strict'  : label_strict, 
             'label_moderate': label_moderate, 
-            'label_lenient' : label_lenient
+            'label_lenient' : label_lenient,
+            'class_label'   : status
         }
         windows.append(window)
     
