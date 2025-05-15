@@ -51,7 +51,7 @@ def merge_data(data_dir: str, left_shank_path: str, right_shank_path: str, merge
 
 #  Classification Functions
 
-def merge_all_types(health_dir: str, stroke_dir: str):
+def classification_merge_all_types(health_dir: str, stroke_dir: str):
     '''
     Merge all types of data for each patient.
     Args:
@@ -69,7 +69,7 @@ def merge_all_types(health_dir: str, stroke_dir: str):
     print(f'Saved dataset with shape {full_df.shape} to {output_path}')
 
 
-def aggregate_features(base_dir: str, label: int):
+def classification_aggregate_features(base_dir: str, label: int):
     '''
     Aggregate features from multiple CSV files for each patient.
     Args:
@@ -165,7 +165,7 @@ def process_cross_limb_metrics(patient_path: str, patient_features:dict):
                 patient_features[f'{col}_std'] = cross_df[col].std()
                 
 # Detection Functions
-def merge_patient_detection_features(base_dir: str, filename: str, output_name: str):
+def detection_merge_subject_features(base_dir: str, filename: str, output_name: str):
     """
     Merge per-subject detection feature CSVs into a single file for training.
     Args:
@@ -192,7 +192,7 @@ def merge_patient_detection_features(base_dir: str, filename: str, output_name: 
         print("No files found to merge.")
         
 
-def merge_raw_npz_files(base_dir: str, filename="detection_raw_window.npz", output_name="all_subject_raw_windows.npz"):
+def detection_merge_raw_npz_files(base_dir: str, filename="detection_raw_window.npz", output_name="all_subject_raw_windows.npz"):
     '''
     Merge all npz data from all the subjects into a single file for training
     Args:
@@ -217,7 +217,15 @@ def merge_raw_npz_files(base_dir: str, filename="detection_raw_window.npz", outp
     else:
         print("No .npz files found.")
 
-
+def detection_merge_all_datasets(healthy_dir: str, stroke_dir: str):
+    '''
+    Merge all npz data from all the subjects into a single file for training
+    Args:
+        base_dir (str): Root directory containing patient subfolders.
+        filename (str): Filename to look for in each patient folder.
+        output_name (str): Output CSV file name to save the merged result.
+    '''
+    
 
 
 # Clean up function to delete all feature files ---------------------------------------------
