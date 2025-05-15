@@ -1,4 +1,8 @@
-from feature_extraction import generate_rolling_windows
+patient_path = 'Data/Healthy/Patient_1'
 
 
-generate_rolling_windows('Data/Stroke/Patient_2')
+
+patiend_id = patient_path.split('/')[-1].lower()
+status = 0 if patient_path.__contains__('Healthy') else 1
+patient_id = patiend_id + '_' + str(status)
+print(patient_id)

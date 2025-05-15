@@ -311,8 +311,9 @@ def generate_rolling_windows(patient_path: str, window_sec = 2, stride_sec = 1, 
     
     # Add the patient_id to ensure that we know the source, when data is merged to single dataset
     # and class label (healthy/stroke) to try and find any interesting correlations
-    patiend_id = patient_path.split('/')[-1].lower()
+    patient_id = patient_path.split('/')[-1].lower()
     status = 0 if patient_path.__contains__('Healthy') else 1
+    patient_id = patient_id + '_' + str(status)
     
     for start_idx in range(0, min_length - window_size + 1, stride_size):
         end_idx = start_idx + window_size
@@ -340,7 +341,7 @@ def generate_rolling_windows(patient_path: str, window_sec = 2, stride_sec = 1, 
 
         # Create the time domain features per window 
         time_window = {
-            'patient_id'            : patiend_id, 
+            'patient_id'            : patient_id, 
             'window_id'             : window_id,
             'start_time'            : start_time[0],
             'end_time'              : end_time,
@@ -361,7 +362,7 @@ def generate_rolling_windows(patient_path: str, window_sec = 2, stride_sec = 1, 
         
         # Create the asymmetry features per window
         asymmetry_window = {
-            'patient_id'                      : patiend_id, 
+            'patient_id'                      : patient_id, 
             'window_id'                       : window_id,
             'start_time'                      : start_time[0],
             'end_time'                        : end_time,
@@ -376,7 +377,7 @@ def generate_rolling_windows(patient_path: str, window_sec = 2, stride_sec = 1, 
         
         # Create the raw data/features per window
         window = {
-            'patient_id'    : patiend_id,
+            'patient_id'    : patient_id,
             'window_id'     : window_id,
             'start_time'    : start_time[0],
             'end_time'      : end_time,
