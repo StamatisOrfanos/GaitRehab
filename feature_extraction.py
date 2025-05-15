@@ -11,7 +11,7 @@ from data_preprocessing import merge_data
 
 # ------- Feature Extraction Functions for Classification ----------------------------------------------------------------------
 
-def time_domain_features(data_dir, data_type):
+def time_domain_features(data_dir: str, data_type: str):
     '''
     Calculate the metrics for the gyroscope/accelerometer data.
     Mean, Standard Deviation, Maximum, Minimum, Root Mean Square, Median Absolute Deviation, Range,
@@ -53,7 +53,7 @@ def time_domain_features(data_dir, data_type):
     metrics_df.to_csv(os.path.join(data_dir + f'time_domain_metrics_{data_type}.csv'), index=False)
     
 
-def frequency_domain_features(data_dir, data_type, fs=100, window_duration_sec=2):
+def frequency_domain_features(data_dir: str, data_type: str, fs=100, window_duration_sec=2):
     '''
     Calculate the frequency domain features for the gyroscope data.
     Dominant frequency, Spectral entropy, Gait band energy
@@ -120,7 +120,7 @@ def frequency_domain_features(data_dir, data_type, fs=100, window_duration_sec=2
     features_df.to_csv(os.path.join(data_dir, f'windowed_frequency_features_{data_type}.csv'), index=False)
 
     
-def gait_features(data_dir, data_type):
+def gait_features(data_dir: str, data_type: str):
     '''
     Calculate the gait features for the gyroscope data.
     Stride times, Stance/swing times, Asymmetry index, Symmetry ratio
@@ -158,7 +158,7 @@ def gait_features(data_dir, data_type):
     pd.DataFrame({'asymmetry_index': asymmetry, 'symmetry_ratio': symmetry}).to_csv(os.path.join(output_dir, f'summary_gait_metrics_{data_type}.csv'), index=False)
 
 
-def cross_limb_features(data_dir, data_type, fs=100):
+def cross_limb_features(data_dir: str, data_type: str, fs=100):
     '''
     Calculate the cross limb features for the gyroscope data.
     Left and right stride durations, stride duration difference, stride duration symmetry ratio,
@@ -217,7 +217,7 @@ def cross_limb_features(data_dir, data_type, fs=100):
     cross_limb_features.to_csv(os.path.join(data_dir, 'cross_limb_metrics.csv'), index=False)
 
 
-def butter_low_pass(data, cutoff=6, fs=100, order=2):
+def butter_low_pass(data: np.array, cutoff=6, fs=100, order=2):
     '''
     Apply a low-pass Butterworth filter to the data.
     Args:
@@ -232,7 +232,7 @@ def butter_low_pass(data, cutoff=6, fs=100, order=2):
     return filtfilt(b, a, data)
 
 
-def detect_stance_swing_fast(z_filtered, time):
+def detect_stance_swing_fast(z_filtered: np.array, time: np.array):
     '''
     Vectorized stance and swing phase detection from filtered z-axis gyro signal.
     Args:
@@ -260,7 +260,7 @@ def detect_stance_swing_fast(z_filtered, time):
     return [{'stance_time': st, 'swing_time': sw} for st, sw in zip(stance_times, swing_times)]
 
 
-def asymmetry_index(left, right):
+def asymmetry_index(left: list, right: list):
     '''
     Calculate the asymmetry index between left and right stride times.
     Args:
@@ -269,7 +269,7 @@ def asymmetry_index(left, right):
     '''
     return [(l - r) / (l + r) if (l + r) != 0 else 0 for l, r in zip(left, right)]
 
-def symmetry_ratio(left, right):
+def symmetry_ratio(left: list, right: list):
     '''
     Calculate the symmetry ratio between left and right stride times.
     Args:
@@ -281,7 +281,7 @@ def symmetry_ratio(left, right):
 
 # ------- Feature Extraction for Gait Detection  ----------------------------------------------------------------------
 
-def generate_rolling_windows(patient_path, window_sec = 2, stride_sec = 1, fs = 100):
+def generate_rolling_windows(patient_path: str, window_sec = 2, stride_sec = 1, fs = 100):
     '''
     Generate three possible datasets for real time gait asymmetry detection from Left and Right Shank raw data.
     Args:
@@ -411,7 +411,7 @@ def generate_rolling_windows(patient_path, window_sec = 2, stride_sec = 1, fs = 
     print(f'Generated and saved all 3 datasets to: {patient_path}')
 
     
-def flatten_list(gyro_data_list):
+def flatten_list(gyro_data_list: list[list[float]]):
     '''
     Function to flatten the list of gyroscope data to get the peaks later
     Args:
