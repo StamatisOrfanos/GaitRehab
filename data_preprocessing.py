@@ -47,9 +47,11 @@ def merge_data(data_dir: str, left_shank_path: str, right_shank_path: str, merge
     data.to_csv(data_dir + '/' + '{}.csv'.format(merge_type), index=False)
 
 
+
 # Aggregate features from all the features files ---------------------------------------------
 
-#  Classification Functions
+
+#  Classification Functions ----------------------------
 
 def classification_merge_all_types(health_dir: str, stroke_dir: str):
     '''
@@ -163,8 +165,10 @@ def process_cross_limb_metrics(patient_path: str, patient_features:dict):
             if col not in ['window_id', 'start_time', 'end_time', 'side']:
                 patient_features[f'{col}_mean'] = cross_df[col].mean()
                 patient_features[f'{col}_std'] = cross_df[col].std()
-                
-# Detection Functions
+
+       
+# Detection Functions ----------------------------
+
 def detection_merge_subject_features(base_dir: str, filename: str, output_name: str):
     """
     Merge per-subject detection feature CSVs into a single file for training.
@@ -217,18 +221,51 @@ def detection_merge_raw_npz_files(base_dir: str, filename="detection_raw_window.
     else:
         print("No .npz files found.")
 
-def detection_merge_all_datasets(healthy_dir: str, stroke_dir: str):
+
+def detection_merge_csv_datasets(health_dir: str, stroke_dir: str, file_type: str):
     '''
-    Merge all npz data from all the subjects into a single file for training
+    Merge all types of data for each patient/subject.
     Args:
-        base_dir (str): Root directory containing patient subfolders.
-        filename (str): Filename to look for in each patient folder.
-        output_name (str): Output CSV file name to save the merged result.
+        health_dir (str): Directory containing healthy subjects' data.
+        stroke_dir (str): Directory containing stroke patients' data.
+        file_type (str): Type of file we are merging [detection_time_domain, detection_asymmetry]
     '''
+    output_path = f'{file_type}.csv'
+    healthy_df  = pd.read_csv(os.path.join(health_dir, f'{file_type}.csv'))
+    stroke_df   = pd.read_csv(os.path.join(stroke_dir, f'{file_type}.csv'))
     
+    # Combine both datasets
+    full_df = pd.concat([healthy_df, stroke_df], ignore_index=True)
+    full_df.to_csv(output_path, index=False)
+    full_df.to_csv(output_path, index=False)
+    print(f'Saved dataset {file_type} with shape {full_df.shape} to {output_path}')
+
+ 
+def detection_merge_npz_files(base_dir: str, filename="detection_raw_window.npz", output_name="all_subject_raw_windows.npz"):
+    '''
+    Merge all types of data for each patient/subject.
+    Args:
+        base_dir (str): Directory containing healthy subjects' data.
+    '''
+    all_arrays = []
+
+    for base_folders in os.listdir(base_dir):
+        patient_path = os.path.join(base_dir, base_folders)
+        npz_path = os.path.join(patient_path, filename)
+
+        if os.path.exists(npz_path):
+            data = np.load(npz_path)
+            all_arrays.append(data["X"])
+
+    if all_arrays:
+        merged = np.concatenate(all_arrays, axis=0)
+        np.savez_compressed(os.path.join(base_dir, output_name), X=merged)
+        print(f"Merged {len(all_arrays)} files into {output_name} with shape {merged.shape}")
+    else:
+        print("No .npz files found.")  
 
 
-# Clean up function to delete all feature files ---------------------------------------------
+# Clean up function to delete all feature files ----------------------------
 
 def clean_extra_files(base_dir: str, data_type='gyroscope'):
     '''
