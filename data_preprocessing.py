@@ -6,7 +6,7 @@ import pandas as pd
 
 # Merge gyroscope data from left and right shank ---------------------------------------------
 
-def merge_data(data_dir, left_shank_path, right_shank_path, merge_type):
+def merge_data(data_dir: str, left_shank_path: str, right_shank_path: str, merge_type: str):
     '''
     Merge gyroscope data from left and right shank.
     Args:
@@ -51,7 +51,7 @@ def merge_data(data_dir, left_shank_path, right_shank_path, merge_type):
 
 #  Classification Functions
 
-def merge_all_types(health_dir, stroke_dir):
+def merge_all_types(health_dir: str, stroke_dir: str):
     '''
     Merge all types of data for each patient.
     Args:
@@ -69,7 +69,7 @@ def merge_all_types(health_dir, stroke_dir):
     print(f'Saved dataset with shape {full_df.shape} to {output_path}')
 
 
-def aggregate_features(base_dir, label):
+def aggregate_features(base_dir: str, label: int):
     '''
     Aggregate features from multiple CSV files for each patient.
     Args:
@@ -102,7 +102,7 @@ def aggregate_features(base_dir, label):
     return pd.DataFrame(all_features)
 
 
-def process_time_domain_features(patient_path, patient_features):
+def process_time_domain_features(patient_path: str, patient_features: dict):
     '''
     Get time domain features from the gyroscope data.
     Args:
@@ -116,7 +116,7 @@ def process_time_domain_features(patient_path, patient_features):
             patient_features[col] = time_df[col].iloc[0]
 
 
-def process_frequency_domain_features(patient_path, patient_features):
+def process_frequency_domain_features(patient_path: str, patient_features: dict):
     '''
     Get frequency domain features from the gyroscope data.
     Args:
@@ -135,7 +135,7 @@ def process_frequency_domain_features(patient_path, patient_features):
                     patient_features[f'{side}_{feat}_std'] = side_df[feat].std()
 
 
-def process_gait_summary_metrics(patient_path, patient_features):
+def process_gait_summary_metrics(patient_path: str, patient_features: dict):
     '''
     Get gait summary metrics from the gyroscope data.
     Args:
@@ -149,7 +149,7 @@ def process_gait_summary_metrics(patient_path, patient_features):
             patient_features[col] = gait_df[col].mean()
 
 
-def process_cross_limb_metrics(patient_path, patient_features):
+def process_cross_limb_metrics(patient_path: str, patient_features:dict):
     '''
     Get cross-limb metrics from the gyroscope data.
     Args:
@@ -163,11 +163,39 @@ def process_cross_limb_metrics(patient_path, patient_features):
             if col not in ['window_id', 'start_time', 'end_time', 'side']:
                 patient_features[f'{col}_mean'] = cross_df[col].mean()
                 patient_features[f'{col}_std'] = cross_df[col].std()
+                
+# Detection Functions
+def merge_patient_detection_features(base_dir: str, filename: str, output_name: str):
+    """
+    Merge per-patient detection feature CSVs into a single file for training.
+    Args:
+        base_dir (str): Root directory containing patient subfolders.
+        filename (str): Filename to look for in each patient folder.
+        output_name (str): Output CSV file name to save the merged result.
+    """
+    all_dfs = []
+
+    for patient_folder in os.listdir(base_dir):
+        patient_path = os.path.join(base_dir, patient_folder)
+        file_path = os.path.join(patient_path, filename)
+
+        if os.path.isfile(file_path):
+            df = pd.read_csv(file_path)
+            df['patient_id'] = patient_folder
+            all_dfs.append(df)
+
+    if all_dfs:
+        merged_df = pd.concat(all_dfs, ignore_index=True)
+        merged_df.to_csv(os.path.join(base_dir, output_name), index=False)
+        print(f"Merged {len(all_dfs)} files into {output_name}")
+    else:
+        print("No files found to merge.")
+
 
 
 # Clean up function to delete all feature files ---------------------------------------------
 
-def clean_extra_files(base_dir, data_type='gyroscope'):
+def clean_extra_files(base_dir: str, data_type='gyroscope'):
     '''
     Loop over all subdirectories in base_dir and delete feature files.
     Args:
@@ -182,7 +210,7 @@ def clean_extra_files(base_dir, data_type='gyroscope'):
     print(f'\n Cleanup complete for all patients in {base_dir}')
 
 
-def delete_feature_files(patient_dir, data_type='gyroscope'):
+def delete_feature_files(patient_dir: str, data_type='gyroscope'):
     '''
     Deletes all feature CSVs generated inside a patient's folder.
     Args:
