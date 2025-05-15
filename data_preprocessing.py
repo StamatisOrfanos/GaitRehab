@@ -230,9 +230,9 @@ def detection_merge_csv_datasets(health_dir: str, stroke_dir: str, file_type: st
         stroke_dir (str): Directory containing stroke patients' data.
         file_type (str): Type of file we are merging [detection_time_domain, detection_asymmetry]
     '''
-    output_path = f'{file_type}.csv'
-    healthy_df  = pd.read_csv(os.path.join(health_dir, f'{file_type}.csv'))
-    stroke_df   = pd.read_csv(os.path.join(stroke_dir, f'{file_type}.csv'))
+    output_path = f'{file_type}'
+    healthy_df  = pd.read_csv(os.path.join(health_dir, f'{file_type}'))
+    stroke_df   = pd.read_csv(os.path.join(stroke_dir, f'{file_type}'))
     
     # Combine both datasets
     full_df = pd.concat([healthy_df, stroke_df], ignore_index=True)
@@ -241,7 +241,7 @@ def detection_merge_csv_datasets(health_dir: str, stroke_dir: str, file_type: st
     print(f'Saved dataset {file_type} with shape {full_df.shape} to {output_path}')
 
  
-def detection_merge_npz_files(base_dir: str, filename="detection_raw_window.npz", output_name="all_subject_raw_windows.npz"):
+def detection_merge_npz_datasets(base_dir: str, filename="all_subject_raw_windows.npz", output_name="all_subject_raw_windows.npz"):
     '''
     Merge all types of data for each patient/subject.
     Args:
@@ -251,9 +251,14 @@ def detection_merge_npz_files(base_dir: str, filename="detection_raw_window.npz"
 
     for base_folders in os.listdir(base_dir):
         patient_path = os.path.join(base_dir, base_folders)
+
+        if patient_path.__contains__('Info') or patient_path.__contains__('.DS_Store'):
+            continue
+    
         npz_path = os.path.join(patient_path, filename)
 
         if os.path.exists(npz_path):
+            print('Exists')
             data = np.load(npz_path)
             all_arrays.append(data["X"])
 
