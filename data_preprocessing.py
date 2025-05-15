@@ -167,10 +167,10 @@ def process_cross_limb_metrics(patient_path: str, patient_features:dict):
 # Detection Functions
 def merge_patient_detection_features(base_dir: str, filename: str, output_name: str):
     """
-    Merge per-patient detection feature CSVs into a single file for training.
+    Merge per-subject detection feature CSVs into a single file for training.
     Args:
-        base_dir (str): Root directory containing patient subfolders.
-        filename (str): Filename to look for in each patient folder.
+        base_dir (str): Root directory containing subjects subfolders.
+        filename (str): Filename to look for in each subjects folder.
         output_name (str): Output CSV file name to save the merged result.
     """
     all_dfs = []
@@ -190,6 +190,33 @@ def merge_patient_detection_features(base_dir: str, filename: str, output_name: 
         print(f"Merged {len(all_dfs)} files into {output_name}")
     else:
         print("No files found to merge.")
+        
+
+def merge_raw_npz_files(base_dir: str, filename="detection_raw_window.npz", output_name="all_subject_raw_windows.npz"):
+    '''
+    Merge all npz data from all the subjects into a single file for training
+    Args:
+        base_dir (str): Root directory containing patient subfolders.
+        filename (str): Filename to look for in each patient folder.
+        output_name (str): Output CSV file name to save the merged result.
+    '''
+    all_arrays = []
+
+    for patient_folder in os.listdir(base_dir):
+        patient_path = os.path.join(base_dir, patient_folder)
+        npz_path = os.path.join(patient_path, filename)
+
+        if os.path.exists(npz_path):
+            data = np.load(npz_path)
+            all_arrays.append(data["X"])
+
+    if all_arrays:
+        merged = np.concatenate(all_arrays, axis=0)
+        np.savez_compressed(os.path.join(base_dir, output_name), X=merged)
+        print(f"Merged {len(all_arrays)} files into {output_name} with shape {merged.shape}")
+    else:
+        print("No .npz files found.")
+
 
 
 
