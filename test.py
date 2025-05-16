@@ -20,7 +20,3 @@ def fix_format(path):
 
     df_order = df[['epoc (ms)', 'timestamp (+0700)', 'elapsed (s)', 'x-axis (deg/s)', 'y-axis (deg/s)', 'z-axis (deg/s)']]
     df_order.to_csv('LeftShank-Gyroscope.csv', index=False)
-    
-    
-path = 'Data/Stroke/Patient_8/RightShank-Gyroscope.csv'
-fix_format(path)
