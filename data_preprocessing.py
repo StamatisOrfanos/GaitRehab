@@ -204,7 +204,7 @@ def detection_merge_raw_npz_files(base_dir: str, filename="detection_raw_window.
         filename (str): Filename to look for in each patient folder.
         output_name (str): Output npz file name to save the merged result.
     '''
-    all_arrays = []
+    all_X, all_Y_strict, all_Y_moderate, all_Y_lenient, all_class_label, all_patient_id, all_window_id   = [], [], [], [], [], [], []
 
     for patient_folder in os.listdir(base_dir):
         patient_path = os.path.join(base_dir, patient_folder)
@@ -212,20 +212,28 @@ def detection_merge_raw_npz_files(base_dir: str, filename="detection_raw_window.
 
         if os.path.exists(npz_path):
             data = np.load(npz_path)
-            all_arrays.append(data["X"])
-            all_arrays.append(data['label_strict'])
-            all_arrays.append(data['label_moderate'])
-            all_arrays.append(data['label_lenient'])
-            all_arrays.append(data['class_label'])
-            all_arrays.append(data['patient_id'])
-            all_arrays.append(data['window_id'])
+            all_X.append(data['X'])
+            all_Y_strict.append(data['label_strict'])
+            all_Y_moderate.append(data['label_moderate'])
+            all_Y_lenient.append(data['label_lenient'])
+            all_class_label.append(data['class_label'])
+            all_patient_id.append(data['patient_id'])
+            all_window_id.append(data['window_id'])
     
-    if all_arrays:
-        merged = np.concatenate(all_arrays, axis=0)
-        np.savez_compressed(os.path.join(base_dir, output_name), X=merged)
-        print(f"Merged {len(all_arrays)} files into {output_name} with shape {merged.shape}")
+    if all_X:
+        np.savez_compressed(
+            os.path.join(base_dir, output_name), 
+            X          = np.concatenate(all_X, axis=0), 
+            y_strict   = np.concatenate(all_Y_strict, axis=0),
+            y_moderate = np.concatenate(all_Y_moderate, axis=0),
+            y_lenient  = np.concatenate(all_Y_lenient, axis=0),
+            class_label= np.concatenate(all_class_label, axis=0),
+            class_label= np.concatenate(all_patient_id, axis=0),
+            class_label= np.concatenate(all_window_id, axis=0),
+            )                   
+        print(f"Merged {len(all_X)} files into {output_name}")
     else:
-        print("No .npz files found.")
+        print("No .npz files found.")  
 
 
 def detection_merge_csv_datasets(health_dir: str, stroke_dir: str, file_type: str):
@@ -253,7 +261,7 @@ def detection_merge_npz_datasets(base_dir: str, filename="all_subject_raw_window
     Args:
         base_dir (str): Directory containing healthy subjects' data.
     '''
-    all_arrays = []
+    all_X, all_Y_strict, all_Y_moderate, all_Y_lenient, all_class_label, all_patient_id, all_window_id   = [], [], [], [], [], [], []
 
     for base_folders in os.listdir(base_dir):
         patient_path = os.path.join(base_dir, base_folders)
@@ -265,18 +273,28 @@ def detection_merge_npz_datasets(base_dir: str, filename="all_subject_raw_window
 
         if os.path.exists(npz_path):
             data = np.load(npz_path)
-            all_arrays.append(data["X"])
-            all_arrays.append(data['label_strict'])
-            all_arrays.append(data['label_moderate'])
-            all_arrays.append(data['label_lenient'])
-            all_arrays.append(data['class_label'])
-            all_arrays.append(data['patient_id'])
-            all_arrays.append(data['window_id'])
+            all_X.append(data['X'])
+            all_Y_strict.append(data['label_strict'])
+            all_Y_moderate.append(data['label_moderate'])
+            all_Y_lenient.append(data['label_lenient'])
+            all_class_label.append(data['class_label'])
+            all_patient_id.append(data['patient_id'])
+            all_window_id.append(data['window_id'])
 
-    if all_arrays:
-        merged = np.concatenate(all_arrays, axis=0)
-        np.savez_compressed(os.path.join(base_dir, output_name), X=merged)
-        print(f"Merged {len(all_arrays)} files into {output_name} with shape {merged.shape}")
+    if all_X:
+        np.savez_compressed(
+            os.path.join(base_dir, output_name), 
+            X          = np.concatenate(all_X, axis=0), 
+            y_strict   = np.concatenate(all_Y_strict, axis=0),
+            y_moderate = np.concatenate(all_Y_moderate, axis=0),
+            y_lenient  = np.concatenate(all_Y_lenient, axis=0),
+            class_label= np.concatenate(all_class_label, axis=0),
+            patient_id = np.concatenate(all_patient_id, axis=0),
+            class_label= np.concatenate(all_window_id, axis=0),
+            window_id  = np.concatenate(all_window_id, axis=0)
+            )
+                            
+        print(f"Merged {len(all_X)} files into {output_name}")
     else:
         print("No .npz files found.")  
 
