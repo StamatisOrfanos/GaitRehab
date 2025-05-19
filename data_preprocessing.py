@@ -202,7 +202,7 @@ def detection_merge_raw_npz_files(base_dir: str, filename="detection_raw_window.
     Args:
         base_dir (str): Root directory containing patient subfolders.
         filename (str): Filename to look for in each patient folder.
-        output_name (str): Output CSV file name to save the merged result.
+        output_name (str): Output npz file name to save the merged result.
     '''
     all_arrays = []
 
@@ -213,7 +213,13 @@ def detection_merge_raw_npz_files(base_dir: str, filename="detection_raw_window.
         if os.path.exists(npz_path):
             data = np.load(npz_path)
             all_arrays.append(data["X"])
-
+            all_arrays.append(data['label_strict'])
+            all_arrays.append(data['label_moderate'])
+            all_arrays.append(data['label_lenient'])
+            all_arrays.append(data['class_label'])
+            all_arrays.append(data['patient_id'])
+            all_arrays.append(data['window_id'])
+    
     if all_arrays:
         merged = np.concatenate(all_arrays, axis=0)
         np.savez_compressed(os.path.join(base_dir, output_name), X=merged)
@@ -258,9 +264,14 @@ def detection_merge_npz_datasets(base_dir: str, filename="all_subject_raw_window
         npz_path = os.path.join(patient_path, filename)
 
         if os.path.exists(npz_path):
-            print('Exists')
             data = np.load(npz_path)
             all_arrays.append(data["X"])
+            all_arrays.append(data['label_strict'])
+            all_arrays.append(data['label_moderate'])
+            all_arrays.append(data['label_lenient'])
+            all_arrays.append(data['class_label'])
+            all_arrays.append(data['patient_id'])
+            all_arrays.append(data['window_id'])
 
     if all_arrays:
         merged = np.concatenate(all_arrays, axis=0)

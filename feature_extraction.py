@@ -408,7 +408,18 @@ def generate_rolling_windows(patient_path: str, window_sec = 2, stride_sec = 1, 
         raw_array.append(raw_tensor)
     raw_array = np.stack(raw_array)  # shape: (#windows, 200, 12)
     
-    np.savez_compressed(os.path.join(patient_path, 'detection_raw_window.npz'), X=raw_array)
+
+    np.savez_compressed(
+        os.path.join(patient_path, 'detection_raw_window.npz'),
+        X=raw_array,
+        y_lenient=np.array([w['label_lenient'] for w in windows]),
+        y_moderate=np.array([w['label_moderate'] for w in windows]),
+        y_strict=np.array([w['label_strict'] for w in windows]),
+        class_labels=np.array([w['class_label'] for w in windows]),
+        patient_ids=np.array([w['patient_id'] for w in windows]),
+        window_ids=np.array([w['window_id'] for w in windows])
+    )
+    
     print(f'Generated and saved all 3 datasets to: {patient_path}')
 
     
