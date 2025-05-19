@@ -223,13 +223,13 @@ def detection_merge_raw_npz_files(base_dir: str, filename="detection_raw_window.
     if all_X:
         np.savez_compressed(
             os.path.join(base_dir, output_name), 
-            X          = np.concatenate(all_X, axis=0), 
-            y_strict   = np.concatenate(all_Y_strict, axis=0),
-            y_moderate = np.concatenate(all_Y_moderate, axis=0),
-            y_lenient  = np.concatenate(all_Y_lenient, axis=0),
+            X              = np.concatenate(all_X, axis=0), 
+            label_strict   = np.concatenate(all_Y_strict, axis=0),
+            label_moderate = np.concatenate(all_Y_moderate, axis=0),
+            label_lenient  = np.concatenate(all_Y_lenient, axis=0),
             class_label= np.concatenate(all_class_label, axis=0),
-            class_label= np.concatenate(all_patient_id, axis=0),
-            class_label= np.concatenate(all_window_id, axis=0),
+            patient_id = np.concatenate(all_patient_id, axis=0),
+            window_id  = np.concatenate(all_window_id, axis=0),
             )                   
         print(f"Merged {len(all_X)} files into {output_name}")
     else:
@@ -284,13 +284,12 @@ def detection_merge_npz_datasets(base_dir: str, filename="all_subject_raw_window
     if all_X:
         np.savez_compressed(
             os.path.join(base_dir, output_name), 
-            X          = np.concatenate(all_X, axis=0), 
-            y_strict   = np.concatenate(all_Y_strict, axis=0),
-            y_moderate = np.concatenate(all_Y_moderate, axis=0),
-            y_lenient  = np.concatenate(all_Y_lenient, axis=0),
+            X              = np.concatenate(all_X, axis=0), 
+            label_strict   = np.concatenate(all_Y_strict, axis=0),
+            label_moderate = np.concatenate(all_Y_moderate, axis=0),
+            label_lenient  = np.concatenate(all_Y_lenient, axis=0),
             class_label= np.concatenate(all_class_label, axis=0),
             patient_id = np.concatenate(all_patient_id, axis=0),
-            class_label= np.concatenate(all_window_id, axis=0),
             window_id  = np.concatenate(all_window_id, axis=0)
             )
                             
