@@ -278,6 +278,15 @@ def symmetry_ratio(left: list, right: list):
     '''
     return [min(l, r) / max(l, r) if max(l, r) != 0 else 0 for l, r in zip(left, right)]
 
+def summarize_metric(values: list[float]):
+    '''
+    Calculate the mean of a list of values, ignoring NaN values.
+    Args:
+        values (list[float]): List of values to summarize.
+    '''
+    return float(np.mean(values)) if len(values) > 0 else np.nan
+
+
 
 # ------- Feature Extraction for Gait Detection  ----------------------------------------------------------------------
 
@@ -366,8 +375,8 @@ def generate_rolling_windows(patient_path: str, window_sec = 2, stride_sec = 1, 
             'window_id'                       : window_id,
             'start_time'                      : start_time[0],
             'end_time'                        : end_time,
-            'gyro-asymmetry-stride-times'     : asymmetry,
-            'gyro-symmetry-ratio-stride-times': symmetry,
+            'gyro-asymmetry-stride-times'     : summarize_metric(asymmetry),
+            'gyro-symmetry-ratio-stride-times': summarize_metric(symmetry),
             'label_strict'                    : label_strict, 
             'label_moderate'                  : label_moderate, 
             'label_lenient'                   : label_lenient,
