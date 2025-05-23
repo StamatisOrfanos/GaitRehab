@@ -19,3 +19,11 @@ def time_domain_features(data: pd.DataFrame):
     model_input.append(data['left-z-axis (deg/s)'].max())
 
     return model_input
+
+def summarize(lst):
+    return float(np.mean(lst)) if len(lst) > 0 else 0
+
+def simulate_gait_signal(amplitude, freq, phase_shift, noise, duration_sec=2.0, fs=100):
+    t = np.linspace(0, duration_sec, int(fs * duration_sec))
+    signal = amplitude * np.sin(2 * np.pi * freq * t + phase_shift)
+    return signal + np.random.normal(0, noise, size=t.shape)
