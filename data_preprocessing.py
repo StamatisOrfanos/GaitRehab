@@ -196,7 +196,7 @@ def detection_merge_subject_features(base_dir: str, filename: str, output_name: 
         print("No files found to merge.")
         
 
-def detection_merge_raw_npz_files(base_dir: str, filename="detection_raw_window.npz", output_name="all_subject_raw_windows.npz"):
+def detection_merge_raw_npz_files(base_dir: str, filename="detection_raw_window.npz", output_name="detection_raw_window.npz"):
     '''
     Merge all npz data from all the subjects into a single file for training
     Args:
@@ -255,7 +255,7 @@ def detection_merge_csv_datasets(health_dir: str, stroke_dir: str, file_type: st
     print(f'Saved dataset {file_type} with shape {full_df.shape} to {output_path}')
 
  
-def detection_merge_npz_datasets(base_dir: str, filename="all_subject_raw_windows.npz", output_name="all_subject_raw_windows.npz"):
+def detection_merge_npz_datasets(base_dir: str, filename="detection_raw_window.npz", output_name="detection_raw_window.npz"):
     '''
     Merge all types of data for each patient/subject.
     Args:
