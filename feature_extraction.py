@@ -337,35 +337,36 @@ def generate_rolling_windows(patient_path: str, window_sec = 2, stride_sec = 1, 
         right_stride_times = np.diff(right_peaks[0])
         asymmetry = asymmetry_index(left_stride_times, right_stride_times)
         symmetry  = symmetry_ratio(left_stride_times, right_stride_times)
-        
+
+    
         if len(left_peaks[0]) > 1 and len(right_peaks[0]) > 1:
-            label_strict   = 1 if abs(asymmetry[0]) > 0.2  or symmetry[0] < 0.8 else 0
-            label_moderate = 1 if abs(asymmetry[0]) > 0.15 or symmetry[0] < 0.85 else 0
-            label_lenient  = 1 if abs(asymmetry[0]) > 0.1  or symmetry[0] < 0.9 else 0
+            high_confidence_asymmetry   = 1 if abs(asymmetry[0]) > 0.2  or symmetry[0] < 0.8 else 0
+            medium_confidence_asymmetry = 1 if abs(asymmetry[0]) > 0.15 or symmetry[0] < 0.85 else 0
+            low_confidence_asymmetry    = 1 if abs(asymmetry[0]) > 0.1  or symmetry[0] < 0.9 else 0
         else:
-            label_strict   = 2
-            label_moderate = 2
-            label_lenient  = 2
+            high_confidence_asymmetry   = 2
+            medium_confidence_asymmetry = 2
+            low_confidence_asymmetry  = 2
 
 
         # Create the time domain features per window 
         time_window = {
-            'patient_id'            : patient_id, 
-            'window_id'             : window_id,
-            'start_time'            : start_time[0],
-            'end_time'              : end_time,
-            'gyro-right-z-axis-max' : gyroscope_df.loc[start_idx:end_idx - 1, ['right-z-axis (deg/s)']].max().values[0],
-            'gyro-left-z-axis-max'  : gyroscope_df.loc[start_idx:end_idx - 1, ['left-z-axis (deg/s)']].max().values[0],
-            'gyro-right-z-axis-min' : gyroscope_df.loc[start_idx:end_idx - 1, ['right-z-axis (deg/s)']].min().values[0],
-            'gyro-left-z-axis-min'  : gyroscope_df.loc[start_idx:end_idx - 1, ['left-z-axis (deg/s)']].min().values[0],
-            'accel-right-z-axis-max': accelerometer_df.loc[start_idx:end_idx - 1, ['right-z-axis (g)']].max().values[0],
-            'accel-left-z-axis-max' : accelerometer_df.loc[start_idx:end_idx - 1, ['left-z-axis (g)']].max().values[0],
-            'accel-right-z-axis-min': accelerometer_df.loc[start_idx:end_idx - 1, ['right-z-axis (g)']].min().values[0],
-            'accel-left-z-axis-min' : accelerometer_df.loc[start_idx:end_idx - 1, ['left-z-axis (g)']].min().values[0],
-            'label_strict'          : label_strict, 
-            'label_moderate'        : label_moderate, 
-            'label_lenient'         : label_lenient,
-            'class_label'           : status
+            'patient_id'                  : patient_id, 
+            'window_id'                   : window_id,
+            'start_time'                  : start_time[0],
+            'end_time'                    : end_time,
+            'gyro-right-z-axis-max'       : gyroscope_df.loc[start_idx:end_idx - 1, ['right-z-axis (deg/s)']].max().values[0],
+            'gyro-left-z-axis-max'        : gyroscope_df.loc[start_idx:end_idx - 1, ['left-z-axis (deg/s)']].max().values[0],
+            'gyro-right-z-axis-min'       : gyroscope_df.loc[start_idx:end_idx - 1, ['right-z-axis (deg/s)']].min().values[0],
+            'gyro-left-z-axis-min'        : gyroscope_df.loc[start_idx:end_idx - 1, ['left-z-axis (deg/s)']].min().values[0],
+            'accel-right-z-axis-max'      : accelerometer_df.loc[start_idx:end_idx - 1, ['right-z-axis (g)']].max().values[0],
+            'accel-left-z-axis-max'       : accelerometer_df.loc[start_idx:end_idx - 1, ['left-z-axis (g)']].max().values[0],
+            'accel-right-z-axis-min'      : accelerometer_df.loc[start_idx:end_idx - 1, ['right-z-axis (g)']].min().values[0],
+            'accel-left-z-axis-min'       : accelerometer_df.loc[start_idx:end_idx - 1, ['left-z-axis (g)']].min().values[0],
+            'high_confidence_asymmetry'   : high_confidence_asymmetry, 
+            'medium_confidence_asymmetry' : medium_confidence_asymmetry, 
+            'low_confidence_asymmetry'    : low_confidence_asymmetry,
+            'class_label'                 : status
         }
         time_domain_windows.append(time_window)
         
@@ -377,27 +378,27 @@ def generate_rolling_windows(patient_path: str, window_sec = 2, stride_sec = 1, 
             'end_time'                        : end_time,
             'gyro-asymmetry-stride-times'     : summarize_metric(asymmetry),
             'gyro-symmetry-ratio-stride-times': summarize_metric(symmetry),
-            'label_strict'                    : label_strict, 
-            'label_moderate'                  : label_moderate, 
-            'label_lenient'                   : label_lenient,
+            'high_confidence_asymmetry'       : high_confidence_asymmetry, 
+            'medium_confidence_asymmetry'     : medium_confidence_asymmetry, 
+            'low_confidence_asymmetry'        : low_confidence_asymmetry,
             'class_label'                     : status
         }
         asymmetry_domain_windows.append(asymmetry_window)
         
         # Create the raw data/features per window
         window = {
-            'patient_id'    : patient_id,
-            'window_id'     : window_id,
-            'start_time'    : start_time[0],
-            'end_time'      : end_time,
-            'gyro_left'     : gyroscope_df.loc[start_idx:end_idx - 1, ['left-x-axis (deg/s)', 'left-y-axis (deg/s)', 'left-z-axis (deg/s)']].values,
-            'gyro_right'    : gyroscope_df.loc[start_idx:end_idx - 1, ['right-x-axis (deg/s)', 'right-y-axis (deg/s)', 'right-z-axis (deg/s)']].values,
-            'accel_left'    : accelerometer_df.loc[start_idx:end_idx - 1, ['left-x-axis (g)', 'left-y-axis (g)', 'left-z-axis (g)']].values,
-            'accel_right'   : accelerometer_df.loc[start_idx:end_idx - 1, ['right-x-axis (g)', 'right-y-axis (g)', 'right-z-axis (g)']].values,
-            'label_strict'  : label_strict, 
-            'label_moderate': label_moderate, 
-            'label_lenient' : label_lenient,
-            'class_label'   : status
+            'patient_id'                 : patient_id,
+            'window_id'                  : window_id,
+            'start_time'                 : start_time[0],
+            'end_time'                   : end_time,
+            'gyro_left'                  : gyroscope_df.loc[start_idx:end_idx - 1, ['left-x-axis (deg/s)', 'left-y-axis (deg/s)', 'left-z-axis (deg/s)']].values,
+            'gyro_right'                 : gyroscope_df.loc[start_idx:end_idx - 1, ['right-x-axis (deg/s)', 'right-y-axis (deg/s)', 'right-z-axis (deg/s)']].values,
+            'accel_left'                 : accelerometer_df.loc[start_idx:end_idx - 1, ['left-x-axis (g)', 'left-y-axis (g)', 'left-z-axis (g)']].values,
+            'accel_right'                : accelerometer_df.loc[start_idx:end_idx - 1, ['right-x-axis (g)', 'right-y-axis (g)', 'right-z-axis (g)']].values,
+            'high_confidence_asymmetry'  : high_confidence_asymmetry, 
+            'medium_confidence_asymmetry': medium_confidence_asymmetry, 
+            'low_confidence_asymmetry'   : low_confidence_asymmetry,
+            'class_label'                : status
         }
         windows.append(window)
     
@@ -421,9 +422,9 @@ def generate_rolling_windows(patient_path: str, window_sec = 2, stride_sec = 1, 
     np.savez_compressed(
         os.path.join(patient_path, 'detection_raw_window.npz'),
         X              = raw_array,
-        label_lenient  = np.array([w['label_lenient'] for w in windows]),
-        label_moderate = np.array([w['label_moderate'] for w in windows]),
-        label_strict   = np.array([w['label_strict'] for w in windows]),
+        low_confidence_asymmetry  = np.array([w['low_confidence_asymmetry'] for w in windows]),
+        medium_confidence_asymmetry = np.array([w['medium_confidence_asymmetry'] for w in windows]),
+        high_confidence_asymmetry   = np.array([w['high_confidence_asymmetry'] for w in windows]),
         class_label    = np.array([w['class_label'] for w in windows]),
         patient_id     = np.array([w['patient_id'] for w in windows]),
         window_id      = np.array([w['window_id'] for w in windows])

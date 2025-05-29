@@ -213,9 +213,9 @@ def detection_merge_raw_npz_files(base_dir: str, filename="detection_raw_window.
         if os.path.exists(npz_path):
             data = np.load(npz_path)
             all_X.append(data['X'])
-            all_Y_strict.append(data['label_strict'])
-            all_Y_moderate.append(data['label_moderate'])
-            all_Y_lenient.append(data['label_lenient'])
+            all_Y_strict.append(data['high_confidence_asymmetry'])
+            all_Y_moderate.append(data['medium_confidence_asymmetry'])
+            all_Y_lenient.append(data['low_confidence_asymmetry'])
             all_class_label.append(data['class_label'])
             all_patient_id.append(data['patient_id'])
             all_window_id.append(data['window_id'])
@@ -223,13 +223,13 @@ def detection_merge_raw_npz_files(base_dir: str, filename="detection_raw_window.
     if all_X:
         np.savez_compressed(
             os.path.join(base_dir, output_name), 
-            X              = np.concatenate(all_X, axis=0), 
-            label_strict   = np.concatenate(all_Y_strict, axis=0),
-            label_moderate = np.concatenate(all_Y_moderate, axis=0),
-            label_lenient  = np.concatenate(all_Y_lenient, axis=0),
-            class_label= np.concatenate(all_class_label, axis=0),
-            patient_id = np.concatenate(all_patient_id, axis=0),
-            window_id  = np.concatenate(all_window_id, axis=0),
+            X                           = np.concatenate(all_X, axis=0), 
+            high_confidence_asymmetry   = np.concatenate(all_Y_strict, axis=0),
+            medium_confidence_asymmetry = np.concatenate(all_Y_moderate, axis=0),
+            low_confidence_asymmetry    = np.concatenate(all_Y_lenient, axis=0),
+            class_label                 = np.concatenate(all_class_label, axis=0),
+            patient_id                  = np.concatenate(all_patient_id, axis=0),
+            window_id                   = np.concatenate(all_window_id, axis=0),
             )                   
         print(f"Merged {len(all_X)} files into {output_name}")
     else:
@@ -274,9 +274,9 @@ def detection_merge_npz_datasets(base_dir: str, filename="all_subject_raw_window
         if os.path.exists(npz_path):
             data = np.load(npz_path)
             all_X.append(data['X'])
-            all_Y_strict.append(data['label_strict'])
-            all_Y_moderate.append(data['label_moderate'])
-            all_Y_lenient.append(data['label_lenient'])
+            all_Y_strict.append(data['high_confidence_asymmetry'])
+            all_Y_moderate.append(data['medium_confidence_asymmetry'])
+            all_Y_lenient.append(data['low_confidence_asymmetry'])
             all_class_label.append(data['class_label'])
             all_patient_id.append(data['patient_id'])
             all_window_id.append(data['window_id'])
@@ -284,13 +284,13 @@ def detection_merge_npz_datasets(base_dir: str, filename="all_subject_raw_window
     if all_X:
         np.savez_compressed(
             os.path.join(base_dir, output_name), 
-            X              = np.concatenate(all_X, axis=0), 
-            label_strict   = np.concatenate(all_Y_strict, axis=0),
-            label_moderate = np.concatenate(all_Y_moderate, axis=0),
-            label_lenient  = np.concatenate(all_Y_lenient, axis=0),
-            class_label= np.concatenate(all_class_label, axis=0),
-            patient_id = np.concatenate(all_patient_id, axis=0),
-            window_id  = np.concatenate(all_window_id, axis=0)
+            X                           = np.concatenate(all_X, axis=0), 
+            high_confidence_asymmetry   = np.concatenate(all_Y_strict, axis=0),
+            medium_confidence_asymmetry = np.concatenate(all_Y_moderate, axis=0),
+            low_confidence_asymmetry    = np.concatenate(all_Y_lenient, axis=0),
+            class_label                 = np.concatenate(all_class_label, axis=0),
+            patient_id                  = np.concatenate(all_patient_id, axis=0),
+            window_id                   = np.concatenate(all_window_id, axis=0)
             )
                             
         print(f"Merged {len(all_X)} files into {output_name}")
