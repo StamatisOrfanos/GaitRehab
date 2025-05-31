@@ -194,46 +194,6 @@ def detection_merge_subject_features(base_dir: str, filename: str, output_name: 
         print(f"Merged {len(all_dfs)} files into {output_name}")
     else:
         print("No files found to merge.")
-        
-
-def detection_merge_raw_npz_files(base_dir: str, filename="detection_raw_window.npz", output_name="detection_raw_window.npz"):
-    '''
-    Merge all npz data from all the subjects into a single file for training
-    Args:
-        base_dir (str): Root directory containing patient subfolders.
-        filename (str): Filename to look for in each patient folder.
-        output_name (str): Output npz file name to save the merged result.
-    '''
-    all_X, all_Y_strict, all_Y_moderate, all_Y_lenient, all_class_label, all_patient_id, all_window_id   = [], [], [], [], [], [], []
-
-    for patient_folder in os.listdir(base_dir):
-        patient_path = os.path.join(base_dir, patient_folder)
-        npz_path = os.path.join(patient_path, filename)
-
-        if os.path.exists(npz_path):
-            data = np.load(npz_path)
-            all_X.append(data['X'])
-            all_Y_strict.append(data['high_confidence_asymmetry'])
-            all_Y_moderate.append(data['medium_confidence_asymmetry'])
-            all_Y_lenient.append(data['low_confidence_asymmetry'])
-            all_class_label.append(data['class_label'])
-            all_patient_id.append(data['patient_id'])
-            all_window_id.append(data['window_id'])
-    
-    if all_X:
-        np.savez_compressed(
-            os.path.join(base_dir, output_name), 
-            X                           = np.concatenate(all_X, axis=0), 
-            high_confidence_asymmetry   = np.concatenate(all_Y_strict, axis=0),
-            medium_confidence_asymmetry = np.concatenate(all_Y_moderate, axis=0),
-            low_confidence_asymmetry    = np.concatenate(all_Y_lenient, axis=0),
-            class_label                 = np.concatenate(all_class_label, axis=0),
-            patient_id                  = np.concatenate(all_patient_id, axis=0),
-            window_id                   = np.concatenate(all_window_id, axis=0),
-            )                   
-        print(f"Merged {len(all_X)} files into {output_name}")
-    else:
-        print("No .npz files found.")  
 
 
 def detection_merge_csv_datasets(health_dir: str, stroke_dir: str, file_type: str):
@@ -252,50 +212,7 @@ def detection_merge_csv_datasets(health_dir: str, stroke_dir: str, file_type: st
     full_df = pd.concat([healthy_df, stroke_df], ignore_index=True)
     full_df.to_csv(output_path, index=False)
     full_df.to_csv(output_path, index=False)
-    print(f'Saved dataset {file_type} with shape {full_df.shape} to {output_path}')
-
- 
-def detection_merge_npz_datasets(base_dir: str, filename="detection_raw_window.npz", output_name="detection_raw_window.npz"):
-    '''
-    Merge all types of data for each patient/subject.
-    Args:
-        base_dir (str): Directory containing healthy subjects' data.
-    '''
-    all_X, all_Y_strict, all_Y_moderate, all_Y_lenient, all_class_label, all_patient_id, all_window_id   = [], [], [], [], [], [], []
-
-    for base_folders in os.listdir(base_dir):
-        patient_path = os.path.join(base_dir, base_folders)
-
-        if patient_path.__contains__('Info') or patient_path.__contains__('.DS_Store'):
-            continue
-    
-        npz_path = os.path.join(patient_path, filename)
-
-        if os.path.exists(npz_path):
-            data = np.load(npz_path)
-            all_X.append(data['X'])
-            all_Y_strict.append(data['high_confidence_asymmetry'])
-            all_Y_moderate.append(data['medium_confidence_asymmetry'])
-            all_Y_lenient.append(data['low_confidence_asymmetry'])
-            all_class_label.append(data['class_label'])
-            all_patient_id.append(data['patient_id'])
-            all_window_id.append(data['window_id'])
-
-    if all_X:
-        np.savez_compressed(
-            os.path.join(base_dir, output_name), 
-            X                           = np.concatenate(all_X, axis=0), 
-            high_confidence_asymmetry   = np.concatenate(all_Y_strict, axis=0),
-            medium_confidence_asymmetry = np.concatenate(all_Y_moderate, axis=0),
-            low_confidence_asymmetry    = np.concatenate(all_Y_lenient, axis=0),
-            class_label                 = np.concatenate(all_class_label, axis=0),
-            patient_id                  = np.concatenate(all_patient_id, axis=0),
-            window_id                   = np.concatenate(all_window_id, axis=0)
-            )
-                            
-        print(f"Merged {len(all_X)} files into {output_name}")
-    else:
-        print("No .npz files found.")  
+    print(f'Saved dataset {file_type} with shape {full_df.shape} to {output_path}') 
 
 
 # Clean up function to delete all feature files ----------------------------
