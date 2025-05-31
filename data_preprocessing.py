@@ -246,7 +246,7 @@ def delete_feature_files(patient_dir: str, data_type='gyroscope'):
         'cross_limb_metrics.csv',
         f'{data_type}.csv',
         'detection_time_domain.csv',
-        'detection_asymmetry.csv',
+        'detection_asymmetry_score.csv',
         'detection_raw_window.npz'
     ]
     

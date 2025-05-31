@@ -336,6 +336,7 @@ def generate_rolling_windows(patient_path: str, window_sec=2, stride_sec=1, fs=1
     status     = 0 if 'healthy' in patient_path.lower() else 1
     patient_id = f"{patient_id}_{status}"
 
+    statistical_time_domain_windows = []
     asymmetry_domain_windows = []
 
     for start_idx in range(0, min_length - window_size + 1, stride_size):
@@ -361,6 +362,21 @@ def generate_rolling_windows(patient_path: str, window_sec=2, stride_sec=1, fs=1
         else:
             score = -1
 
+        statistical_window = {
+            'patient_id' : patient_id,
+            'window_id'  : start_idx,
+            'left_mean'  : np.mean(left_z),
+            'right_mean' : np.mean(right_z),
+            'left_max'   : np.max(right_z),
+            'right_max'  : np.max(right_z),
+            'left_min'   : np.min(left_z),
+            'right_min'  : np.min(right_z),
+            'left_iqr'   : iqr(left_z),
+            'right_iqr'  : iqr(right_z),
+            'class_label': status
+        }
+        statistical_time_domain_windows.append(statistical_window)     
+
         asymmetry_window = {
             'patient_id': patient_id,
             'window_id': start_idx,
@@ -371,7 +387,9 @@ def generate_rolling_windows(patient_path: str, window_sec=2, stride_sec=1, fs=1
 
     df = pd.DataFrame(asymmetry_domain_windows)
     df.to_csv(os.path.join(patient_path, 'detection_asymmetry_score.csv'), index=False)
-    return df
+    
+    df_time_domain = pd.DataFrame(statistical_time_domain_windows)
+    df_time_domain.to_csv(os.path.join(patient_path, 'detection_time_domain.csv'), index=False)
 
 
 def flatten_list(gyro_data_list):
