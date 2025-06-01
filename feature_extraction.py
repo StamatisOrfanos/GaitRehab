@@ -319,7 +319,11 @@ def generate_rolling_windows(patient_path: str, window_sec=2, stride_sec=1, fs=1
         window_sec (int): Size of the rolling window in seconds.
         stride_sec (int): Stride size in seconds.
         fs (int): Sampling frequency in Hz.
+        LeftShank-Gyroscope.csv
     '''
+    merge_data(patient_path, 'LeftShank-Gyroscope.csv', 'RightShank-Gyroscope.csv','gyroscope')
+    merge_data(patient_path, 'LeftShank-Accelerometer.csv', 'RightShank-Accelerometer.csv', 'accelerometer')
+    
     # Generate the gyroscope and accelerometer data
     gyroscope_df     = pd.read_csv(os.path.join(patient_path, 'gyroscope.csv')).dropna()
     accelerometer_df = pd.read_csv(os.path.join(patient_path, 'accelerometer.csv')).dropna()
@@ -339,6 +343,7 @@ def generate_rolling_windows(patient_path: str, window_sec=2, stride_sec=1, fs=1
     statistical_time_domain_windows = []
     asymmetry_domain_windows = []
 
+    # Loop through the data in windows of 2 seconds and get the important statistical features
     for start_idx in range(0, min_length - window_size + 1, stride_size):
         end_idx = start_idx + window_size
 
@@ -373,6 +378,7 @@ def generate_rolling_windows(patient_path: str, window_sec=2, stride_sec=1, fs=1
             'right_min'  : np.min(right_z),
             'left_iqr'   : iqr(left_z),
             'right_iqr'  : iqr(right_z),
+            'asymmetry_score': score,
             'class_label': status
         }
         statistical_time_domain_windows.append(statistical_window)     
@@ -385,11 +391,16 @@ def generate_rolling_windows(patient_path: str, window_sec=2, stride_sec=1, fs=1
         }
         asymmetry_domain_windows.append(asymmetry_window)
 
+    # Save the datasets created for each patient at the patient folder
     df = pd.DataFrame(asymmetry_domain_windows)
     df.to_csv(os.path.join(patient_path, 'detection_asymmetry_score.csv'), index=False)
     
     df_time_domain = pd.DataFrame(statistical_time_domain_windows)
     df_time_domain.to_csv(os.path.join(patient_path, 'detection_time_domain.csv'), index=False)
+    
+    # Remove the gyroscope and accelerometer data files, cleaning up the patient directory
+    os.remove(os.path.join(patient_path, 'gyroscope.csv'))
+    os.remove(os.path.join(patient_path, 'accelerometer.csv'))
 
 
 def flatten_list(gyro_data_list):
