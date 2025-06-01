@@ -319,26 +319,22 @@ def generate_rolling_windows(patient_path: str, window_sec=2, stride_sec=1, fs=1
         window_sec (int): Size of the rolling window in seconds.
         stride_sec (int): Stride size in seconds.
         fs (int): Sampling frequency in Hz.
-        LeftShank-Gyroscope.csv
     '''
-    merge_data(patient_path, 'LeftShank-Gyroscope.csv', 'RightShank-Gyroscope.csv','gyroscope')
-    merge_data(patient_path, 'LeftShank-Accelerometer.csv', 'RightShank-Accelerometer.csv', 'accelerometer')
+    merge_data(patient_path, os.path.join(patient_path, 'LeftShank-Gyroscope.csv'), os.path.join(patient_path,'RightShank-Gyroscope.csv'), 'gyroscope')
     
-    # Generate the gyroscope and accelerometer data
-    gyroscope_df     = pd.read_csv(os.path.join(patient_path, 'gyroscope.csv')).dropna()
-    accelerometer_df = pd.read_csv(os.path.join(patient_path, 'accelerometer.csv')).dropna()
+    # Generate the gyroscope data
+    gyroscope_df = pd.read_csv(os.path.join(patient_path, 'gyroscope.csv')).dropna()
 
     # Get the minimum length of both dataframes
     window_size = int(window_sec * fs)
     stride_size = int(stride_sec * fs)
     
-    min_length       = min(len(gyroscope_df), len(accelerometer_df))
-    gyroscope_df     = gyroscope_df.iloc[:min_length].reset_index(drop=True)
-    accelerometer_df = accelerometer_df.iloc[:min_length].reset_index(drop=True)
+    min_length   = len(gyroscope_df)
+    gyroscope_df = gyroscope_df.iloc[:min_length].reset_index(drop=True)
 
     patient_id = patient_path.split('/')[-1].lower()
     status     = 0 if 'healthy' in patient_path.lower() else 1
-    patient_id = f"{patient_id}_{status}"
+    patient_id = f'{patient_id}_{status}'
 
     statistical_time_domain_windows = []
     asymmetry_domain_windows = []
@@ -368,39 +364,38 @@ def generate_rolling_windows(patient_path: str, window_sec=2, stride_sec=1, fs=1
             score = -1
 
         statistical_window = {
-            'patient_id' : patient_id,
-            'window_id'  : start_idx,
-            'left_mean'  : np.mean(left_z),
-            'right_mean' : np.mean(right_z),
-            'left_max'   : np.max(right_z),
-            'right_max'  : np.max(right_z),
-            'left_min'   : np.min(left_z),
-            'right_min'  : np.min(right_z),
-            'left_iqr'   : iqr(left_z),
-            'right_iqr'  : iqr(right_z),
+            'patient_id': patient_id,
+            'window_id' : start_idx,
+            'left_mean' : np.mean(left_z),
+            'right_mean': np.mean(right_z),
+            'left_max'  : np.max(right_z),
+            'right_max' : np.max(right_z),
+            'left_min'  : np.min(left_z),
+            'right_min' : np.min(right_z),
+            'left_iqr'  : iqr(left_z),
+            'right_iqr' : iqr(right_z),
             'asymmetry_score': score,
             'class_label': status
         }
         statistical_time_domain_windows.append(statistical_window)     
 
         asymmetry_window = {
-            'patient_id': patient_id,
-            'window_id': start_idx,
+            'patient_id'     : patient_id,
+            'window_id'      : start_idx,
             'asymmetry_score': score,
-            'class_label': status
+            'class_label'    : status
         }
         asymmetry_domain_windows.append(asymmetry_window)
 
     # Save the datasets created for each patient at the patient folder
     df = pd.DataFrame(asymmetry_domain_windows)
-    df.to_csv(os.path.join(patient_path, 'detection_asymmetry_score.csv'), index=False)
+    df.to_csv(os.path.join(patient_path, 'detection_asymmetry.csv'), index=False)
     
     df_time_domain = pd.DataFrame(statistical_time_domain_windows)
     df_time_domain.to_csv(os.path.join(patient_path, 'detection_time_domain.csv'), index=False)
     
-    # Remove the gyroscope and accelerometer data files, cleaning up the patient directory
+    # Remove the gyroscope data files, cleaning up the patient directory
     os.remove(os.path.join(patient_path, 'gyroscope.csv'))
-    os.remove(os.path.join(patient_path, 'accelerometer.csv'))
 
 
 def flatten_list(gyro_data_list):
