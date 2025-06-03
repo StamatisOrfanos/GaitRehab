@@ -1,5 +1,5 @@
 # Libraries
-from typing import List, Dict
+from typing import List
 import datetime
 import os
 import numpy as np
@@ -11,6 +11,7 @@ from data_preprocessing import merge_data
 from scipy.stats import skew, kurtosis, iqr
 from scipy import signal
 from scipy.stats import iqr, skew, kurtosis
+
 
 # ------- Feature Extraction Functions for Classification ----------------------------------------------------------------------
 
@@ -311,98 +312,117 @@ def compute_asymmetry_score(asym_idx: float, symm_ratio: float, peak_amp_diff: f
     return max(0.0, min(score, 1.0))
 
 
-def generate_rolling_windows(patient_path: str, window_sec=2, stride_sec=1, fs=100):
-    '''
-    Generate rolling windows of gyroscope and accelerometer data for asymmetry detection.
-    Args:
-        patient_path (str): Path to the patient's data directory.
-        window_sec (int): Size of the rolling window in seconds.
-        stride_sec (int): Stride size in seconds.
-        fs (int): Sampling frequency in Hz.
-    '''
-    merge_data(patient_path, os.path.join(patient_path, 'LeftShank-Gyroscope.csv'), os.path.join(patient_path,'RightShank-Gyroscope.csv'), 'gyroscope')
-    
-    # Generate the gyroscope data
-    gyroscope_df = pd.read_csv(os.path.join(patient_path, 'gyroscope.csv')).dropna()
+def asymmetry_index(left: List[float], right: List[float]) -> float:
+    if len(left) == 0 or len(right) == 0: return np.nan
+    return np.mean([(l - r) / (l + r) if (l + r) != 0 else 0 for l, r in zip(left, right)])
 
-    # Get the minimum length of both dataframes
-    window_size = int(window_sec * fs)
-    stride_size = int(stride_sec * fs)
-    
-    min_length   = len(gyroscope_df)
-    gyroscope_df = gyroscope_df.iloc[:min_length].reset_index(drop=True)
 
-    patient_id = patient_path.split('/')[-1].lower()
-    status     = 0 if 'healthy' in patient_path.lower() else 1
-    patient_id = f'{patient_id}_{status}'
+def symmetry_ratio(left: List[float], right: List[float]) -> float:
+    if len(left) == 0 or len(right) == 0: return np.nan
+    return np.mean([min(l, r) / max(l, r) if max(l, r) != 0 else 0 for l, r in zip(left, right)])
 
-    statistical_time_domain_windows = []
-    asymmetry_domain_windows = []
 
-    # Loop through the data in windows of 2 seconds and get the important statistical features
-    for start_idx in range(0, min_length - window_size + 1, stride_size):
-        end_idx = start_idx + window_size
+def motion_score(z_signal: np.ndarray) -> float:
+    return np.max(np.abs(z_signal)) - np.min(np.abs(z_signal))
 
-        left_z  = flatten_list(gyroscope_df.loc[start_idx:end_idx - 1, ['left-z-axis (deg/s)']].values.tolist())
-        right_z = flatten_list(gyroscope_df.loc[start_idx:end_idx - 1, ['right-z-axis (deg/s)']].values.tolist())
 
-        left_peaks  = signal.find_peaks(left_z, height=0.3, distance=80)
-        right_peaks = signal.find_peaks(right_z, height=0.3, distance=80)
+def detect_stance_swing(z: np.ndarray, time: pd.Series) -> List[dict]:
+    zero_crossings = np.where(np.diff(np.sign(z)))[0]
+    time = pd.to_datetime(time)
+    stance_swing = []
 
-        left_stride_times  = np.diff(left_peaks[0])
-        right_stride_times = np.diff(right_peaks[0])
+    for i in range(len(zero_crossings) - 1):
+        start = zero_crossings[i]
+        end = zero_crossings[i + 1]
+        if end - start < 2: continue
+        min_idx = np.argmin(z[start:end]) + start
+        stance_time = (time[min_idx] - time[start]).total_seconds()
+        swing_time = (time[end] - time[min_idx]).total_seconds()
+        stance_swing.append({'stance_time': stance_time, 'swing_time': swing_time})
+    return stance_swing
 
-        if len(left_peaks[0]) > 1 and len(right_peaks[0]) > 1:
-            asymmetry_idx = asymmetry_index(left_stride_times, right_stride_times)[0]
-            symmetry_rt   = symmetry_ratio(left_stride_times, right_stride_times)[0]
-            left_peak_amplitude  = np.mean(left_peaks[1]['peak_heights']) if len(left_peaks[1]['peak_heights']) > 0 else 0
-            right_peak_amplitude = np.mean(right_peaks[1]['peak_heights']) if len(right_peaks[1]['peak_heights']) > 0 else 0
-            peak_amp_diff        = abs(left_peak_amplitude - right_peak_amplitude)
-            stride_var_diff = abs(np.var(left_stride_times) - np.var(right_stride_times))
-            score           = compute_asymmetry_score(asymmetry_idx, symmetry_rt, peak_amp_diff, stride_var_diff)
+
+def extract_features_per_gait_cycle(patient_folder: str):
+    gyro_path = os.path.join(patient_folder, "gyroscope.csv")
+    if not os.path.exists(gyro_path):
+        print(f"Skipping {patient_folder}, gyroscope.csv not found.")
+        return
+
+    df = pd.read_csv(gyro_path)
+    df.dropna(inplace=True)
+    df["timestamp (+0700)"] = pd.to_datetime(df["timestamp (+0700)"])
+
+    patient_id = os.path.basename(patient_folder)
+    results = []
+
+    left_z = df["left-z-axis (deg/s)"].values
+    right_z = df["right-z-axis (deg/s)"].values
+    time = df["timestamp (+0700)"]
+
+    # Find peaks on left shank z-axis to segment gait cycles
+    left_peaks, _ = find_peaks(left_z, height=0.5, distance=80)
+
+    for i in range(len(left_peaks) - 1):
+        start = left_peaks[i]
+        end = left_peaks[i + 1]
+        if end - start < 10:
+            continue
+
+        window = df.iloc[start:end]
+        lz = window["left-z-axis (deg/s)"].values
+        rz = window["right-z-axis (deg/s)"].values
+        t = window["timestamp (+0700)"]
+
+        # Time-domain features
+        f = {
+            "patient_id": patient_id,
+            "window_id": i,
+            "start_time": t.iloc[0],
+            "end_time": t.iloc[-1],
+            "left_stride_duration": (t.iloc[-1] - t.iloc[0]).total_seconds(),
+            "left_z_mean": lz.mean(),
+            "left_z_std": lz.std(),
+            "left_z_max": lz.max(),
+            "left_z_min": lz.min(),
+            "left_motion_score": motion_score(lz),
+            "right_z_mean": rz.mean(),
+            "right_z_std": rz.std(),
+            "right_z_max": rz.max(),
+            "right_z_min": rz.min(),
+            "right_motion_score": motion_score(rz),
+        }
+
+        # Stance/swing estimation
+        left_phases = detect_stance_swing(lz, t)
+        right_phases = detect_stance_swing(rz, t)
+        f["left_stance_time"] = np.mean([p["stance_time"] for p in left_phases]) if left_phases else np.nan
+        f["left_swing_time"] = np.mean([p["swing_time"] for p in left_phases]) if left_phases else np.nan
+        f["right_stance_time"] = np.mean([p["stance_time"] for p in right_phases]) if right_phases else np.nan
+        f["right_swing_time"] = np.mean([p["swing_time"] for p in right_phases]) if right_phases else np.nan
+
+        # Gait symmetry
+        l_stride = f["left_stride_duration"]
+        r_stride = (right_phases[-1]["stance_time"] + right_phases[-1]["swing_time"]) if right_phases else np.nan
+        f["asymmetry_index"] = asymmetry_index([l_stride], [r_stride])
+        f["symmetry_ratio"] = symmetry_ratio([l_stride], [r_stride])
+
+        # Labels (gait asymmetry detection)
+        if np.isnan(f["asymmetry_index"]) or np.isnan(f["symmetry_ratio"]):
+            f["valid_gait_window"] = 0
+            f["label_strict"] = 2
+            f["label_moderate"] = 2
+            f["label_lenient"] = 2
         else:
-            score = -1
+            f["valid_gait_window"] = 1
+            f["label_strict"]   = 1 if abs(f["asymmetry_index"]) > 0.2  or f["symmetry_ratio"] < 0.8 else 0
+            f["label_moderate"] = 1 if abs(f["asymmetry_index"]) > 0.15 or f["symmetry_ratio"] < 0.85 else 0
+            f["label_lenient"]  = 1 if abs(f["asymmetry_index"]) > 0.1  or f["symmetry_ratio"] < 0.9 else 0
 
-        statistical_window = {
-            'patient_id': patient_id,
-            'window_id' : start_idx,
-            'left_mean' : np.mean(left_z),
-            'right_mean': np.mean(right_z),
-            'left_max'  : np.max(right_z),
-            'right_max' : np.max(right_z),
-            'left_min'  : np.min(left_z),
-            'right_min' : np.min(right_z),
-            'left_iqr'  : iqr(left_z),
-            'right_iqr' : iqr(right_z),
-            'asymmetry_score': score,
-            'class_label': status
-        }
-        statistical_time_domain_windows.append(statistical_window)     
+        results.append(f)
 
-        asymmetry_window = {
-            'patient_id'     : patient_id,
-            'window_id'      : start_idx,
-            'asymmetry_score': score,
-            'class_label'    : status
-        }
-        asymmetry_domain_windows.append(asymmetry_window)
+    result_df = pd.DataFrame(results)
+    out_path = os.path.join(patient_folder, "detection.csv")
+    result_df.to_csv(out_path, index=False)
+    print(f"✅ Saved {len(results)} gait cycles to {out_path}")
 
-    # Save the datasets created for each patient at the patient folder
-    df = pd.DataFrame(asymmetry_domain_windows)
-    df.to_csv(os.path.join(patient_path, 'detection_asymmetry.csv'), index=False)
-    
-    df_time_domain = pd.DataFrame(statistical_time_domain_windows)
-    df_time_domain.to_csv(os.path.join(patient_path, 'detection_time_domain.csv'), index=False)
-    
-    # Remove the gyroscope data files, cleaning up the patient directory
-    os.remove(os.path.join(patient_path, 'gyroscope.csv'))
-
-
-def flatten_list(gyro_data_list):
-    '''
-    Flatten a list of lists into a single list.
-    Args:
-        gyro_data_list (list): List of lists containing gyroscope data.
-    '''
-    return [item for sublist in gyro_data_list for item in sublist]
 
