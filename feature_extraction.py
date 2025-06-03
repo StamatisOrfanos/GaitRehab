@@ -343,68 +343,75 @@ def detect_stance_swing(z: np.ndarray, time: pd.Series) -> List[dict]:
 
 
 def extract_features_per_gait_cycle(patient_folder: str):
+    '''
+    Extract features from gyroscope data for each gait cycle in a patient's folder.
+    Args:
+        patient_folder (str): Path to the patient's folder containing gyroscope data.
+    '''
+    # Create the gyroscope data file from the left and right shank gyroscope data and then load the dataset
+    merge_data(patient_folder, os.path.join(patient_folder, 'LeftShank-Gyroscope.csv'),  os.path.join(patient_folder, 'RightShank-Gyroscope.csv'), 'gyroscope')
     gyro_path = os.path.join(patient_folder, "gyroscope.csv")
     if not os.path.exists(gyro_path):
         print(f"Skipping {patient_folder}, gyroscope.csv not found.")
         return
 
-    df = pd.read_csv(gyro_path)
-    df.dropna(inplace=True)
-    df["timestamp (+0700)"] = pd.to_datetime(df["timestamp (+0700)"])
+    data = pd.read_csv(gyro_path)
+    data.dropna(inplace=True)
+    data["timestamp (+0700)"] = pd.to_datetime(data["timestamp (+0700)"])
 
-    patient_id = os.path.basename(patient_folder)
+    # Get the patient ID from the folder name
+    status = '0' if patient_folder.__contains__('Healthy') else '1' 
+    patient_id = f'{patient_folder.split('/')[-1]}_{status}'
     results = []
 
-    left_z = df["left-z-axis (deg/s)"].values
-    right_z = df["right-z-axis (deg/s)"].values
-    time = df["timestamp (+0700)"]
-
     # Find peaks on left shank z-axis to segment gait cycles
+    left_z  = data["left-z-axis (deg/s)"].values
     left_peaks, _ = find_peaks(left_z, height=0.5, distance=80)
 
+
     for i in range(len(left_peaks) - 1):
+        # Skip if the segment is too short
         start = left_peaks[i]
         end = left_peaks[i + 1]
-        if end - start < 10:
-            continue
+        if end - start < 10: continue
 
-        window = df.iloc[start:end]
-        lz = window["left-z-axis (deg/s)"].values
-        rz = window["right-z-axis (deg/s)"].values
-        t = window["timestamp (+0700)"]
+        # Extract the window of data for this gait cycle
+        window      = data.iloc[start:end]
+        left_z_axis = window["left-z-axis (deg/s)"].values
+        right_z_axis= window["right-z-axis (deg/s)"].values
+        time        = window["timestamp (+0700)"]
 
         # Time-domain features
         f = {
             "patient_id": patient_id,
             "window_id": i,
-            "start_time": t.iloc[0],
-            "end_time": t.iloc[-1],
-            "left_stride_duration": (t.iloc[-1] - t.iloc[0]).total_seconds(),
-            "left_z_mean": lz.mean(),
-            "left_z_std": lz.std(),
-            "left_z_max": lz.max(),
-            "left_z_min": lz.min(),
-            "left_motion_score": motion_score(lz),
-            "right_z_mean": rz.mean(),
-            "right_z_std": rz.std(),
-            "right_z_max": rz.max(),
-            "right_z_min": rz.min(),
-            "right_motion_score": motion_score(rz),
+            "start_time": time.iloc[0],
+            "end_time": time.iloc[-1],
+            "left_z_mean": left_z_axis.mean(),
+            "left_z_std": left_z_axis.std(),
+            "left_z_max": left_z_axis.max(),
+            "left_z_min": left_z_axis.min(),
+            "left_motion_score": motion_score(left_z_axis),
+            "right_z_mean": right_z_axis.mean(),
+            "right_z_std": right_z_axis.std(),
+            "right_z_max": right_z_axis.max(),
+            "right_z_min": right_z_axis.min(),
+            "right_motion_score": motion_score(right_z_axis),
         }
 
         # Stance/swing estimation
-        left_phases = detect_stance_swing(lz, t)
-        right_phases = detect_stance_swing(rz, t)
-        f["left_stance_time"] = np.mean([p["stance_time"] for p in left_phases]) if left_phases else np.nan
-        f["left_swing_time"] = np.mean([p["swing_time"] for p in left_phases]) if left_phases else np.nan
+        left_phases  = detect_stance_swing(left_z_axis, time)
+        right_phases = detect_stance_swing(right_z_axis, time)
+        f["left_stance_time"]  = np.mean([p["stance_time"] for p in left_phases]) if left_phases else np.nan
+        f["left_swing_time"]   = np.mean([p["swing_time"] for p in left_phases]) if left_phases else np.nan
         f["right_stance_time"] = np.mean([p["stance_time"] for p in right_phases]) if right_phases else np.nan
-        f["right_swing_time"] = np.mean([p["swing_time"] for p in right_phases]) if right_phases else np.nan
+        f["right_swing_time"]  = np.mean([p["swing_time"] for p in right_phases]) if right_phases else np.nan
 
         # Gait symmetry
         l_stride = f["left_stride_duration"]
         r_stride = (right_phases[-1]["stance_time"] + right_phases[-1]["swing_time"]) if right_phases else np.nan
         f["asymmetry_index"] = asymmetry_index([l_stride], [r_stride])
-        f["symmetry_ratio"] = symmetry_ratio([l_stride], [r_stride])
+        f["symmetry_ratio"]  = symmetry_ratio([l_stride], [r_stride])
 
         # Labels (gait asymmetry detection)
         if np.isnan(f["asymmetry_index"]) or np.isnan(f["symmetry_ratio"]):
