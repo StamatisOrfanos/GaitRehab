@@ -182,11 +182,9 @@ def detection_merge_subject_features(base_dir: str, filename: str, output_name: 
     for patient_folder in os.listdir(base_dir):
         patient_path = os.path.join(base_dir, patient_folder)
         file_path = os.path.join(patient_path, filename)
-        status = 0 if patient_path.__contains__('Healthy') else 1
 
         if os.path.isfile(file_path):
             df = pd.read_csv(file_path)
-            df['patient_id'] = f'{patient_folder}_{status}'
             all_dfs.append(df)
 
     if all_dfs:
@@ -246,8 +244,7 @@ def delete_feature_files(patient_dir: str, data_type='gyroscope'):
         f'windowed_frequency_features_{data_type}.csv',
         'cross_limb_metrics.csv',
         f'{data_type}.csv',
-        'detection_time_domain.csv',
-        'detection_asymmetry_score.csv',
+        'detection.csv',
     ]
     
     for f in root_files:

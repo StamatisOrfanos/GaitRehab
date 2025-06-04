@@ -303,26 +303,37 @@ def motion_score(z_signal: np.ndarray):
     return np.max(np.abs(z_signal)) - np.min(np.abs(z_signal))
 
 
-def detect_stance_swing(z_axis: np.ndarray, time: pd.Series):
+def detect_stance_swing(z_filtered, time):
     '''
-    Detect stance and swing phases from the z-axis gyroscope signal.
+    Vectorized stance and swing phase detection from filtered z-axis gyro signal.
     Args:
-        z_axis (np.ndarray): Z-axis gyroscope signal.
-        time (pd.Series): Corresponding time values.
+        z_filtered (np.array): Filtered z-axis gyroscope data.
+        time (pd.Series): Corresponding time values (datetime).
     '''
-    zero_crossings = np.where(np.diff(np.sign(z_axis)))[0]
-    time = pd.to_datetime(time)
-    stance_swing = []
+    time = pd.Series(time).reset_index(drop=True)
+    zero_crossings = np.where(np.diff(np.sign(z_filtered)))[0]
+    if len(zero_crossings) < 2:
+        return []
 
-    for i in range(len(zero_crossings) - 1):
-        start = zero_crossings[i]
-        end = zero_crossings[i + 1]
-        if end - start < 2: continue
-        min_idx = np.argmin(z_axis[start:end]) + start
-        stance_time = (time[min_idx] - time[start]).total_seconds()
-        swing_time = (time[end] - time[min_idx]).total_seconds()
-        stance_swing.append({'stance_time': stance_time, 'swing_time': swing_time})
-    return stance_swing
+    start_idxs = zero_crossings[:-1]
+    end_idxs   = zero_crossings[1:]
+
+    valid_pairs  = [(s, e) for s, e in zip(start_idxs, end_idxs) if e - s > 1]
+    stance_times = []
+    swing_times  = []
+
+    for start, end in valid_pairs:
+        min_idx = np.argmin(z_filtered[start:end]) + start
+        
+        if min_idx >= len(time) or start >= len(time) or end >= len(time):
+            continue
+        
+        stance_time = (time.iloc[min_idx] - time.iloc[start]).total_seconds()
+        swing_time  = (time.iloc[end] - time.iloc[min_idx]).total_seconds()
+        stance_times.append(stance_time)
+        swing_times.append(swing_time)
+
+    return [{'stance_time': s, 'swing_time': w} for s, w in zip(stance_times, swing_times)]
 
 
 def extract_features_per_gait_cycle(patient_folder: str):
@@ -333,14 +344,9 @@ def extract_features_per_gait_cycle(patient_folder: str):
     '''
     print(f'Processing {patient_folder}...')
 
-    # Create gyroscope.csv from left and right IMUs
-    merge_data(
-        patient_folder,
-        os.path.join(patient_folder, 'LeftShank-Gyroscope.csv'),
-        os.path.join(patient_folder, 'RightShank-Gyroscope.csv'),
-        'gyroscope'
-    )
+    merge_data(patient_folder, os.path.join(patient_folder, 'LeftShank-Gyroscope.csv'), os.path.join(patient_folder, 'RightShank-Gyroscope.csv'), 'gyroscope')
     gyro_path = os.path.join(patient_folder, 'gyroscope.csv')
+    
     if not os.path.exists(gyro_path):
         print(f'Skipping {patient_folder}, gyroscope.csv not found.')
         return
@@ -348,26 +354,23 @@ def extract_features_per_gait_cycle(patient_folder: str):
     data = pd.read_csv(gyro_path).dropna()
     data['timestamp (+0700)'] = pd.to_datetime(data['timestamp (+0700)'])
 
-    # Get patient info from folder name
-    status = '0' if 'Healthy' in patient_folder else '1'
+    status     = '0' if 'Healthy' in patient_folder else '1'
     patient_id = f"{os.path.basename(patient_folder)}_{status}"
-
     results = []
 
-    # Segment gait cycles using left leg peaks
-    left_z = data['left-z-axis (deg/s)'].values
+    left_z        = data['left-z-axis (deg/s)'].values
     left_peaks, _ = find_peaks(left_z, height=0.5, distance=80)
 
     for i in range(len(left_peaks) - 1):
+        
         start = left_peaks[i]
         end = left_peaks[i + 1]
-        if end - start < 10:
-            continue
+        if end - start < 10: continue
 
         window = data.iloc[start:end]
         left_z_axis  = window['left-z-axis (deg/s)'].values
         right_z_axis = window['right-z-axis (deg/s)'].values
-        time = window['timestamp (+0700)']
+        time         = window['timestamp (+0700)']
 
         f = {
             'patient_id': patient_id,
@@ -383,54 +386,39 @@ def extract_features_per_gait_cycle(patient_folder: str):
             'right_z_std': right_z_axis.std(),
             'right_z_max': right_z_axis.max(),
             'right_z_min': right_z_axis.min(),
-            'right_motion_score': motion_score(right_z_axis),
+            'right_motion_score': motion_score(right_z_axis)
         }
 
-        # Gait timing detection
-        left_phases  = detect_stance_swing(left_z_axis, time)
+        left_phases = detect_stance_swing(left_z_axis, time)
         right_phases = detect_stance_swing(right_z_axis, time)
 
-        f['left_stance_time']  = np.mean([p['stance_time'] for p in left_phases]) if left_phases else np.nan
-        f['left_swing_time']   = np.mean([p['swing_time'] for p in left_phases]) if left_phases else np.nan
-        f['right_stance_time'] = np.mean([p['stance_time'] for p in right_phases]) if right_phases else np.nan
-        f['right_swing_time']  = np.mean([p['swing_time'] for p in right_phases]) if right_phases else np.nan
+        f['left_stance_time'] = np.mean([p['stance_time'] for p in left_phases])  if left_phases else np.nan
+        f['left_swing_time']  = np.mean([p['swing_time'] for p in left_phases])   if left_phases else np.nan
+        f['right_stance_time']= np.mean([p['stance_time'] for p in right_phases]) if right_phases else np.nan
+        f['right_swing_time'] = np.mean([p['swing_time'] for p in right_phases])  if right_phases else np.nan
 
-        # Stride durations
-        f['left_stride_duration'] = (time.iloc[-1] - time.iloc[0]).total_seconds()
-        if right_phases:
-            f['right_stride_duration'] = right_phases[-1]['stance_time'] + right_phases[-1]['swing_time']
-        else:
-            f['right_stride_duration'] = np.nan
+        left_stride  = (f['left_stance_time'] + f['left_swing_time']) if pd.notna(f['left_stance_time']) and pd.notna(f['left_swing_time']) else np.nan
+        right_stride = (f['right_stance_time'] + f['right_swing_time']) if pd.notna(f['right_stance_time']) and pd.notna(f['right_swing_time']) else np.nan
 
-        # Symmetry / asymmetry
-        left_stride  = f['left_stride_duration']
-        right_stride = f['right_stride_duration']
-
-        if not np.isnan(left_stride) and not np.isnan(right_stride):
-            f['asymmetry_index'] = asymmetry_index([left_stride], [right_stride])[0]
-            f['symmetry_ratio']  = symmetry_ratio([left_stride], [right_stride])[0]
-        else:
+        if pd.isna(left_stride) or pd.isna(right_stride):
+            f['valid_gait_window'] = 0
             f['asymmetry_index'] = np.nan
             f['symmetry_ratio']  = np.nan
-
-        # Labeling
-        if np.isnan(f['asymmetry_index']) or np.isnan(f['symmetry_ratio']):
-            f['valid_gait_window'] = 0
-            f['label_strict']   = 2
-            f['label_moderate'] = 2
-            f['label_lenient']  = 2
+            f['label_low_confidence']      = -1
+            f['label_moderate_confidence'] = -1
+            f['label_high_confidence']     = -1
         else:
             f['valid_gait_window'] = 1
-            f['label_strict']   = 1 if abs(f['asymmetry_index']) > 0.2 or f['symmetry_ratio'] < 0.8 else 0
-            f['label_moderate'] = 1 if abs(f['asymmetry_index']) > 0.15 or f['symmetry_ratio'] < 0.85 else 0
-            f['label_lenient']  = 1 if abs(f['asymmetry_index']) > 0.1 or f['symmetry_ratio'] < 0.9 else 0
+            f['asymmetry_index'] = asymmetry_index([left_stride], [right_stride])
+            f['symmetry_ratio']  = symmetry_ratio([left_stride], [right_stride])
+            f['label_low_confidence']      = 1 if abs(f['asymmetry_index']) > 0.2  or f['symmetry_ratio'] < 0.8 else 0
+            f['label_moderate_confidence'] = 1 if abs(f['asymmetry_index']) > 0.15 or f['symmetry_ratio'] < 0.85 else 0
+            f['label_high_confidence']     = 1 if abs(f['asymmetry_index']) > 0.1  or f['symmetry_ratio'] < 0.9 else 0
 
         results.append(f)
 
     result_df = pd.DataFrame(results)
     out_path = os.path.join(patient_folder, 'detection.csv')
     result_df.to_csv(out_path, index=False)
-    print(f'Saved {len(results)} gait cycles to {out_path}')
-
-
-
+    print(f'Saved {len(result_df)} gait cycles to {out_path}')
+    os.remove(os.path.join(patient_folder, 'gyroscope.csv'))
