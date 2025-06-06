@@ -404,16 +404,16 @@ def extract_features_per_gait_cycle(patient_folder: str):
             f['valid_gait_window'] = 0
             f['asymmetry_index'] = np.nan
             f['symmetry_ratio']  = np.nan
-            f['label_low_confidence']      = -1
-            f['label_moderate_confidence'] = -1
             f['label_high_confidence']     = -1
+            f['label_moderate_confidence'] = -1
+            f['label_low_confidence']      = -1
         else:
             f['valid_gait_window'] = 1
             f['asymmetry_index'] = asymmetry_index([left_stride], [right_stride])
             f['symmetry_ratio']  = symmetry_ratio([left_stride], [right_stride])
-            f['label_low_confidence']      = 1 if abs(f['asymmetry_index']) > 0.2  or f['symmetry_ratio'] < 0.8 else 0
+            f['label_high_confidence']     = 1 if abs(f['asymmetry_index']) > 0.2  or f['symmetry_ratio'] < 0.8 else 0
             f['label_moderate_confidence'] = 1 if abs(f['asymmetry_index']) > 0.15 or f['symmetry_ratio'] < 0.85 else 0
-            f['label_high_confidence']     = 1 if abs(f['asymmetry_index']) > 0.1  or f['symmetry_ratio'] < 0.9 else 0
+            f['label_low_confidence']      = 1 if abs(f['asymmetry_index']) > 0.1  or f['symmetry_ratio'] < 0.9 else 0
 
         results.append(f)
 
