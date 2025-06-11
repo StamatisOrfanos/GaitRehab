@@ -424,4 +424,4 @@ def extract_features_per_gait_cycle(patient_folder: str, fs: int=100):
     out_path = os.path.join(patient_folder, 'detection.csv')
     result_df.to_csv(out_path, index=False)
     print(f'Saved {len(result_df)} gait cycles to {out_path}')
-    os.remove(os.path.join(patient_folder, 'gyroscope.csv'))
+    # os.remove(os.path.join(patient_folder, 'gyroscope.csv'))

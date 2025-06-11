@@ -29,7 +29,7 @@ def calculate_gait_cycles():
     
 # --------------------------------------------------------------------------------------------------------------------------------------------
 
-def extract_features_per_gait_cycle(data):
+def extract_features_per_gait_cycle(data, fs: int=100):
     '''
     Extract features from gyroscope data for each gait cycle in a patient's folder.
     Args:
@@ -37,22 +37,22 @@ def extract_features_per_gait_cycle(data):
     '''
     result = []
     
-    data['timestamp (+0700)'] = pd.to_datetime(data['timestamp (+0700)'])
+    data['timestamp (+0700)']    = pd.to_datetime(data['timestamp (+0700)'])
+    data['left-z-axis (deg/s)']  = butter_low_pass(data['left-z-axis (deg/s)'], fs=fs)
+    data['right-z-axis (deg/s)'] = butter_low_pass(data['right-z-axis (deg/s)'], fs=fs)
 
     left_z        = data['left-z-axis (deg/s)'].values
     left_peaks, _ = find_peaks(left_z, height=0.5, distance=80)
 
     for i in range(len(left_peaks) - 1):
-        
         start = left_peaks[i]
         end = left_peaks[i + 1]
 
         window = data.iloc[start:end]
         left_z_axis  = window['left-z-axis (deg/s)'].values
         right_z_axis = window['right-z-axis (deg/s)'].values
-        time         = window['timestamp (+0700)']
-        
-        left_phases = detect_stance_swing(left_z_axis, time)
+        time         = window['timestamp (+0700)']        
+        left_phases  = detect_stance_swing(left_z_axis, time)
         right_phases = detect_stance_swing(right_z_axis, time)
 
         f = {
@@ -60,10 +60,11 @@ def extract_features_per_gait_cycle(data):
             'left_stance_time' : np.mean([p['stance_time'] for p in left_phases])  if left_phases else np.nan,
             'right_swing_time' : np.mean([p['swing_time'] for p in right_phases])  if right_phases else np.nan,
             'left_swing_time'  : np.mean([p['swing_time'] for p in left_phases])   if left_phases else np.nan,
-            'right_motion_score': motion_score(right_z_axis)
         }
 
         result.append(f)
+        
+    return result
 
 
 def detect_stance_swing(z_filtered, time):
@@ -98,11 +99,16 @@ def detect_stance_swing(z_filtered, time):
 
     return [{'stance_time': s, 'swing_time': w} for s, w in zip(stance_times, swing_times)]
 
-
-def motion_score(z_signal: np.ndarray):
+def butter_low_pass(data: np.array, cutoff=6, fs=100, order=2): # type: ignore
     '''
-    Calculate the motion score for a z-axis gyroscope signal.
+    Apply a low-pass Butterworth filter to the data.
     Args:
-        z_signal (np.ndarray): Z-axis gyroscope signal.
+        data (np.array): Input data to be filtered.
+        cutoff (float): Cutoff frequency in Hz.
+        fs (int): Sampling frequency in Hz.
+        order (int): Order of the filter.
     '''
-    return np.max(np.abs(z_signal)) - np.min(np.abs(z_signal))
+    nyq = 0.5 * fs
+    normal_cutoff = cutoff / nyq
+    b, a = butter(order, normal_cutoff, btype='low', analog=False) # type: ignore
+    return filtfilt(b, a, data)
