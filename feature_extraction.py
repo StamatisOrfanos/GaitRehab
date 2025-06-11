@@ -148,7 +148,7 @@ def gait_features(data_dir: str, data_type: str):
     left_stance_swing  = detect_stance_swing_fast(data['left-z-axis (deg/s)'], data['timestamp (+0700)'])
     right_stance_swing = detect_stance_swing_fast(data['right-z-axis (deg/s)'], data['timestamp (+0700)'])
     asymmetry = asymmetry_index(left_stride_times, right_stride_times)
-    symmetry = symmetry_ratio(left_stride_times, right_stride_times)
+    symmetry = symmetry_ratio(left_stride_times, right_stride_times)  
     
     output_dir = os.path.join(data_dir, 'gait_features')
     os.makedirs(output_dir, exist_ok=True) 
@@ -377,15 +377,15 @@ def extract_features_per_gait_cycle(patient_folder: str):
             'window_id': i,
             'start_time': time.iloc[0],
             'end_time': time.iloc[-1],
-            'left_z_mean': left_z_axis.mean(),
-            'left_z_std': left_z_axis.std(),
-            'left_z_max': left_z_axis.max(),
-            'left_z_min': left_z_axis.min(),
+            'left_z_mean': left_z_axis.mean(),  
+            'left_z_std': left_z_axis.std(),    
+            'left_z_max': left_z_axis.max(),    
+            'left_z_min': left_z_axis.min(),    
             'left_motion_score': motion_score(left_z_axis),
             'right_z_mean': right_z_axis.mean(),
-            'right_z_std': right_z_axis.std(),
-            'right_z_max': right_z_axis.max(),
-            'right_z_min': right_z_axis.min(),
+            'right_z_std': right_z_axis.std(),  
+            'right_z_max': right_z_axis.max(),  
+            'right_z_min': right_z_axis.min(),  
             'right_motion_score': motion_score(right_z_axis)
         }
 
