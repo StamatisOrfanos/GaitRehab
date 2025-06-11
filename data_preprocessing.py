@@ -95,7 +95,7 @@ def classification_aggregate_features(base_dir: str, label: int):
             process_cross_limb_metrics(patient_path, patient_features)
 
             # Add Label, 0 = healthy, 1 = stroke
-            patient_features['label'] = label
+            patient_features['label'] = label # type: ignore
             all_features.append(patient_features)
 
         except Exception as e:

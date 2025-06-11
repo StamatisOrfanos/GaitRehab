@@ -336,7 +336,7 @@ def detect_stance_swing(z_filtered, time):
     return [{'stance_time': s, 'swing_time': w} for s, w in zip(stance_times, swing_times)]
 
 
-def extract_features_per_gait_cycle(patient_folder: str):
+def extract_features_per_gait_cycle(patient_folder: str, fs: int=100):
     '''
     Extract features from gyroscope data for each gait cycle in a patient's folder.
     Args:
@@ -351,8 +351,11 @@ def extract_features_per_gait_cycle(patient_folder: str):
         print(f'Skipping {patient_folder}, gyroscope.csv not found.')
         return
 
+    # Load data, fix timestamp type and use a low-pass Butterworth filter 
     data = pd.read_csv(gyro_path).dropna()
-    data['timestamp (+0700)'] = pd.to_datetime(data['timestamp (+0700)'])
+    data['timestamp (+0700)']    = pd.to_datetime(data['timestamp (+0700)'])
+    data['left-z-axis (deg/s)']  = butter_low_pass(data['left-z-axis (deg/s)'], fs=fs)
+    data['right-z-axis (deg/s)'] = butter_low_pass(data['right-z-axis (deg/s)'], fs=fs)
 
     status     = '0' if 'Healthy' in patient_folder else '1'
     patient_id = f"{os.path.basename(patient_folder)}_{status}"
