@@ -112,3 +112,22 @@ def butter_low_pass(data: np.array, cutoff=6, fs=100, order=2): # type: ignore
     normal_cutoff = cutoff / nyq
     b, a = butter(order, normal_cutoff, btype='low', analog=False) # type: ignore
     return filtfilt(b, a, data)
+
+
+def extract_real_imu_noise(gyro_df, fs=100):
+    left_z = gyro_df["left-z-axis (deg/s)"].dropna().values
+    right_z = gyro_df["right-z-axis (deg/s)"].dropna().values
+
+    left_smooth = butter_low_pass(left_z, fs=fs)
+    right_smooth = butter_low_pass(right_z, fs=fs)
+
+    left_noise = left_z - left_smooth
+    right_noise = right_z - right_smooth
+    return left_noise, right_noise
+
+def sample_noise(residuals, n_samples):
+    if len(residuals) <= n_samples:
+        repeats = (n_samples // len(residuals)) + 1
+        residuals = np.tile(residuals, repeats)
+    start = np.random.randint(0, len(residuals) - n_samples)
+    return residuals[start:start + n_samples]
