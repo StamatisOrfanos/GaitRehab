@@ -1,45 +1,42 @@
 \section{Introduction}
-
 \label{sec:introduction}
-
 The study of human gait has long been recognized as a fundamental method for assessing motor function, neurological health, and musculoskeletal integrity. 
-Gait analysis, defined as the systematic study of human locomotion, offers critical insights into motor control, functional ability, and the presence of 
-pathological deviations \citep{ref1, ref2}. While observational assessments are commonly used in clinical practice, they often lack the precision required 
+Gait analysis, defined as the systematic study of human locomotionn as it offers critical insights into motor control, functional ability, and the presence of 
+pathological deviations \cite{ref1, ref2}. While observational assessments are commonly used in clinical practice, they often lack the precision required 
 to detect and quantify subtle gait asymmetries without dedicated instrumentation. Traditional gait analysis systems, typically found in motion analysis 
 laboratories, utilize advanced tools such as optical motion capture, force platforms, and surface electromyography to capture high-resolution biomechanical 
 data \cite{ref3}. Despite their accuracy, these systems are characterized by high financial costs, space requirements, and complex operational demands, with 
 total investments frequently reaching several million dollars \cite{ref4}.
 
-This economic and logistical barrier becomes particularly problematic in the context of **stroke rehabilitation**, where timely, repeated 
-assessments of motor asymmetry are crucial. Stroke survivors often experience **hemiparesis**, a condition that leads to asymmetrical gait 
+This economic and logistical barrier becomes particularly problematic in the context of stroke rehabilitation, where timely, repeated 
+assessments of motor asymmetry are vital. Stroke survivors often experience hemiparesis, a condition that leads to asymmetrical gait 
 characterized by unequal stance or swing phases between limbs \cite{ref5}. Detecting and quantifying such asymmetries in a reliable and scalable 
 manner remains a major challenge in both inpatient and outpatient care settings. The early and continuous identification of gait deviations 
-is vital for tailoring rehabilitation programs, tracking recovery progress, and preventing secondary complications such as joint degeneration 
-or falls \cite{ref6}, \cite{ref7}.
+is vital for creating personalized rehabilitation programs, tracking recovery progress, and preventing secondary complications such as joint degeneration 
+or in some cases falls \cite{ref6}, \cite{ref7}.
 
-With recent advances in the Internet of Things (IoT) and embedded computing, there has been a surge of interest in using **wearable sensors**, 
+With recent advances in the Internet of Things (IoT) and embedded computing, there has been a surge of interest in using wearable sensors, 
 particularly inertial measurement units (IMUs), to provide low-cost and scalable alternatives to lab-based gait analysis systems \cite{ref8}–\cite{ref10}. 
-These sensors—such as **accelerometers and gyroscopes**—enable three-dimensional kinematic monitoring in naturalistic environments, offering 
-an ideal platform for remote rehabilitation and real-time feedback \cite{ref11}, \cite{ref12}. Combined with modern **machine learning techniques**, wearable 
+These sensors, such as accelerometers and gyroscopes, enable three-dimensional kinematic monitoring in every day environments, offering 
+an ideal platform for remote monitoring and rehabilitation \cite{ref11}, \cite{ref12}. Combined with modern machine learning techniques, wearable 
 IMU data can be processed to extract relevant temporal and kinematic features, enabling the classification of abnormal gait patterns with 
 high accuracy \cite{ref13}, \cite{ref14}.
 
-Previous studies have applied models such as **Support Vector Machines (SVM)**, **Random Forests**, and **Convolutional Neural Networks (CNN)** to 
+Previous studies have applied models such as Support Vector Machines (SVM), Random Forests, and Convolutional Neural Networks (CNN) to 
 classify human movement patterns using IMU-derived features \cite{ref15}, \cite{ref16}. However, these approaches often rely on extensive datasets, high 
-computational resources, or opaque feature extraction pipelines. Furthermore, there remains a lack of lightweight, interpretable methods specifically 
+computational resources, or complicated feature extraction pipelines. Furthermore, there remains a lack of lightweight, interpretable methods specifically 
 tailored to detect clinically meaningful gait asymmetries—especially in populations recovering from neurological events such as stroke.
 
-To address this gap, this work proposes a minimal-feature, machine learning-based pipeline for classifying normal versus abnormal gait patterns using 
-**statistical extrema from bilateral gyroscope signals**. The approach is designed to be computationally efficient and interpretable, making it suitable 
-for **embedded deployment in wearable rehabilitation systems**. A leave-one-out cross-validation (LOOCV) strategy is employed to ensure model 
+To address this gap, this work proposes a minimal-feature, machine learning-based pipeline for classifying normal versus abnormal gait signals using 
+statistical extrema from bilateral gyroscope signals. The approach is designed to be computationally efficient and interpretable, making it suitable 
+for embedded deployment in wearable rehabilitation systems. A leave-one-out cross-validation (LOOCV) strategy is employed to ensure model 
 generalizability across individuals, particularly relevant for heterogeneous stroke populations.
 
-The contributions of this work are threefold:
+The contributions of this work are twofold:
+\begin{itemize}
+    \item the use of biomechanically relevant, low-dimensional gyroscope features for gait classification
+    \item a comparative evaluation of classic machine learning models using LOOCV on subject-level data
+\end{itemize}
+ 
+ 
 
-* (i) the use of biomechanically relevant, low-dimensional gyroscope features for gait classification;
-* (ii) a comparative evaluation of classic machine learning models using LOOCV on subject-level data; and
-* (iii) a demonstration of the feasibility of deploying these models in real-time, wearable stroke rehabilitation settings.
-
-The remainder of this paper is structured as follows: Section II reviews related work in wearable gait analysis and machine learning classification. 
-Section III details the dataset, feature engineering, and modeling approach. Section IV presents the experimental results and performance comparisons. 
-Finally, Section V discusses the implications, limitations, and potential for future integration with real-time rehabilitation systems.
