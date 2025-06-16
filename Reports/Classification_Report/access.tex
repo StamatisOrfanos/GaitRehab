@@ -4,19 +4,21 @@
 \usepackage{algorithmic}
 \usepackage{graphicx}
 \usepackage{textcomp}
+\bibliographystyle{IEEEtran}
+\bibliography{bibliography}
 \def\BibTeX{{\rm B\kern-.05em{\sc i\kern-.025em b}\kern-.08em
     T\kern-.1667em\lower.7ex\hbox{E}\kern-.125emX}}
 \begin{document}
 \history{Date of publication xxxx 00, 0000, date of current version xxxx 00, 0000.}
 \doi{10.1109/ACCESS.2017.DOI}
 
-\title{Preparation of Papers for IEEE ACCESS}
-\author{\uppercase{First A. Author}\authorrefmark{1}, \IEEEmembership{Fellow, IEEE},
-\uppercase{Second B. Author\authorrefmark{2}, and Third C. Author,
-Jr}.\authorrefmark{3},
-\IEEEmembership{Member, IEEE}}
-\address[1]{National Institute of Standards and 
-Technology, Boulder, CO 80305 USA (e-mail: author@boulder.nist.gov)}
+\title{Machine Learning-Based Classification of Abnormal Gait Patterns Using Wearable Gyroscope Data}
+
+\author{\uppercase{Stamatios Orfanos}\authorrefmark{1}, \IEEEmembership{Fellow, IEEE},
+\uppercase{Second B. Author\authorrefmark{2}, and Third C. Author,Jr}.\authorrefmark{3}, \IEEEmembership{Member, IEEE}}
+
+
+\address[1]{University of Piraeus, CO 80305 USA (e-mail: sorfanos@unipi.gr)}
 \address[2]{Department of Physics, Colorado State University, Fort Collins, 
 CO 80523 USA (e-mail: author@lamar.colostate.edu)}
 \address[3]{Electrical Engineering Department, University of Colorado, Boulder, CO 
@@ -29,37 +31,22 @@ Commerce under Grant BS123456.''}
 \markboth
 {Author \headeretal: Preparation of Papers for IEEE TRANSACTIONS and JOURNALS}
 {Author \headeretal: Preparation of Papers for IEEE TRANSACTIONS and JOURNALS}
-
-\corresp{Corresponding author: First A. Author (e-mail: author@ boulder.nist.gov).}
+\corresp{Corresponding author: Stamatios Orfanos (e-mail: sorfanos@unipi.gr).}
 
 \begin{abstract}
-These instructions give you guidelines for preparing papers for 
-IEEE Access. Use this document as a template if you are 
-using \LaTeX. Otherwise, use this document as an 
-instruction set. The electronic file of your paper will be formatted further 
-at IEEE. Paper titles should be written in uppercase and lowercase letters, 
-not all uppercase. Avoid writing long formulas with subscripts in the title; 
-short formulas that identify the elements are fine (e.g., "Nd--Fe--B"). Do 
-not write ``(Invited)'' in the title. Full names of authors are preferred in 
-the author field, but are not required. Put a space between authors' 
-initials. The abstract must be a concise yet comprehensive reflection of 
-what is in your article. In particular, the abstract must be self-contained, 
-without abbreviations, footnotes, or references. It should be a microcosm of 
-the full article. The abstract must be between 150--250 words. Be sure that 
-you adhere to these limits; otherwise, you will need to edit your abstract 
-accordingly. The abstract must be written as one paragraph, and should not 
-contain displayed mathematical equations or tabular material. The abstract 
-should include three or four different keywords or phrases, as this will 
-help readers to find it. It is important to avoid over-repetition of such 
-phrases as this can result in a page being rejected by search engines. 
-Ensure that your abstract reads well and is grammatically correct.
+Accurate classification of gait abnormalities is essential for monitoring and rehabilitation for stroke patients. In this study, we present a 
+lightweight machine learning framework that classifies normal versus abnormal gait signals using statistical features derived from wearable gyroscope sensors. 
+Specifically, we extract statistical values from the z-axis angular velocity of both legs and evaluate multiple classifiers including logistic regression, 
+support vector machines, and ensemble methods. A leave-one-out cross-validation (LOOCV) strategy is employed to maximize generalization across subjects. 
+Experimental results show that several models achieve accuracy and area under the curve (AUC) values exceeding 0.95, with K-Nearest Neighbors and SVM-based 
+models demonstrating nearly perfect separability (AUC = 0.99). These findings highlight the potential of minimal yet biomechanically relevant gyroscope 
+features for effective gait classification in real-world healthcare settings. The proposed pipeline is computationally efficient and well-suited for deployment 
+in wearable or remote monitoring systems. Future work will focus on real-time deployment of the model in embedded systems and its integration within 
+gait rehabilitation platforms for continuous patient monitoring by healthcare professionals.
 \end{abstract}
 
 \begin{keywords}
-Enter key words or phrases in alphabetical 
-order, separated by commas. For a list of suggested keywords, send a blank 
-e-mail to keywords@ieee.org or visit \underline
-{http://www.ieee.org/organizations/pubs/ani\_prod/keywrd98.txt}
+Gait analysis, Gait classification, Gyroscope features, Health monitoring , Inertial measurement units (IMUs), Machine learning, Stroke Rehabilitation, Wearable sensors
 \end{keywords}
 
 \titlepgskip=-15pt
@@ -739,93 +726,7 @@ See \cite{b34}.
 
 \end{itemize}
 
-\begin{thebibliography}{00}
 
-\bibitem{b1} G. O. Young, ``Synthetic structure of industrial plastics,'' in \emph{Plastics,} 2\textsuperscript{nd} ed., vol. 3, J. Peters, Ed. New York, NY, USA: McGraw-Hill, 1964, pp. 15--64.
-
-\bibitem{b2} W.-K. Chen, \emph{Linear Networks and Systems.} Belmont, CA, USA: Wadsworth, 1993, pp. 123--135.
-
-\bibitem{b3} J. U. Duncombe, ``Infrared navigation---Part I: An assessment of feasibility,'' \emph{IEEE Trans. Electron Devices}, vol. ED-11, no. 1, pp. 34--39, Jan. 1959, 10.1109/TED.2016.2628402.
-
-\bibitem{b4} E. P. Wigner, ``Theory of traveling-wave optical laser,'' \emph{Phys. Rev}., vol. 134, pp. A635--A646, Dec. 1965.
-
-\bibitem{b5} E. H. Miller, ``A note on reflector arrays,'' \emph{IEEE Trans. Antennas Propagat}., to be published.
-
-\bibitem{b6} E. E. Reber, R. L. Michell, and C. J. Carter, ``Oxygen absorption in the earth's atmosphere,'' Aerospace Corp., Los Angeles, CA, USA, Tech. Rep. TR-0200 (4230-46)-3, Nov. 1988.
-
-\bibitem{b7} J. H. Davis and J. R. Cogdell, ``Calibration program for the 16-foot antenna,'' Elect. Eng. Res. Lab., Univ. Texas, Austin, TX, USA, Tech. Memo. NGL-006-69-3, Nov. 15, 1987.
-
-\bibitem{b8} \emph{Transmission Systems for Communications}, 3\textsuperscript{rd} ed., Western Electric Co., Winston-Salem, NC, USA, 1985, pp. 44--60.
-
-\bibitem{b9} \emph{Motorola Semiconductor Data Manual}, Motorola Semiconductor Products Inc., Phoenix, AZ, USA, 1989.
-
-\bibitem{b10} G. O. Young, ``Synthetic structure of industrial
-plastics,'' in Plastics, vol. 3, Polymers of Hexadromicon, J. Peters,
-Ed., 2\textsuperscript{nd} ed. New York, NY, USA: McGraw-Hill, 1964, pp. 15-64.
-[Online]. Available:
-\underline{http://www.bookref.com}.
-
-\bibitem{b11} \emph{The Founders' Constitution}, Philip B. Kurland
-and Ralph Lerner, eds., Chicago, IL, USA: Univ. Chicago Press, 1987.
-[Online]. Available: \underline{http://press-pubs.uchicago.edu/founders/}
-
-\bibitem{b12} The Terahertz Wave eBook. ZOmega Terahertz Corp., 2014.
-[Online]. Available:
-\underline{http://dl.z-thz.com/eBook/zomega\_ebook\_pdf\_1206\_sr.pdf}. Accessed on: May 19, 2014.
-
-\bibitem{b13} Philip B. Kurland and Ralph Lerner, eds., \emph{The
-Founders' Constitution.} Chicago, IL, USA: Univ. of Chicago Press,
-1987, Accessed on: Feb. 28, 2010, [Online] Available:
-\underline{http://press-pubs.uchicago.edu/founders/}
-
-\bibitem{b14} J. S. Turner, ``New directions in communications,'' \emph{IEEE J. Sel. Areas Commun}., vol. 13, no. 1, pp. 11-23, Jan. 1995.
-
-\bibitem{b15} W. P. Risk, G. S. Kino, and H. J. Shaw, ``Fiber-optic frequency shifter using a surface acoustic wave incident at an oblique angle,'' \emph{Opt. Lett.}, vol. 11, no. 2, pp. 115--117, Feb. 1986.
-
-\bibitem{b16} P. Kopyt \emph{et al., ``}Electric properties of graphene-based conductive layers from DC up to terahertz range,'' \emph{IEEE THz Sci. Technol.,} to be published. DOI: 10.1109/TTHZ.2016.2544142.
-
-\bibitem{b17} PROCESS Corporation, Boston, MA, USA. Intranets:
-Internet technologies deployed behind the firewall for corporate
-productivity. Presented at INET96 Annual Meeting. [Online].
-Available: \underline{http://home.process.com/Intranets/wp2.htp}
-
-\bibitem{b18} R. J. Hijmans and J. van Etten, ``Raster: Geographic analysis and modeling with raster data,'' R Package Version 2.0-12, Jan. 12, 2012. [Online]. Available: \underline {http://CRAN.R-project.org/package=raster} 
-
-\bibitem{b19} Teralyzer. Lytera UG, Kirchhain, Germany [Online].
-Available:
-\underline{http://www.lytera.de/Terahertz\_THz\_Spectroscopy.php?id=home}, Accessed on: Jun. 5, 2014
-
-\bibitem{b20} U.S. House. 102\textsuperscript{nd} Congress, 1\textsuperscript{st} Session. (1991, Jan. 11). \emph{H. Con. Res. 1, Sense of the Congress on Approval of}  \emph{Military Action}. [Online]. Available: LEXIS Library: GENFED File: BILLS
-
-\bibitem{b21} Musical toothbrush with mirror, by L.M.R. Brooks. (1992, May 19). Patent D 326 189 [Online]. Available: NEXIS Library: LEXPAT File: DES
-
-\bibitem{b22} D. B. Payne and J. R. Stern, ``Wavelength-switched pas- sively coupled single-mode optical network,'' in \emph{Proc. IOOC-ECOC,} Boston, MA, USA, 1985, pp. 585--590.
-
-\bibitem{b23} D. Ebehard and E. Voges, ``Digital single sideband detection for interferometric sensors,'' presented at the \emph{2\textsuperscript{nd} Int. Conf. Optical Fiber Sensors,} Stuttgart, Germany, Jan. 2-5, 1984.
-
-\bibitem{b24} G. Brandli and M. Dick, ``Alternating current fed power supply,'' U.S. Patent 4 084 217, Nov. 4, 1978.
-
-\bibitem{b25} J. O. Williams, ``Narrow-band analyzer,'' Ph.D. dissertation, Dept. Elect. Eng., Harvard Univ., Cambridge, MA, USA, 1993.
-
-\bibitem{b26} N. Kawasaki, ``Parametric study of thermal and chemical nonequilibrium nozzle flow,'' M.S. thesis, Dept. Electron. Eng., Osaka Univ., Osaka, Japan, 1993.
-
-\bibitem{b27} A. Harrison, private communication, May 1995.
-
-\bibitem{b28} B. Smith, ``An approach to graphs of linear forms,'' unpublished.
-
-\bibitem{b29} A. Brahms, ``Representation error for real numbers in binary computer arithmetic,'' IEEE Computer Group Repository, Paper R-67-85.
-
-\bibitem{b30} IEEE Criteria for Class IE Electric Systems, IEEE Standard 308, 1969.
-
-\bibitem{b31} Letter Symbols for Quantities, ANSI Standard Y10.5-1968.
-
-\bibitem{b32} R. Fardel, M. Nagel, F. Nuesch, T. Lippert, and A. Wokaun, ``Fabrication of organic light emitting diode pixels by laser-assisted forward transfer,'' \emph{Appl. Phys. Lett.}, vol. 91, no. 6, Aug. 2007, Art. no. 061103.~
-
-\bibitem{b33} J. Zhang and N. Tansu, ``Optical gain and laser characteristics of InGaN quantum wells on ternary InGaN substrates,'' \emph{IEEE Photon. J.}, vol. 5, no. 2, Apr. 2013, Art. no. 2600111
-
-\bibitem{b34} S. Azodolmolky~\emph{et al.}, Experimental demonstration of an impairment aware network planning and operation tool for transparent/translucent optical networks,''~\emph{J. Lightw. Technol.}, vol. 29, no. 4, pp. 439--448, Sep. 2011.
-
-\end{thebibliography}
 
 \begin{IEEEbiography}[{\includegraphics[width=1in,height=1.25in,clip,keepaspectratio]{a1.png}}]{First A. Author} (M'76--SM'81--F'87) and all authors may include 
 biographies. Biographies are often not included in conference-related
