@@ -7,3 +7,52 @@ __pycache__
 .npz
 __init__.py
 __pycache__
+
+
+# LaTeX intermediate and output files
+*.aux
+*.bbl
+*.blg
+*.brf
+*.fls
+*.fdb_latexmk
+*.glo
+*.gls
+*.glg
+*.idx
+*.ilg
+*.ind
+*.lof
+*.log
+*.lot
+*.nav
+*.out
+*.snm
+*.synctex.gz
+*.toc
+*.vrb
+*.acn
+*.acr
+*.alg
+*.dvi
+*.pdfsync
+*.synctex(busy)
+*.run.xml
+
+# Output PDF (optional if you commit compiled PDFs)
+*.pdf
+
+# Editors
+*~
+*.swp
+*.bak
+*.tmp
+*.backup
+*.DS_Store
+Thumbs.db
+
+# Latexmk specific
+latexmkrc
+
+# Overleaf project zip exports
+*.zip
