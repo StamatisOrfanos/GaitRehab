@@ -1,0 +1,37 @@
+\section{Materials and Methods}
+\label{sec:materials_and_methods}
+
+Building on the limitations highlighted in prior studies, this work introduces a simple yet effective classification framework for detecting abnormal gait patterns. 
+The approach relies on just four carefully selected features derived from gyroscope signals—extremal values that are both biomechanically meaningful and easy to compute. 
+Designed with practical deployment in mind, the framework prioritizes efficiency and interpretability, making it well-suited for use in wearable systems. To ensure that 
+the model generalizes well across individuals, particularly in diverse clinical populations, we employ a leave-one-out cross-validation (LOOCV) strategy.
+
+\subsection{Dataset Description}
+The dataset used in this study was collected from a total of 18 participants, comprising 9 healthy individuals and 9 stroke survivors. 
+The inclusion of both able-bodied and neurologically impaired subjects was intended to support the development of a binary classification 
+model capable of distinguishing between normal and abnormal gait patterns. 
+
+**At the time of writing, detailed demographic data (e.g., age, gender, affected limb) are being finalized and will be presented in a subsequent demographics table.
+
+All participants underwent gait data collection using wearable inertial measurement units (IMUs). Each subject was equipped with sensors placed on the left and right 
+shanks, as well as the left and right thighs as seen on . These positions were selected to capture comprehensive lower-limb kinematic data, with particular emphasis on the 
+angular velocity along the z-axis—corresponding to the rotational movement of the legs during gait. The IMUs recorded tri-axial gyroscope data at a consistent 
+sampling rate of 100Hz, and sessions were conducted under supervised walking trials on a flat indoor surface to ensure safety and signal consistency.
+
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=0.8\textwidth]{Images/.png}
+    \caption{Placement of IMUs on the lower limbs during data collection.}
+    \label{fig:imu_placement}
+\end{figure}
+
+\subsection{Feature Extraction}
+
+
+
+
+\subsection{Classification Models}
+
+\subsection{Evaluation Strategy}
+
+\subsection{Dataset Description}

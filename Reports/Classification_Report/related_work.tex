@@ -2,24 +2,25 @@
 \label{sec:related_work}
 The use of inertial measurement units (IMUs) for gait analysis has gained traction in both research and clinical domains, because of their  portability, affordability, 
 and ability to collect kinematic data in real-world environments. There has been a number of studies that have validated the feasibility and accuracy of IMU-based 
-gait monitoring in healthy, aging and impaired populations. An example of this case is the research by Yoon \textit{et al.} \cite{ref20}, where a cross-sectional 
-study was conducted using wearable IMUs to assess gait parameters in younger and older adults, confirming their reliability compared to traditional 
-magnetometer-based systems. Similarly, systematic reviews, like the one by Prisco \textit{et al.} \cite{ref21} and Zhu \textit{et al.} \cite{ref22} have 
-comprehensively examined the validity of wearable inertial sensors, highlighting the effectiveness of single- and multi-point IMU configurations for capturing 
-clinically relevant gait metrics.
+gait monitoring in healthy, aging and impaired populations. 
 
-Many studies have focused on gait event detection—such as identifying heel strikes or toe-offs—using IMUs. 
-Voisard \textit{et al.} \cite{ref23} developed an automatic gait event detection algorithm capable of operating accurately across healthy 
-individuals and patients with moderate to severe impairments, including those recovering from stroke. Larsen \textit{et al.} \cite{ref24} extended this line 
+One such research effort was conducted by Yoon \textit{et al.} \cite{ref20}, where a cross-sectional study was created using wearable IMUs to assess gait parameters
+in younger and older adults, confirming their reliability compared to traditional magnetometer-based systems. Furthermore systematic reviews, like the one by 
+Prisco \textit{et al.} \cite{ref21} and Zhu \textit{et al.} \cite{ref22} have examined in detail the validity and usability of wearable inertial sensors, showcasing 
+the effectiveness of single- and multi-point IMU configurations for capturing clinically relevant gait metrics.
+
+A lot of research work has focused on gait event detection, such as identifying heel strikes or toe-offs, using IMUs. Specifically Voisard \textit{et al.} \cite{ref23}
+developed an automatic gait event detection using both IMU data and an instrumented mat, creating an algorithm capable of operating accurately across healthy individuals
+and patients with moderate to severe impairments, including those recovering from stroke. Larsen \textit{et al.} \cite{ref24} extended this line 
 of research by introducing a neural network-based approach optimized for smartphone-embedded IMUs, achieving high detection accuracy in real-world conditions.
 
-Despite the technical progress, much of the literature focuses on algorithmic sophistication or system validation rather than clinical interpretability or 
-rehabilitation deployment. Bhole and Gokhale \cite{ref25} proposed an IMU-based system for basic gait event analysis, while Gudmundsson and 
-Runarsson \cite{ref26} evaluated IMU sensor integration with heuristic rules for movement phase detection. However, these studies often lack the subject-specific 
-generalization or low-complexity pipelines required for real-time, embedded medical use.
+Despite the continuous progress, the majority of the literature focuses mainly on algorithmic sophistication or system validation rather than clinical
+interpretability or rehabilitation deployment. Also Bhole and Gokhale \cite{ref25} proposed an IMU-based system for basic gait event analysis, 
+while Gudmundsson and Runarsson \cite{ref26} evaluated the use of IMU sensor integration with heuristic rules for movement phase detection. However, all these 
+studies often lack the subject-specific generalization or low-complexity pipelines required for real-time, embedded medical use.
 
-Notably, few works have been designed specifically for stroke rehabilitation, where gait asymmetry and inter-subject variability are prevalent. 
-Patterson \textit{et al.} \cite{ref27} quantified temporal gait asymmetries among community-ambulating stroke survivors, while Zhao \textit{et al.} 
+It is interesting to note that only a few works have been designed specifically for stroke rehabilitation, where gait asymmetry and inter-subject variability are 
+prevalent. Patterson \textit{et al.} \cite{ref27} quantified temporal gait asymmetries among community-ambulating stroke survivors, while Zhao \textit{et al.} 
 \cite{ref28} presented a dual foot-mounted IMU system for rehabilitation assessment in patients with cerebral thrombosis. Their system used an 
 inequality-constrained ZUPT-aided inertial navigation approach to estimate gait parameters. However, these approaches often rely on dense feature sets 
 or require manual tuning, making them less suitable for scalable deployment.
