@@ -1,0 +1,19 @@
+\section{Discussion}
+\label{sec:discussion}
+The experimental results demonstrate that even with a minimal set of biomechanically relevant features—specifically, the minimum and maximum 
+values of z-axis gyroscope angular velocity from both legs—machine learning models can achieve highly accurate gait classification. Notably, 
+the best-performing models (KNN, SVM with Linear and RBF kernels, and Logistic Regression) consistently achieved accuracy scores of 94.44\% and 
+an AUC of 1.00 under Leave-One-Out Cross-Validation (LOOCV), underscoring the strong discriminatory power of these features.
+
+An interesting observation is the consistent performance among all SVM variants, which supports the hypothesis that gait patterns exhibit linearly 
+and non-linearly separable structures in this feature space. In contrast, XGBoost performed relatively poorly with an AUC of 0.60, suggesting 
+that tree-based methods may be less effective with such a low-dimensional, dense feature set. This performance discrepancy highlights the importance 
+of model selection in small-feature, high-signal contexts.
+
+The confusion matrices further support the robustness of the top models, showing very low rates of misclassification, especially for models 
+like KNN and Logistic Regression, which only misclassified a single instance. The strong diagonal dominance across models, even in LOOCV, 
+suggests excellent generalization across subjects.
+
+These findings also emphasize the practical benefit of interpretable and simple features. By focusing on maximum and minimum angular 
+velocities—metrics that can be understood by clinicians and possibly influenced by patient training—this approach supports not only 
+automated classification but also explainable feedback loops in rehabilitation settings.
