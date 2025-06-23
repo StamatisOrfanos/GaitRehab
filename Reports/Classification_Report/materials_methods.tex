@@ -2,28 +2,68 @@
 \label{sec:materials_and_methods}
 
 Building on the limitations highlighted in prior studies, this work introduces a simple yet effective classification framework for detecting abnormal gait patterns. 
-The approach relies on just four carefully selected features derived from gyroscope signals—extremal values that are both biomechanically meaningful and easy to compute. 
-Designed with practical deployment in mind, the framework prioritizes efficiency and interpretability, making it well-suited for use in wearable systems. To ensure that 
-the model generalizes well across individuals, particularly in diverse clinical populations, we employ a leave-one-out cross-validation (LOOCV) strategy.
+The approach relies on just four carefully selected features derived from gyroscope signals, extremal values that are both biomechanically meaningful and easy to compute. 
+To ensure that the model generalizes well across individuals, particularly in diverse clinical populations, we employ a leave-one-out cross-validation (LOOCV) strategy.
 
 \subsection{Dataset Description}
-The dataset used in this study was collected from a total of 18 participants, comprising 9 healthy individuals and 9 stroke survivors. 
-The inclusion of both able-bodied and neurologically impaired subjects was intended to support the development of a binary classification 
-model capable of distinguishing between normal and abnormal gait patterns. 
 
-**At the time of writing, detailed demographic data (e.g., age, gender, affected limb) are being finalized and will be presented in a subsequent demographics table.
+\subsubsection{Participants}
 
-All participants underwent gait data collection using wearable inertial measurement units (IMUs). Each subject was equipped with sensors placed on the left and right 
-shanks, as well as the left and right thighs as seen on . These positions were selected to capture comprehensive lower-limb kinematic data, with particular emphasis on the 
-angular velocity along the z-axis—corresponding to the rotational movement of the legs during gait. The IMUs recorded tri-axial gyroscope data at a consistent 
-sampling rate of 100Hz, and sessions were conducted under supervised walking trials on a flat indoor surface to ensure safety and signal consistency.
+Eighteen participants were recruited for this study, including nine stroke patients and nine healthy individuals. The stroke patients were recruited from the 
+Songklanagarind Hospital, while the health participants were recruited from the Faculty of Medicine, Prince of Songkla University. Prior to testing,
+participants were fully informed about the general aims, procedures of the study, and provided written informed consent. Primary inclusion criteria for the stroke 
+patient group were: (1) diagnosed as a chronic stroke with the first onset; (2) older than 45 years; (3) able to walk at least 30 meters without gait assistance or 
+an orthosis with physiotherapist supervision and their medical condition stable; and (4) able to follow the experimental stepping procedures. Potential
+patients were excluded if they had: (1) musculoskeletal problems six weeks prior to participation, lower limb arthroplasty or a major fall; (2) history of another 
+neurological condition; and (3) heightened fear of falling. Criteria for recruiting healthy participants were over 45 years of age and able
+to perform daily activities for at least 30 minutes without angina chest pain or falling. They were excluded if they had diabetic neuropathy, a history of lower limb 
+arthroplasty, musculoskeletal impairment due to peripheral nerve damage, or a history of significant fall. Eligible participants who met the criteria were asked to 
+perform the 10-meter walk test on a straight walkway at a comfortable walking speed, under the guidance of a licensed physiotherapist specifically
+trained in gait testing for stroke patients. Table \ref{tab:participants} shows the participants' demographic data and the results of the walking test.
+
+\begin{table}[h]
+    \centering
+    \small
+    \begin{tabularx}{\columnwidth}{l XX}
+        \hline
+        \hline
+        & Stroke Patients (n=9) & Healthy Controls (n=9) \\
+        \hline
+        Gender (M/F)           & 5 / 4           & 5 / 4          \\
+        Age (years)            & 60.44 (6.97)    & 60.06 (6.38)   \\
+        Height (m)             & 1.65 (0.08)     & 1.60 (0.08)    \\
+        Mass (kg)              & 66.81 (12.31)   & 59.89 (10.13)  \\
+        BMI                    & 24.55 (3.58)    & 23.36 (2.78)   \\
+        Onset (years)          & 3.67 (3.41)     & --             \\
+        Affected Side (L/R)    & 5 / 4           & --             \\
+        \hline
+    \end{tabularx}
+    \caption{Demographic data of participants. Values are mean (standard deviation) unless otherwise specified.}
+    \label{tab:participants}
+\end{table}
+
+\newpage
+\subsubsection{Data Collection}
+The study protocol was approved by Human Research Ethics Unit (HREU) of the Faculty of Medicine, Prince of Songkla University, and complied with the ethical 
+standards of the Declaration of Helsinki. Inertial Measurement Unit (IMU) sensors (MBIENTLAB INC, San Francisco, USA) were used to sample limb kinematics, 
+with gyroscopes incorporated into the IMU devices measuring the local angular velocity of the shank and the thigh. The first two sensors were placed 25 mm 
+above the malleolus on the lateral surfaces of both shanks similar as in previous studies [15], [16]. Fig. 1 illustrates the locations of IMU
+sensors and reference frames, where the superior-inferior,
+posterior-anterior, and lateral-medial directions are depicted
+as the x-, y-, and z-axes, respectively.
 
 \begin{figure}[h]
     \centering
-    \includegraphics[width=0.8\textwidth]{Images/.png}
+    \includegraphics[width=0.3\textwidth]{Images/sensor_placement.png}
     \caption{Placement of IMUs on the lower limbs during data collection.}
     \label{fig:imu_placement}
 \end{figure}
+
+All participants underwent gait data collection using wearable inertial measurement units (IMUs). Each subject was equipped with sensors placed on the left and right 
+shanks, as well as the left and right thighs as seen on Figure \ref{fig:imu_placement}. These positions were selected to capture comprehensive lower-limb kinematic data, 
+with particular emphasis on the angular velocity along the z-axis—corresponding to the rotational movement of the legs during gait. The IMUs recorded tri-axial 
+gyroscope data at a consistent sampling rate of 100Hz, and sessions were conducted under supervised walking trials on a flat indoor surface to ensure safety and signal 
+consistency.
 
 \subsection{Feature Extraction}
 
@@ -33,5 +73,3 @@ sampling rate of 100Hz, and sessions were conducted under supervised walking tri
 \subsection{Classification Models}
 
 \subsection{Evaluation Strategy}
-
-\subsection{Dataset Description}
