@@ -171,5 +171,18 @@ scenarios. Based on that context we decided to focus on features that are not on
 like the minimum and maximum values of the z-axis angular velocity, which are directly related to the gait cycle and can be easily interpreted by clinicians. 
 
 \subsection{Classification Models}
+Due to the low sample size and the modest dimensionality of the feature space, we choose to use classical machine learning models rather than deep learning 
+approaches. Deep learning models typically require large volumes of training data to generalize effectively and are more prone to overfitting in small-data 
+problems. On the other hand, machine learning models are well-suited for structured datasets with limited size, providing robust performance and greater 
+interpretability. To evaluate classification performance, we tested a diverse set of algorithms: Logistic Regression, Random Forest, Support Vector Machines 
+(SVM) with linear, radial basis function (RBF), and polynomial kernels, Extreme Gradient Boosting (XGBoost), and K-Nearest Neighbors (KNN). These models offer 
+a mix of linear and non-linear decision boundaries, ensemble learning, and instance-based reasoning, enabling a comprehensive comparison across different learning 
+paradigms.
 
 \subsection{Evaluation Strategy}
+In order to create an unbiased evaluation of model performance, we adopted a stratified k-fold cross-validation strategy. Specifically, the dataset was 
+partitioned into $k=5$ folds, where each fold preserved the proportion of class labels, ensuring that both classes were adequately represented during training 
+and validation. In cases like this where we have limited data, an approach like this mitigates the risk of overfitting to a particular class and provides a more 
+robust estimate of generalization performance. The use of stratification is particularly important in clinical applications, where class imbalance is common 
+and maintaining representative distributions during training is essential for fairness and sensitivity. All randomization procedures, including data splits and 
+model seeds, were fixed using a consistent random state to ensure reproducibility of the results across different runs.
