@@ -148,19 +148,31 @@ def gait_features(data_dir: str, data_type: str):
     left_stance_swing  = detect_stance_swing_fast(data['left-z-axis (deg/s)'], data['timestamp (+0700)'])
     right_stance_swing = detect_stance_swing_fast(data['right-z-axis (deg/s)'], data['timestamp (+0700)'])
     asymmetry = asymmetry_index(left_stride_times, right_stride_times)
-    symmetry = symmetry_ratio(left_stride_times, right_stride_times)  
+    symmetry  = symmetry_ratio(left_stride_times, right_stride_times)  
     
     output_dir = os.path.join(data_dir, 'gait_features')
     os.makedirs(output_dir, exist_ok=True) 
-    
     
     # Save each metric into the gait_features directory
     pd.DataFrame({'left_stride_times': left_stride_times}).to_csv(os.path.join(output_dir, f'left_stride_{data_type}.csv'), index=False)
     pd.DataFrame({'right_stride_times': right_stride_times}).to_csv(os.path.join(output_dir, f'right_stride_{data_type}.csv'), index=False)
     pd.DataFrame(left_stance_swing).to_csv(os.path.join(output_dir, f'left_stance_swing_{data_type}.csv'), index=False)
     pd.DataFrame(right_stance_swing).to_csv(os.path.join(output_dir, f'right_stance_swing_{data_type}.csv'), index=False)
-    pd.DataFrame({'asymmetry_index': asymmetry, 'symmetry_ratio': symmetry}).to_csv(os.path.join(output_dir, f'summary_gait_metrics_{data_type}.csv'), index=False)
 
+    symmetry_ratios = []
+    for l, r in zip(left_stride_times, right_stride_times):
+        if max(l, r) != 0:
+            symmetry_ratios.append(min(l, r) / max(l, r))
+        else:
+            symmetry_ratios.append(0)
+
+    pd.DataFrame({'symmetry_ratio': symmetry_ratios}).to_csv(os.path.join(output_dir, f'summary_gait_metrics_{data_type}.csv'), index=False)
+
+    asymmetry = asymmetry_index(left_stride_times, right_stride_times)
+    symmetry = symmetry_ratio(left_stride_times, right_stride_times)
+    pd.DataFrame({'asymmetry_index': [asymmetry], 'symmetry_ratio': [symmetry]}).to_csv(
+        os.path.join(output_dir, f'summary_gait_metrics_overall_{data_type}.csv'), index=False
+    )
 
 def cross_limb_features(data_dir: str, data_type: str, fs=100):
     '''
@@ -283,58 +295,8 @@ def symmetry_ratio(left: list, right: list):
     if len(left) == 0 or len(right) == 0: return np.nan
     return np.mean([min(l, r) / max(l, r) if max(l, r) != 0 else 0 for l, r in zip(left, right)])
 
-def summarize_metric(x):
-    '''
-    Calculate the mean, standard deviation, min, max, skewness, kurtosis, and interquartile range of a list of values.
-    Args:
-        x (list or np.array): List or array of values to summarize.
-    '''
-    x = np.array(x)
-    return [np.mean(x), np.std(x), np.min(x), np.max(x), skew(x), kurtosis(x), iqr(x)] if len(x) > 0 else [0]*7
 
 # ------- Feature Extraction for Gait Detection  ----------------------------------------------------------------------
-
-def motion_score(z_signal: np.ndarray):
-    '''
-    Calculate the motion score for a z-axis gyroscope signal.
-    Args:
-        z_signal (np.ndarray): Z-axis gyroscope signal.
-    '''
-    return np.max(np.abs(z_signal)) - np.min(np.abs(z_signal))
-
-
-def detect_stance_swing(z_filtered, time):
-    '''
-    Vectorized stance and swing phase detection from filtered z-axis gyro signal.
-    Args:
-        z_filtered (np.array): Filtered z-axis gyroscope data.
-        time (pd.Series): Corresponding time values (datetime).
-    '''
-    time = pd.Series(time).reset_index(drop=True)
-    zero_crossings = np.where(np.diff(np.sign(z_filtered)))[0]
-    if len(zero_crossings) < 2:
-        return []
-
-    start_idxs = zero_crossings[:-1]
-    end_idxs   = zero_crossings[1:]
-
-    valid_pairs  = [(s, e) for s, e in zip(start_idxs, end_idxs) if e - s > 1]
-    stance_times = []
-    swing_times  = []
-
-    for start, end in valid_pairs:
-        min_idx = np.argmin(z_filtered[start:end]) + start
-        
-        if min_idx >= len(time) or start >= len(time) or end >= len(time):
-            continue
-        
-        stance_time = (time.iloc[min_idx] - time.iloc[start]).total_seconds()
-        swing_time  = (time.iloc[end] - time.iloc[min_idx]).total_seconds()
-        stance_times.append(stance_time)
-        swing_times.append(swing_time)
-
-    return [{'stance_time': s, 'swing_time': w} for s, w in zip(stance_times, swing_times)]
-
 
 def extract_features_per_gait_cycle(patient_folder: str, fs: int=100):
     '''
@@ -412,8 +374,8 @@ def extract_features_per_gait_cycle(patient_folder: str, fs: int=100):
             f['label_low_confidence']      = -1
         else:
             f['valid_gait_window'] = 1
-            f['asymmetry_index'] = asymmetry_index([left_stride], [right_stride])
-            f['symmetry_ratio']  = symmetry_ratio([left_stride], [right_stride])
+            f['asymmetry_index'] = single_asymmetry_index([left_stride], [right_stride])
+            f['symmetry_ratio']  = single_symmetry_ratio([left_stride], [right_stride])
             f['label_high_confidence']     = 1 if abs(f['asymmetry_index']) > 0.2  or f['symmetry_ratio'] < 0.8 else 0
             f['label_moderate_confidence'] = 1 if abs(f['asymmetry_index']) > 0.15 or f['symmetry_ratio'] < 0.85 else 0
             f['label_low_confidence']      = 1 if abs(f['asymmetry_index']) > 0.1  or f['symmetry_ratio'] < 0.9 else 0
@@ -425,3 +387,73 @@ def extract_features_per_gait_cycle(patient_folder: str, fs: int=100):
     result_df.to_csv(out_path, index=False)
     print(f'Saved {len(result_df)} gait cycles to {out_path}')
     os.remove(os.path.join(patient_folder, 'gyroscope.csv'))
+
+def motion_score(z_signal: np.ndarray):
+    '''
+    Calculate the motion score for a z-axis gyroscope signal.
+    Args:
+        z_signal (np.ndarray): Z-axis gyroscope signal.
+    '''
+    return np.max(np.abs(z_signal)) - np.min(np.abs(z_signal))
+
+
+def detect_stance_swing(z_filtered, time):
+    '''
+    Vectorized stance and swing phase detection from filtered z-axis gyro signal.
+    Args:
+        z_filtered (np.array): Filtered z-axis gyroscope data.
+        time (pd.Series): Corresponding time values (datetime).
+    '''
+    time = pd.Series(time).reset_index(drop=True)
+    zero_crossings = np.where(np.diff(np.sign(z_filtered)))[0]
+    if len(zero_crossings) < 2:
+        return []
+
+    start_idxs = zero_crossings[:-1]
+    end_idxs   = zero_crossings[1:]
+
+    valid_pairs  = [(s, e) for s, e in zip(start_idxs, end_idxs) if e - s > 1]
+    stance_times = []
+    swing_times  = []
+
+    for start, end in valid_pairs:
+        min_idx = np.argmin(z_filtered[start:end]) + start
+        
+        if min_idx >= len(time) or start >= len(time) or end >= len(time):
+            continue
+        
+        stance_time = (time.iloc[min_idx] - time.iloc[start]).total_seconds()
+        swing_time  = (time.iloc[end] - time.iloc[min_idx]).total_seconds()
+        stance_times.append(stance_time)
+        swing_times.append(swing_time)
+
+    return [{'stance_time': s, 'swing_time': w} for s, w in zip(stance_times, swing_times)]
+
+def single_asymmetry_index(left: list, right: list):
+    '''
+    Calculate the asymmetry index between left and right stride times.
+    Args:
+        left (list): Left stride times.
+        right (list): Right stride times.
+    '''
+    if len(left) == 0 or len(right) == 0: return np.nan
+    return np.mean([(l - r) / (l + r) if (l + r) != 0 else 0 for l, r in zip(left, right)])
+
+def single_symmetry_ratio(left: list, right: list):
+    '''
+    Calculate the symmetry ratio between left and right stride times.
+    Args:
+        left (list): Left stride times.
+        right (list): Right stride times.
+    '''
+    if len(left) == 0 or len(right) == 0: return np.nan
+    return np.mean([min(l, r) / max(l, r) if max(l, r) != 0 else 0 for l, r in zip(left, right)])
+
+def summarize_metric(x):
+    '''
+    Calculate the mean, standard deviation, min, max, skewness, kurtosis, and interquartile range of a list of values.
+    Args:
+        x (list or np.array): List or array of values to summarize.
+    '''
+    x = np.array(x)
+    return [np.mean(x), np.std(x), np.min(x), np.max(x), skew(x), kurtosis(x), iqr(x)] if len(x) > 0 else [0]*7
