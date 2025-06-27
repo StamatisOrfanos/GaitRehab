@@ -85,7 +85,7 @@ def classification_aggregate_features(base_dir: str, label: int):
         if not os.path.isdir(patient_path):
             continue
 
-        patient_features = {'subject_id': patient_id}
+        patient_features = {'subject_id': f'{patient_id}_{label}'}
 
         try:
             # Process individual feature types
