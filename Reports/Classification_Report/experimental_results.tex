@@ -9,30 +9,33 @@ with linear, polynomial, and RBF kernels, XGBoost, and K-Nearest Neighbors (KNN)
 
 \begin{figure}[h]
     \centering
-    \includegraphics[width=0.5\textwidth]{Images/selected_features_accuracy.png}
+    \includegraphics[width=0.5\textwidth]{Images/selected_features.png}
     \caption{Barplot of Classification Accuracy for All Classifiers Using LOOCV}
     \label{fig:accuracy_barplot}
 \end{figure}
 
 
-The highest accuracy (94.44\%) was achieved by \textit{KNN}, \textit{Logistic Regression}, and \textit{SVM (Linear/RBF Kernel)}. In contrast, \textit{XGBoost} 
-yielded the lowest accuracy (77.78\%). As shown in Table~\ref{tab:metrics}, these high-performing models also achieved an $AUC$ of $1.00$. 
+The highest F1-score (93\%) was achieved by \textit{Random Forest}, followed closely by the \textit{Logistic Regression} and \textit{XGBoost} models with 
+accuraciew of (89\%) of (90\%) respectively. In contrast the \textit{SVM} models had a lower F1-score of (85\%) for the linear and RBF kernels, while the 
+\textit{SVM} with polynomial kernel achieved a significantly lower score of (78\%). Lastly the \textit{KNN} model performed  an F1-score of (76\%), which is 
+th lowest among the tested models. 
+As shown in Table~\ref{tab:metrics}, these high-performing models also achieved an $AUC$ of $1.00$. 
 
 \begin{table}[htbp]
     \caption{Accuracy and AUC for All Classifiers Using LOOCV}
     \label{tab:metrics}
     \centering
-    \begin{tabular}{lcc}
+    \begin{tabular}{lccccc}
     \toprule
-    \textbf{Model} & \textbf{Accuracy} & \textbf{AUC} \\
+    \textbf{Model} & \textbf{Accuracy} & \textbf{Precision} & \textbf{Recall} & \textbf{F1-score} & \textbf{AUC} \\
     \midrule
-    Logistic Regression     & 0.944 & 1.000 \\
-    Random Forest           & 0.833 & 0.975 \\
-    SVM (Linear Kernel)     & 0.944 & 1.000 \\
-    SVM (RBF Kernel)        & 0.944 & 1.000 \\
-    SVM (Polynomial Kernel) & 0.889 & 0.951 \\
-    XGBoost                 & 0.778 & 0.605 \\
-    KNN                     & 0.944 & 1.000 \\
+    Logistic Regression     & 0.90 & 1.00 & 0.81 & 0.89 & 0.92 \\
+    Random Forest           & 0.93 & 0.93 & 0.93 & 0.93 & 0.98  \\
+    SVM (Linear Kernel)     & 0.87 & 1.00 & 0.75 & 0.85 & 0.92   \\
+    SVM (RBF Kernel)        & 0.87 & 1.00 & 0.75 & 0.85 & 1.00    \\
+    SVM (Polynomial Kernel) & 0.78 & 1.00 & 0.56 & 0.72 & 0.89     \\
+    XGBoost                 & 0.90 & 0.88 & 0.93 & 0.90 & 0.96      \\
+    KNN                     & 0.81 & 1.00 & 0.62 & 0.76 & 0.96       \\
     \bottomrule
     \end{tabular}
 \end{table}
