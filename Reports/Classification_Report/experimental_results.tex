@@ -1,65 +1,63 @@
 \section{Experimental Results}
 \label{sec:experimental_resuts}
-This section presents the classification performance of the various machine learning models using the selected gyroscope-based features. 
 
-\subsection{Model Accuracy and AUC}
-Starting with the Fig.~\ref{fig:accuracy_barplot}, the bar plot shows the classification accuracy of each model using the selected features: minimum and maximum 
-values of the z-axis angular velocity from the left and right leg. The models tested include Logistic Regression, Random Forest, Support Vector Machines (SVM) 
-with linear, polynomial, and RBF kernels, XGBoost, and K-Nearest Neighbors (KNN). 
+\subsection{Model Accuracy Metrics}
+Starting with the Fig.~\ref{fig:accuracy_barplot}, the bar plot shows the classification accuracy, precision, recall, F1-score and AUC of each model 
+using the selected features: minimum and maximum values of the z-axis angular velocity from the left and right leg. The models tested include Logistic 
+Regression, Random Forest, Support Vector Machines (SVM) with linear, polynomial, and RBF kernels, XGBoost, and K-Nearest Neighbors (KNN). 
 
-\begin{figure}[h]
+\begin{figure*}[!t]
     \centering
-    \includegraphics[width=0.5\textwidth]{Images/selected_features.png}
-    \caption{Barplot of Classification Accuracy for All Classifiers Using LOOCV}
-    \label{fig:accuracy_barplot}
-\end{figure}
-
+    \includegraphics[width=0.7\textwidth]{Images/selected_features.png}
+    \vspace{4mm}
+    \includegraphics[width=0.7\textwidth]{Images/selected_features_models_roc_curves.png}
+    \caption{(Top) Classification Accuracy; (Bottom) ROC Curves for All Classifiers Using LOOCV}
+    \label{fig:accuracy_roc_combined}
+\end{figure*}
 
 The highest F1-score (93\%) was achieved by \textit{Random Forest}, followed closely by the \textit{Logistic Regression} and \textit{XGBoost} models with 
 accuraciew of (89\%) of (90\%) respectively. In contrast the \textit{SVM} models had a lower F1-score of (85\%) for the linear and RBF kernels, while the 
 \textit{SVM} with polynomial kernel achieved a significantly lower score of (78\%). Lastly the \textit{KNN} model performed  an F1-score of (76\%), which is 
-th lowest among the tested models. 
-As shown in Table~\ref{tab:metrics}, these high-performing models also achieved an $AUC$ of $1.00$. 
+th lowest among the tested models. The detailed performance metrics for each models are summarised in the Table~\ref{tab:metrics}.
 
 \begin{table}[htbp]
     \caption{Accuracy and AUC for All Classifiers Using LOOCV}
     \label{tab:metrics}
     \centering
-    \begin{tabular}{lccccc}
+    \scriptsize
+    \begin{tabular}{lcccc}
     \toprule
-    \textbf{Model} & \textbf{Accuracy} & \textbf{Precision} & \textbf{Recall} & \textbf{F1-score} & \textbf{AUC} \\
+    \textbf{Model} & \textbf{Accuracy} & \textbf{Precision} & \textbf{Recall} & \textbf{F1-score}\\
     \midrule
-    Logistic Regression     & 0.90 & 1.00 & 0.81 & 0.89 & 0.92 \\
-    Random Forest           & 0.93 & 0.93 & 0.93 & 0.93 & 0.98  \\
-    SVM (Linear Kernel)     & 0.87 & 1.00 & 0.75 & 0.85 & 0.92   \\
-    SVM (RBF Kernel)        & 0.87 & 1.00 & 0.75 & 0.85 & 1.00    \\
-    SVM (Polynomial Kernel) & 0.78 & 1.00 & 0.56 & 0.72 & 0.89     \\
-    XGBoost                 & 0.90 & 0.88 & 0.93 & 0.90 & 0.96      \\
-    KNN                     & 0.81 & 1.00 & 0.62 & 0.76 & 0.96       \\
+    Logistic Regression     & 0.90 & 1.00 & 0.81 & 0.89 \\
+    Random Forest           & 0.93 & 0.93 & 0.93 & 0.93  \\
+    SVM (Linear Kernel)     & 0.87 & 1.00 & 0.75 & 0.85   \\
+    SVM (RBF Kernel)        & 0.87 & 1.00 & 0.75 & 0.85    \\
+    SVM (Polynomial Kernel) & 0.78 & 1.00 & 0.56 & 0.72     \\
+    XGBoost                 & 0.90 & 0.88 & 0.93 & 0.90      \\
+    KNN                     & 0.81 & 1.00 & 0.62 & 0.76       \\
     \bottomrule
     \end{tabular}
 \end{table}
 
-\newpage
+
 \subsection{ROC Curve Analysis}
-Fig.~\ref{fig:roc_curves} presents the ROC curves for all classifiers. \textit{KNN}, \textit{SVM (RBF/Linear)}, and \textit{Logistic Regression} show 
-perfect discrimination with an AUC of 1.00. The \textit{Random Forest} model closely follows with an AUC of 0.975. The underperformance of \textit{XGBoost} 
-is clearly visible with a notably flatter curve, suggesting difficulties in threshold-based separation.
-
-\begin{figure}[h]
-    \centering
-    \includegraphics[width=0.5\textwidth]{Images/selected_features_models_roc_curves.png}
-    \caption{ROC Curves for All Classifiers Using LOOCV}
-    \label{fig:roc_curves}
-\end{figure}
+Fig.~\ref{fig:roc_curves} presents the ROC curves for all classifiers. The \textit{SVM Linear} model seems to have perfect discrimination with an AUC of 1.00, 
+while the \textit{Random Forest} has a similar performance of 0.98. Following closely we have the models \textit{XGBoost} and \textit{KNN} with a performance 
+of 0.96 and \textit{Logistic Regression} along with \textit{SVM Linear Kernel} with an AUC of 0.92. The \textit{SVM Polynomial Kernel} model also shows a strong
+performance with an AUC of 0.89, indicating that it can effectively distinguish between the two classes, albeit with slightly lower performance compared to the 
+other models. 
 
 
+\newpage
 \subsection{Confusion Matrix Evaluation}
 
 Fig.~\ref{fig:confusion_matrices} illustrates the confusion matrices for each classifier. Most models performed well on both classes, showing strong 
-diagonal dominance. Notably, \textit{KNN}, \textit{Logistic Regression}, and \textit{SVM (Linear/RBF)} each misclassified only one instance, yielding 
-very low false positive and false negative rates. In contrast, \textit{XGBoost} and \textit{Random Forest} demonstrated more balanced misclassification 
-across both classes.
+diagonal dominance. Notably, \textit{Logistic Regression}, and \textit{XGBoost} \textit{Random Forest}, where each misclassified mostly one instance, 
+yielding very low false positive and false negative rates. On the other hand, the \textit{SVM} family of models and demonstrated a slightly higher number of
+misclassifications, where the models seemed to have a slight tendency to misclassify an abnormal gait as a normal gait, as indicated by the false negatives.
+Lastly the \textit{KNN} model had the highest number of misclassifications, with a notable number of false positives and false negatives, indicating that it 
+may not be as robust as the other models for this task.
 
 \begin{figure*}[htbp]
     \centering

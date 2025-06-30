@@ -1,78 +1,38 @@
-
 \section{Materials and Methods}
 \label{sec:materials_and_methods}
+This study builds upon data previously collected in the work of Sanghan et al.~\cite{ref29}, which involved a comprehensive clinical investigation comparing the 3D 
+shank kinematics of stroke patients to healthy individuals. The primary objective of this paper is to develop a machine learning–based classification framework that can 
+automatically distinguish between normal and abnormal gait patterns using features extracted from the gyroscope data of that earlier study. All data processing, feature 
+engineering, model design, and evaluation described herein are original contributions that aim to enhance the clinical utility of the dataset.
 
-Building on the limitations highlighted in prior studies, this work introduces a simple yet effective classification framework for detecting abnormal gait patterns. 
-The approach relies on just four carefully selected features derived from gyroscope signals, extremal values that are both biomechanically meaningful and easy to compute. 
-To ensure that the model generalizes well across individuals, particularly in diverse clinical populations, we employ a leave-one-out cross-validation (LOOCV) strategy.
-
-\subsection{Dataset Description}
-
-\subsubsection{Participants}
-
-Eighteen participants were recruited for this study, including nine stroke patients and nine healthy individuals. The stroke patients were recruited from the 
-Songklanagarind Hospital, while the health participants were recruited from the Faculty of Medicine, Prince of Songkla University. Prior to testing,
-participants were fully informed about the general aims, procedures of the study, and provided written informed consent. Primary inclusion criteria for the stroke 
-patient group were: (1) diagnosed as a chronic stroke with the first onset; (2) older than 45 years; (3) able to walk at least 30 meters without gait assistance or 
-an orthosis with physiotherapist supervision and their medical condition stable; and (4) able to follow the experimental stepping procedures. Potential
-patients were excluded if they had: (1) musculoskeletal problems six weeks prior to participation, lower limb arthroplasty or a major fall; (2) history of another 
-neurological condition; and (3) heightened fear of falling. Criteria for recruiting healthy participants were over 45 years of age and able
-to perform daily activities for at least 30 minutes without angina chest pain or falling. They were excluded if they had diabetic neuropathy, a history of lower limb 
-arthroplasty, musculoskeletal impairment due to peripheral nerve damage, or a history of significant fall. Eligible participants who met the criteria were asked to 
-perform the 10-meter walk test on a straight walkway at a comfortable walking speed, under the guidance of a licensed physiotherapist specifically
-trained in gait testing for stroke patients. Table \ref{tab:participants} shows the participants' demographic data and the results of the walking test.
-
-\begin{table}[h]
-    \centering
-    \small
-    \begin{tabularx}{\columnwidth}{l XX}
-        \hline
-        \hline
-        & Stroke Patients (n=9) & Healthy Controls (n=9) \\
-        \hline
-        Gender (M/F)           & 5 / 4           & 5 / 4          \\
-        Age (years)            & 60.44 (6.97)    & 60.06 (6.38)   \\
-        Height (m)             & 1.65 (0.08)     & 1.60 (0.08)    \\
-        Mass (kg)              & 66.81 (12.31)   & 59.89 (10.13)  \\
-        BMI                    & 24.55 (3.58)    & 23.36 (2.78)   \\
-        Onset (years)          & 3.67 (3.41)     & --             \\
-        Affected Side (L/R)    & 5 / 4           & --             \\
-        \hline
-    \end{tabularx}
-    \caption{Demographic data of participants. Values are mean (standard deviation) unless otherwise specified.}
-    \label{tab:participants}
-\end{table}
-
-\newpage
-\subsubsection{Data Collection}
-The study protocol was approved by Human Research Ethics Unit (HREU) of the Faculty of Medicine, Prince of Songkla University, and complied with the ethical 
-standards of the Declaration of Helsinki. Inertial Measurement Unit (IMU) sensors (MBIENTLAB INC, San Francisco, USA) were used to sample limb kinematics, 
-with gyroscopes incorporated into the IMU devices measuring the local angular velocity of the shank and the thigh. The first two sensors were placed 25 mm 
-above the malleolus on the lateral surfaces of both shanks similar as in previous studies \cite{ref29}, \cite{ref30}. Fig.~\ref{fig:imu_placement} illustrates the 
-locations of IMU sensors and reference frames, where the superior-inferior, posterior-anterior, and lateral-medial directions are depicted as the x-, y-, and z-axes, 
-respectively. These positions were selected to capture comprehensive lower-limb kinematic data, with particular emphasis on the angular velocity along the 
-z-axis—corresponding to the rotational movement of the legs during gait. The IMUs recorded tri-axial gyroscope data at a consistent sampling rate of 100Hz, and 
-sessions were conducted under supervised walking trials on a flat indoor surface to ensure safety and signal consistency.
-
-\begin{figure}[h]
-    \centering
-    \includegraphics[width=0.3\textwidth]{Images/sensor_placement.png}
-    \caption{Placement of IMUs on the lower limbs during data collection.}
-    \label{fig:imu_placement}
-\end{figure}
+\subsection{Dataset Overview}
+The original experiment included sixteen stroke patients and sixteen healthy individuals, all of whom walked on a flat 10-meter indoor walkway while wearing IMU sensors 
+(MBIENTLAB Inc., USA) placed bilaterally on their shanks. Data acquisition protocols, participant criteria, and ethical approvals were thoroughly detailed in the original 
+publication~\cite{ref29}. The recorded data consisted of tri-axial gyroscope signals sampled at 100 Hz, with angular velocities measured along the sagittal 
+(x), frontal (y), and transverse (z) planes.
 
 
 \subsection{Feature Extraction}
-In the process of extracting features from the gyroscope data, located on both the shanks and thighs of the participants we focused on the z-axis angular velocity
-as it it is the most relevant to the gait cycle. Before starting the feature extraction we decided to use the data derived from the shanks only, because we 
-found that the thigh data did not provide any additional information for the task at hand, which is also supported by the research of Hwang et al.~\cite{ref31}, 
-who used only shank-mounted IMUs for accurate gait classification in joint impairment detection tasks. To ensure a detailed representation of gait dynamics, we 
-extracted a set of temporal, motion-based, asymmetry, and statistical features from the IMU data. These features, detailed in Table~\ref{table:features}, 
-include all major categories commonly used in gait analysis, effectively exhausting the relevant metrics for the classification task. It is important to note 
-that before extracting the features, we applied a low-pass Butterworth filter with a cutoff frequency of 10Hz to the gyroscope data to remove high-frequency noise 
-and ensure that the features reflect the gait patterns accurately.
+In the process of extracting features from the gyroscope data, that were located on both the shanks and thighs of the participants we focused on the z-axis angular 
+velocity as it it is the most relevant to the gait cycle, since the z-axis gyroscope signals correspond to leg rotation, highly indicative of gait abnormalities.
+IMU placement on the lateral shank and the use of z-axis angular velocity for gait phase identification are consistent with previous methods that demonstrated high 
+accuracy in segmenting gait cycles and estimating spatio-temporal parameters~\cite{ref30},\cite{ref31}.Furthermore we decided to use the data derived from the shanks 
+only, because we found that the thigh data did not provide any additional information for the task, which is also supported by the research of Hwang et al.~\cite{ref32},
+who used only shank-mounted IMUs for accurate gait classification in joint impairment detection tasks. 
 
-\begin{table*}[!t]
+\begin{figure}[ht]
+    \centering
+    \includegraphics[width=0.95\columnwidth]{Images/sensor_placement.png}
+    \caption{Modified sensor placement schematic adapted from~\cite{ref32}. Image adapted under the Creative Commons Attribution 4.0 License (CC BY 4.0).}
+    \label{fig:sensor_placement}
+\end{figure}
+ 
+To ensure a detailed representation of gait dynamics, we extracted a set of temporal, motion-based, asymmetry, and statistical features from the IMU data. These features, 
+detailed in Table~\ref{table:features}, include all major categories commonly used in gait analysis, effectively exhausting the relevant metrics for the classification task. 
+It is important to note that before extracting the features, we applied a low-pass Butterworth filter with a cutoff frequency of 10Hz to the gyroscope data to remove 
+high-frequency noise and ensure that the features reflect the gait patterns accurately.
+
+\begin{table*}
     \renewcommand{\arraystretch}{1.2}
     \caption{Extracted Gait Features Used for Classification}
     \label{table:features}
@@ -111,9 +71,9 @@ and ensure that the features reflect the gait patterns accurately.
     & Skewness            & Asymmetry of the signal distribution                               \\
     & Kurtosis            & Peakedness or flatness of the signal distribution.                  \\
     \hline
-
     \end{tabular}
 \end{table*}
+
 
 \newpage
 \subsection{Feature Selection}
@@ -122,8 +82,9 @@ classification problem that enables us to use methods like Point Bi-serial Featu
 informative features. BFS evaluates the correlation between each feature and the target variable, selecting those with the highest correlation scores. 
 The results of the BFS analysis are shown below in Table~\ref{tab:bfs_results}.
 
-\begin{table}[h]
+\begin{table}[H]
     \centering
+    \caption{BFS Results for Feature Selection}
     \small
     \begin{tabularx}{\columnwidth}{l l X X}
         \hline
@@ -136,15 +97,15 @@ The results of the BFS analysis are shown below in Table~\ref{tab:bfs_results}.
         5 & left-z-axis-(deg/s)-mean  & -0.611453 & 0.0007    \\ 
         \hline
     \end{tabularx}
-    \caption{BFS Results for Feature Selection}
     \label{tab:bfs_results}
 \end{table}
 
 
-Folloing the BFS analysis, we applied Recursive Feature Elimination with the use of Random Forest Classifier to refine the feature set further. In this process we 
+Following the BFS analysis, we applied Recursive Feature Elimination with the use of Random Forest Classifier to refine the feature set further. In this process we 
 iteratively removed the least important features based on the contribution to the accuracy of the model, until we get the optimal subset of features.
-\begin{table}[h]
+\begin{table}[H]
     \centering
+    \caption{Recursive Feature Elimination (RFE) Results}
     \small
     \begin{tabularx}{\columnwidth}{l l X}
         \hline
@@ -162,23 +123,24 @@ iteratively removed the least important features based on the contribution to th
         left-z-axis-(deg/s)-mean  & 0.07 & 1 \\
         \hline
     \end{tabularx}
-    \caption{Recursive Feature Elimination (RFE) Results}
     \label{tab:rfe}
 \end{table}
 
+
+\newpage
 Having all the information from the feature selection algorithm we now have a subset of features, that we can use for the classification task. At this stage we
 had to take into consideration the medical significance of the features, since the goal is to create a clinically applicable model that can be used in real-world 
 scenarios. Based on that context we decided to focus on features that are not only statistically significant but also medically meaningful and actionable, 
 like the minimum and maximum values of the z-axis angular velocity, which are directly related to the gait cycle and can be easily interpreted by clinicians. 
 
 \subsection{Classification Models}
-Due to the low sample size and the modest dimensionality of the feature space, we choose to use classical machine learning models rather than deep learning 
-approaches. Deep learning models typically require large volumes of training data to generalize effectively and are more prone to overfitting in small-data 
-problems. On the other hand, machine learning models are well-suited for structured datasets with limited size, providing robust performance and greater 
-interpretability. To evaluate classification performance, we tested a diverse set of algorithms: Logistic Regression, Random Forest, Support Vector Machines 
-(SVM) with linear, radial basis function (RBF), and polynomial kernels, Extreme Gradient Boosting (XGBoost), and K-Nearest Neighbors (KNN). These models offer 
-a mix of linear and non-linear decision boundaries, ensemble learning, and instance-based reasoning, enabling a comprehensive comparison across different learning 
-paradigms.
+Although the total number of participants is 32, providing a relatively big dataset for a clinical study, it is still considered to be a small sample size. The small 
+dataset size along with the modest dimensionality of the feature space, guided us to use classical machine learning models rather than deep learning 
+approaches. Deep learning models typically require large volumes of training data to generalize effectively and are more prone to overfitting in small-data problems. 
+On the other hand, machine learning models are well-suited for structured datasets with limited size, providing robust performance and greater interpretability. 
+To evaluate classification performance, we tested a diverse set of algorithms: Logistic Regression, Random Forest, Support Vector Machines (SVM) with linear, radial 
+basis function (RBF), and polynomial kernels, Extreme Gradient Boosting (XGBoost), and K-Nearest Neighbors (KNN). These models offer a mix of linear and non-linear 
+decision boundaries, ensemble learning, and instance-based reasoning, enabling a comprehensive comparison across different learning paradigms.
 
 \subsection{Evaluation Strategy}
 In order to create an unbiased evaluation of model performance, we adopted a stratified k-fold cross-validation strategy. Specifically, the dataset was 
