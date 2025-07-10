@@ -1,12 +1,13 @@
 \section{Conclusion and Future Work}
-\label{sec:conclusion__future_work}
-In this study, we proposed and validated a lightweight machine learning framework for classifying abnormal versus normal gait signals using wearable 
-gyroscope data. Our approach relies on just four statistical features—z-axis angular velocity extremes from both shanks—and achieves high classification 
-performance across a range of models. The best-performing models demonstrated both high accuracy and perfect AUC under LOOCV, confirming the relevance and 
-effectiveness of the selected features. The pipeline’s simplicity and strong performance make it highly suitable for real-world deployment in wearable and 
-remote monitoring systems, particularly for early screening or follow-up in rehabilitation programs.
+\label{sec:conclusion}
+This study presents a lightweight and effective machine learning framework for classifying abnormal gait signals using a small number of clinically meaningful 
+features derived from gyroscope data. Among the models evaluated, Random Forest, XGBoost, and Logistic Regression achieved the best overall performance in terms 
+of accuracy, F1-score, and AUC, demonstrating strong generalization capabilities and low misclassification rates. In contrast, SVM-based models exhibited lower 
+sensitivity, particularly in detecting abnormal gait, highlighting the importance of model selection in clinical contexts. The findings emphasize that even with 
+limited features and small datasets, robust classification is achievable through proper feature engineering and algorithm choice.
 
-Future work will focus on integrating this classification model into real-time gait monitoring platforms, where it can provide live feedback or alerts during 
-walking sessions. Additionally, we plan to evaluate the model in more diverse populations, including post-stroke patients and elderly individuals, and expand 
-the feature set to include symmetry and stride variability metrics. These extensions aim to improve generalization and support advanced use cases such as fall 
-risk prediction and adaptive rehabilitation.
+Future work will focus on integrating the proposed framework into real-time gait rehabilitation systems, with on-device inference capabilities for wearable platforms. 
+Additionally, we aim to extend this study by creating machine learning models that use single gait cycle data along with the current models and incorporate multi-session 
+data in order to improve the robustness and adaptability of the classification system. This will enable continuous monitoring and personalized feedback for stroke patients, 
+improving their rehabilitation outcomes. The ultimate goal is to develop a comprehensive gait analysis platform that can be deployed in clinical settings, providing 
+healthcare professionals with real-time insights into patient progress and facilitating timely interventions.

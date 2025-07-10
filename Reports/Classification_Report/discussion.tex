@@ -1,22 +1,30 @@
 \section{Discussion}
 \label{sec:discussion}
-The overall results validate that even with minimal statistical features from gyroscope data, machine learning models can effectively classify 
-normal versus abnormal gait with high accuracy. The best-performing models—\textit{KNN}, \textit{Logistic Regression}, and \textit{SVMs}—are also 
-lightweight, making them suitable for integration into wearable or mobile healthcare systems. The performance consistency across LOOCV folds also 
-indicates robustness to individual variability, which is crucial for real-world deployment.
+The comparative analysis of the machine learning classifiers provided us some insight on the performance differences on distinguishing between normal and 
+abnormal gait patterns using gyroscope-derived features. Among all models, \textit{Random Forest}, \textit{XGBoost}, and \textit{Logistic Regression} emerged as the 
+top-performing classifiers across nearly all evaluation metrics.
 
+The \textit{Random Forest} model achieved the highest F1-score (93\%) and near-perfect classification in the confusion matrix, with only one instance misclassified. 
+This model benefited from its ensemble learning mechanism, which combines multiple decision trees to reduce overfitting and capture complex, non-linear patterns in the 
+data. Similarly, \textit{XGBoost} showed excellent generalization, with a high AUC of 0.96 and minimal misclassification, thanks to its gradient-boosted tree approach 
+that optimizes classification boundaries based on prior errors. \textit{Logistic Regression}, while a linear model, also performed competitively (F1-score of 89\%), 
+likely due to the high discriminative power of the selected features and the low-dimensional nature of the dataset.
 
-The experimental results demonstrate that even with a minimal set of biomechanically meaningful features like the minimum and maximum 
-values of z-axis gyroscope angular velocity from both legs—machine, we developed lightweight machine learning models that achieved highly accurate 
-gait classification. Notably, the best-performing models (KNN, SVM with Linear and RBF kernels, and Logistic Regression) consistently achieved 
-accuracy scores of 94.44\% and an AUC of 1.00 under Leave-One-Out Cross-Validation (LOOCV), underscoring the strong discriminatory power of these features.
+In contrast, the \textit{Support Vector Machines (SVMs)}, especially the polynomial kernel variant, underperformed in comparison. While SVMs 
+with linear and RBF kernels achieved reasonable AUC values (0.92 and 1.00 respectively), their F1-scores remained moderate (85\%), and they showed a higher 
+false negative rate. This tendency to misclassify abnormal gait as normal is especially problematic in clinical applications where sensitivity to pathological cases 
+is critical. The observed performance gap can be attributed to the SVMs’ sensitivity to feature scaling, kernel parameter tuning, and decision boundary rigidity 
+in smaller datasets. While theoretically powerful, SVMs often require careful hyperparameter optimization and balanced class distributions—challenges that are 
+exacerbated when working with medical datasets of limited size.
 
-An interesting observation is the similar performance among all SVM variants, which supports the hypothesis that gait patterns exhibit linearly 
-and non-linearly separable structures. On the other hand, XGBoost performed relatively poorly with an AUC of 0.60, suggesting that tree-based methods 
-may be less effective with such a low-dimensional, dense feature set. This performance discrepancy highlights the importance of model selection in 
-small-feature, high-signal contexts.The confusion matrices support the robustness of the top models, showing very low rates of misclassification, especially 
-for models like KNN and Logistic Regression, which only misclassified a single instance.
+Lastly the \textit{KNN} model displayed the lowest overall performance. Its reliance on instance-based learning likely made it more susceptible to local noise and feature 
+overlap between classes, as shown by its high number of misclassifications. This reinforces the limitations of non-parametric methods when applied to small and 
+moderately imbalanced clinical datasets.
 
-These findings also emphasize the practical benefit of interpretable and simple features. By focusing on maximum and minimum angular 
-velocities metrics that can be understood by clinicians and possibly influenced by patient training, this approach supports not only 
-automated classification but also explainable feedback loops in rehabilitation settings.
+From a clinical perspective, the outstanding performance of tree-based models is particularly encouraging. These models not only offer high classification accuracy but 
+also provide interpretable feature importances, which is valuable for clinicians aiming to understand the biomechanical rationale behind a patient’s diagnosis.
+Their robustness in small sample regimes and insensitivity to input scaling make them strong candidates for integration into real-time gait assessment tools.
+
+Overall, the results validate that a minimal feature set, focused on medically meaningful statistics such as extremal values of angular velocity can yield high predictive 
+performance when paired with appropriate classifiers. The success of simpler models like Logistic Regression and the superior results of ensemble models further 
+highlight the importance understanding the data and domain characteristics when selecting an artificial intelligence approach. 
