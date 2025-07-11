@@ -9,9 +9,9 @@ in younger and older adults, confirming their reliability compared to traditiona
 Prisco \textit{et al.} \cite{ref21} and Zhu \textit{et al.} \cite{ref22} have examined in detail the validity and usability of wearable inertial sensors, showcasing 
 the effectiveness of single- and multi-point IMU configurations for capturing clinically relevant gait metrics.
 
-A lot of research work has focused on gait event detection, such as identifying heel strikes or toe-offs, using IMUs. Specifically Voisard \textit{et al.} \cite{ref23}
-developed an automatic gait event detection using both IMU data and an instrumented mat, creating an algorithm capable of operating accurately across healthy individuals
-and patients with moderate to severe impairments, including those recovering from stroke. Larsen \textit{et al.} \cite{ref24} extended this line 
+A lot of research work has focused on gait event detection, such as identifying heel strikes or toe-offs, using IMUs. Specifically Voisard et al. \cite{ref23}
+developed an automatic gait event detection using both IMU data and an instrumented mat, creating an algorithm capable of operating accurately across healthy 
+individuals and patients with moderate to severe impairments, including those recovering from stroke. Larsen et al. \cite{ref24} extended this line 
 of research by introducing a neural network-based approach optimized for smartphone-embedded IMUs, achieving high detection accuracy in real-world conditions.
 
 Despite the continuous progress, the majority of the literature focuses mainly on algorithmic sophistication or system validation rather than clinical
@@ -25,6 +25,16 @@ prevalent. Patterson \textit{et al.} \cite{ref27} quantified temporal gait asymm
 inequality-constrained ZUPT-aided inertial navigation approach to estimate gait parameters. However, these approaches often rely on dense feature sets 
 or require manual tuning, making them less suitable for scalable deployment.
 
+Several more studies have addressed gait classification using wearable technology. For example, Balaji et al. \cite{ref33} used Decision Trees and SVMs 
+on vertical ground reaction force (VGRF) data, achieving accuracies as high as 99.4\%. Trojaniello et al. \cite{ref34} proposed a hybrid HMM-SVM approach 
+based on shank-mounted IMUs, achieving over 90\% accuracy using seven kinematic channels. Pohl et al. \cite{ref35} compared SVM, LR, and KNN on stroke 
+subjects using wrist and ankle sensors, with SVM reaching 93\% accuracy \cite{ref36}. Deep learning models like CNN-TCN have also been explored for 
+identifying stroke-induced gait deviations \cite{ref37}. 
+
+
+These studies demonstrate that while complex pipelines may provide excellent results, simpler 
+classifiers with meaningful features as in our work can be equally effective and more deployable.
+
 Although, previous studies have proved the feasibility of IMU-based gait analysis, there remains a lack of lightweight, interpretable, and clinically 
-meaningful methods created specifically for stroke-affected populations. This work addresses that gap by proposing a minimal-feature, high-performance 
-classification pipeline using bilateral gyroscope extrema optimized for subject-level generalization.
+meaningful methods created with the aim of deployment in real life. This work addresses that gap by proposing a minimal-feature, high-performance 
+classification pipeline using bilateral gyroscope extrema optimized for subject-level generalization minimising 

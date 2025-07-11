@@ -6,7 +6,7 @@ Starting with the Fig.~\ref{fig:accuracy_roc_combined}, the bar plot shows the c
 using the selected features: minimum and maximum values of the z-axis angular velocity from the left and right leg. The models tested include Logistic 
 Regression, Random Forest, Support Vector Machines (SVM) with linear, polynomial, and RBF kernels, XGBoost, and K-Nearest Neighbors (KNN). 
 
-\begin{figure*}[!t]
+\begin{figure*}[H]
     \centering
     \includegraphics[width=0.7\textwidth]{Images/selected_features.png}
     \vspace{4mm}
@@ -40,7 +40,8 @@ th lowest among the tested models. The detailed performance metrics for each mod
     \end{tabular}
 \end{table}
 
-
+\newpage
+\newpage
 \subsection{ROC Curve Analysis}
 Fig.~\ref{fig:accuracy_roc_combined} presents the ROC curves for all classifiers. The \textit{SVM Linear} model seems to have perfect discrimination with an AUC of 1.00, 
 while the \textit{Random Forest} has a similar performance of 0.98. Following closely we have the models \textit{XGBoost} and \textit{KNN} with a performance 
@@ -48,6 +49,7 @@ of 0.96 and \textit{Logistic Regression} along with \textit{SVM Linear Kernel} w
 performance with an AUC of 0.89, indicating that it can effectively distinguish between the two classes, albeit with slightly lower performance compared to the 
 other models. 
 
+\newpage
 
 \subsection{Confusion Matrix Evaluation}
 
@@ -60,7 +62,7 @@ Lastly the \textit{KNN} model had the highest number of misclassifications, with
 may not be as robust as the other models for this task. Overall, these confusion matrices reinforce the findings and emphasize the consistency and clinical 
 usability of ensemble-based classifiers like Random Forest and XGBoost for reliable gait classification using minimal yet meaningful features.
 
-\begin{figure*}[!t]
+\begin{figure*}[]
     \centering
     % Top row: 3 SVMs
     \begin{subfigure}[t]{0.30\textwidth}

@@ -20,13 +20,13 @@ accuracy in segmenting gait cycles and estimating spatio-temporal parameters~\ci
 only, because we found that the thigh data did not provide any additional information for the task, which is also supported by the research of Hwang et al.~\cite{ref32},
 who used only shank-mounted IMUs for accurate gait classification in joint impairment detection tasks. 
 
-\begin{figure}[ht]
+\begin{figure}[H]
     \centering
-    \includegraphics[width=0.95\columnwidth]{Images/sensor_placement.png}
+    \includegraphics[width=0.85\columnwidth]{Images/sensor_placement.png}
     \caption{Modified sensor placement schematic adapted from~\cite{ref32}. Image adapted under the Creative Commons Attribution 4.0 License (CC BY 4.0).}
     \label{fig:sensor_placement}
 \end{figure}
- 
+
 To ensure a detailed representation of gait dynamics, we extracted a set of temporal, motion-based, asymmetry, and statistical features from the IMU data. These features, 
 detailed in Table~\ref{table:features}, include all major categories commonly used in gait analysis, effectively exhausting the relevant metrics for the classification task. 
 It is important to note that before extracting the features, we applied a low-pass Butterworth filter with a cutoff frequency of 10Hz to the gyroscope data to remove 
@@ -74,8 +74,6 @@ high-frequency noise and ensure that the features reflect the gait patterns accu
     \end{tabular}
 \end{table*}
 
-
-\newpage
 \subsection{Feature Selection}
 The feature selection process was conducted to identify the most relevant features for the classification task. The classification task in this case is a binary 
 classification problem that enables us to use methods like Point Bi-serial Feature Selection (BFS) and Recursive Feature Elimination (RFE) to select the most
@@ -100,7 +98,7 @@ The results of the BFS analysis are shown below in Table~\ref{tab:bfs_results}.
     \label{tab:bfs_results}
 \end{table}
 
-
+\newpage
 Following the BFS analysis, we applied Recursive Feature Elimination with the use of Random Forest Classifier to refine the feature set further. In this process we 
 iteratively removed the least important features based on the contribution to the accuracy of the model, until we get the optimal subset of features.
 \begin{table}[H]
@@ -127,7 +125,6 @@ iteratively removed the least important features based on the contribution to th
 \end{table}
 
 
-\newpage
 Having all the information from the feature selection algorithm we now have a subset of features, that we can use for the classification task. At this stage we
 had to take into consideration the medical significance of the features, since the goal is to create a clinically applicable model that can be used in real-world 
 scenarios. Based on that context we decided to focus on features that are not only statistically significant but also medically meaningful and actionable, 
@@ -142,7 +139,6 @@ To evaluate classification performance, we tested a diverse set of algorithms: L
 basis function (RBF), and polynomial kernels, Extreme Gradient Boosting (XGBoost), and K-Nearest Neighbors (KNN). These models offer a mix of linear and non-linear 
 decision boundaries, ensemble learning, and instance-based reasoning, enabling a comprehensive comparison across different learning paradigms.
 
-\newpage
 \subsection{Evaluation Strategy}
 In order to create an unbiased evaluation of model performance, we adopted a stratified k-fold cross-validation strategy. Specifically, the dataset was 
 partitioned into $k=5$ folds, where each fold preserved the proportion of class labels, ensuring that both classes were adequately represented during training 
