@@ -2,27 +2,23 @@
 \label{sec:experimental_resuts}
 
 \subsection{Model Accuracy Metrics}
-Starting with the Fig.~\ref{fig:accuracy_roc_combined}, the bar plot shows the classification accuracy, precision, recall, F1-score and AUC of each model 
+Starting with the Fig.~\ref{fig:metrics}, the bar plot shows the classification accuracy, precision, recall, F1-score and AUC of each model 
 using the selected features: minimum and maximum values of the z-axis angular velocity from the left and right leg. The models tested include Logistic 
 Regression, Random Forest, Support Vector Machines (SVM) with linear, polynomial, and RBF kernels, XGBoost, and K-Nearest Neighbors (KNN). 
 
-\begin{figure*}[H]
+\begin{figure*}
     \centering
-    \includegraphics[width=0.7\textwidth]{Images/selected_features.png}
-    \vspace{4mm}
-    \includegraphics[width=0.7\textwidth]{Images/selected_features_models_roc_curves.png}
-    \caption{(Top) Classification Accuracy; (Bottom) ROC Curves for All Classifiers Using LOOCV}
-    \label{fig:accuracy_roc_combined}
+    \includegraphics[width=0.7\linewidth]{Images/selected_features.png}
+    \caption{Classification metrics (accuracy, precision, recall, F1).}
+    \label{fig:metrics}
 \end{figure*}
-
 The highest F1-score (93\%) was achieved by \textit{Random Forest}, followed closely by the \textit{Logistic Regression} and \textit{XGBoost} models with 
-accuraciew of (89\%) of (90\%) respectively. In contrast the \textit{SVM} models had a lower F1-score of (85\%) for the linear and RBF kernels, while the 
+accuracies of (89\%) of (90\%) respectively. In contrast the \textit{SVM} models had a lower F1-score of (85\%) for the linear and RBF kernels, while the 
 \textit{SVM} with polynomial kernel achieved a significantly lower score of (78\%). Lastly the \textit{KNN} model performed  an F1-score of (76\%), which is 
-th lowest among the tested models. The detailed performance metrics for each models are summarised in the Table~\ref{tab:metrics}.
+th lowest among the tested models. The detailed performance metrics for each models are summarized in the Table~\ref{tab:metrics}.
 
 \begin{table}[htbp]
     \caption{Accuracy and AUC for All Classifiers Using LOOCV}
-    \label{tab:metrics}
     \centering
     \scriptsize
     \begin{tabular}{lcccc}
@@ -38,16 +34,22 @@ th lowest among the tested models. The detailed performance metrics for each mod
     KNN                     & 0.81 & 1.00 & 0.62 & 0.76       \\
     \bottomrule
     \end{tabular}
+    \label{tab:metrics}
 \end{table}
 
-\newpage
-\newpage
+
 \subsection{ROC Curve Analysis}
-Fig.~\ref{fig:accuracy_roc_combined} presents the ROC curves for all classifiers. The \textit{SVM Linear} model seems to have perfect discrimination with an AUC of 1.00, 
+Fig.~\ref{fig:roc} presents the ROC curves for all classifiers. The \textit{SVM Linear} model seems to have perfect discrimination with an AUC of 1.00, 
 while the \textit{Random Forest} has a similar performance of 0.98. Following closely we have the models \textit{XGBoost} and \textit{KNN} with a performance 
 of 0.96 and \textit{Logistic Regression} along with \textit{SVM Linear Kernel} with an AUC of 0.92. The \textit{SVM Polynomial Kernel} model also shows a strong
 performance with an AUC of 0.89, indicating that it can effectively distinguish between the two classes, albeit with slightly lower performance compared to the 
 other models. 
+\begin{figure*}
+    \centering
+    \includegraphics[width=0.7\textwidth]{Images/selected_features_models_roc_curves.png}
+    \caption{ROC curves for all classifiers using LOOCV.}
+    \label{fig:roc}
+\end{figure*}
 
 \newpage
 
