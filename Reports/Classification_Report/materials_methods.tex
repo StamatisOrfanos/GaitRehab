@@ -5,25 +5,26 @@ shank kinematics of stroke patients to healthy individuals. The primary objectiv
 automatically distinguish between normal and abnormal gait patterns using features extracted from the gyroscope data of that earlier study. All data processing, feature 
 engineering, model design, and evaluation described herein are original contributions that aim to enhance the clinical utility of the dataset.
 
-\subsection{Dataset Overview}
+\subsection{Data Source}
 The original experiment included sixteen stroke patients and sixteen healthy individuals, all of whom walked on a flat 10-meter indoor walkway while wearing IMU sensors 
-(MBIENTLAB Inc., USA) placed bilaterally on their shanks. Data acquisition protocols, participant criteria, and ethical approvals were thoroughly detailed in the original 
-publication~\cite{ref29}. The recorded data consisted of tri-axial gyroscope signals sampled at 100 Hz, with angular velocities measured along the sagittal 
+(MBIENTLAB Inc., USA) placed bilaterally on their shanks. Data acquisition protocols, participant criteria, and ethical approvals were thoroughly detailed in the 
+original publication~\cite{ref29}. The recorded data consisted of tri-axial gyroscope signals sampled at 100 Hz, with angular velocities measured along the sagittal 
 (x), frontal (y), and transverse (z) planes.
 
 
 \subsection{Feature Extraction}
-In the process of extracting features from the gyroscope data, that were located on both the shanks and thighs of the participants we focused on the z-axis angular 
-velocity as it it is the most relevant to the gait cycle, since the z-axis gyroscope signals correspond to leg rotation, highly indicative of gait abnormalities.
+In the process of extracting features from the gyroscope data, that were located on both the shanks of the participants we focused on the z-axis angular velocity 
+as it it is the most relevant to the gait cycle, since the z-axis gyroscope signals correspond to leg rotation, highly indicative of gait abnormalities.
 IMU placement on the lateral shank and the use of z-axis angular velocity for gait phase identification are consistent with previous methods that demonstrated high 
 accuracy in segmenting gait cycles and estimating spatio-temporal parameters~\cite{ref30},\cite{ref31}.Furthermore we decided to use the data derived from the shanks 
-only, because we found that the thigh data did not provide any additional information for the task, which is also supported by the research of Hwang et al.~\cite{ref32},
-who used only shank-mounted IMUs for accurate gait classification in joint impairment detection tasks. 
+only, due to the fact that data from other points of the lower or upper body did not provide any additional information for the task, which is also supported by the 
+research of Hwang et al.~\cite{ref32}, who used only shank-mounted IMUs for accurate gait classification in joint impairment detection tasks. The position of the
+sensors can be seen on the Fig. \ref{fig:sensor_placement}.
 
 \begin{figure}[H]
     \centering
-    \includegraphics[width=0.85\columnwidth]{Images/sensor_placement.png}
-    \caption{Modified sensor placement schematic adapted from~\cite{ref32}. Image adapted under the Creative Commons Attribution 4.0 License (CC BY 4.0).}
+    \includegraphics[width=0.85\columnwidth]{Images/sensors-placements.jpg}
+    \caption{Sensor placement schematic adapted from~\cite{ref29}. Image adapted under the Creative Commons Attribution 4.0 License (CC BY 4.0).}
     \label{fig:sensor_placement}
 \end{figure}
 
