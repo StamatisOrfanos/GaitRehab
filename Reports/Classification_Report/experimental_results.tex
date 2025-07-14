@@ -40,19 +40,21 @@ th lowest among the tested models. The detailed performance metrics for each mod
 
 An important consideration when evaluating these models lies in the balance between precision and recall. Several classifiers, such as SVM variants and KNN, 
 demonstrate very high precision (100\%), indicating that when they predict an abnormal gait, they are almost always correct. However, their recall scores 
-range between 56\% and 75\%, suggesting that they fail to identify a significant portion of actual abnormal cases. 
+range between (56\%) and (75\%), suggesting that they fail to identify a significant portion of actual abnormal cases. 
 
-In the current context of stroke rehabilitation, missing a true abnormal gait can be more detrimental than issuing a false alarm. A high recall is thus 
-essential for early detection and timely intervention. In contrast, models like Random Forest and XGBoost achieve both high precision and high recall, 
-offering a better balance by correctly identifying most abnormal gaits while minimizing false positives. This makes them particularly suited for deployment 
-in clinical screening settings where sensitivity is critical to patient safety.
+In the current context of gait classification for stroke rehabilitation, missing a true abnormal gait can be more detrimental than issuing a false alarm. 
+A high recall is thus essential for early detection and timely intervention. In contrast, models like Random Forest and XGBoost achieve both high precision 
+and high recall, offering a better balance by correctly identifying most abnormal gaits while minimizing false positives. This makes them particularly suited 
+for deployment in clinical screening settings where sensitivity is critical to patient safety.
 
+\newpage
 \subsection{ROC Curve Analysis}
-Fig.~\ref{fig:roc} presents the ROC curves for all classifiers. The \textit{SVM Linear} model seems to have perfect discrimination with an AUC of 1.00, 
-while the \textit{Random Forest} has a similar performance of 0.98. Following closely we have the models \textit{XGBoost} and \textit{KNN} with a performance 
-of 0.96 and \textit{Logistic Regression} along with \textit{SVM Linear Kernel} with an AUC of 0.92. The \textit{SVM Polynomial Kernel} model also shows a strong
-performance with an AUC of 0.89, indicating that it can effectively distinguish between the two classes, albeit with slightly lower performance compared to the 
-other models. 
+The ROC curves in Fig.~\ref{fig:roc} provide a clearer view of each model’s ability to distinguish between classes. While the \textit{SVM with RBF Kernel} achieved 
+a perfect AUC of (1.00), suggesting ideal separation between normal and abnormal gait cases across all thresholds—this performance is not fully reflected in its 
+recall and F1-score, which remain moderate (around 75–85\%). This discrepancy indicates that, despite the model’s strong theoretical ranking ability, its 
+performance at the selected decision threshold still leads to missed positive cases. In other words, the model excels at ranking instances correctly but fails 
+to convert that strength into high recall due to threshold misalignment.
+
 \begin{figure*}
     \centering
     \includegraphics[width=0.7\textwidth]{Images/selected_features_models_roc_curves.png}
@@ -60,10 +62,13 @@ other models.
     \label{fig:roc}
 \end{figure*}
 
-\newpage
+\textit{Random Forest} and \textit{XGBoost} also demonstrate excellent AUCs (0.98 and 0.97 respectively), confirming their strong balance between sensitivity 
+and specificity. Interestingly, \textit{Logistic Regression}, despite being a linear model, achieved a solid AUC of 0.92, showing that the selected features are 
+linearly separable to a great extent. In contrast, although the \textit{SVM Polynomial Kernel} model exhibited a relatively high AUC of 0.90, its 
+lower F1-score and higher misclassification rate suggest a potential overfitting or misalignment between model complexity and the dataset size. 
+
 
 \subsection{Confusion Matrix Evaluation}
-
 Fig.~\ref{fig:confusion_matrices} illustrates the confusion matrices for each classifier. Most models performed well on both classes, showing strong 
 diagonal dominance. Notably, \textit{Logistic Regression}, and \textit{XGBoost} \textit{Random Forest}, where each misclassified mostly one instance, 
 yielding very low false positive and false negative rates. The Support Vector Machine (SVM) variants showed moderate performance, with the RBF and Linear kernels 
