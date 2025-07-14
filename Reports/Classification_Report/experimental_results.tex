@@ -12,13 +12,14 @@ Regression, Random Forest, Support Vector Machines (SVM) with linear, polynomial
     \caption{Classification metrics (accuracy, precision, recall, F1).}
     \label{fig:metrics}
 \end{figure*}
+
 The highest F1-score (93\%) was achieved by \textit{Random Forest}, followed closely by the \textit{Logistic Regression} and \textit{XGBoost} models with 
 accuracies of (89\%) of (90\%) respectively. In contrast the \textit{SVM} models had a lower F1-score of (85\%) for the linear and RBF kernels, while the 
 \textit{SVM} with polynomial kernel achieved a significantly lower score of (78\%). Lastly the \textit{KNN} model performed  an F1-score of (76\%), which is 
 th lowest among the tested models. The detailed performance metrics for each models are summarized in the Table~\ref{tab:metrics}.
 
 \begin{table}[htbp]
-    \caption{Accuracy and AUC for All Classifiers Using LOOCV}
+    \caption{Accuracy Metrics of Classifiers Using LOOCV}
     \centering
     \scriptsize
     \begin{tabular}{lcccc}
@@ -37,6 +38,14 @@ th lowest among the tested models. The detailed performance metrics for each mod
     \label{tab:metrics}
 \end{table}
 
+An important consideration when evaluating these models lies in the balance between precision and recall. Several classifiers, such as SVM variants and KNN, 
+demonstrate very high precision (100\%), indicating that when they predict an abnormal gait, they are almost always correct. However, their recall scores 
+range between 56\% and 75\%, suggesting that they fail to identify a significant portion of actual abnormal cases. 
+
+In the current context of stroke rehabilitation, missing a true abnormal gait can be more detrimental than issuing a false alarm. A high recall is thus 
+essential for early detection and timely intervention. In contrast, models like Random Forest and XGBoost achieve both high precision and high recall, 
+offering a better balance by correctly identifying most abnormal gaits while minimizing false positives. This makes them particularly suited for deployment 
+in clinical screening settings where sensitivity is critical to patient safety.
 
 \subsection{ROC Curve Analysis}
 Fig.~\ref{fig:roc} presents the ROC curves for all classifiers. The \textit{SVM Linear} model seems to have perfect discrimination with an AUC of 1.00, 

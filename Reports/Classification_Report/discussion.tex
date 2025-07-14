@@ -5,26 +5,22 @@ abnormal gait patterns using gyroscope-derived features. Among all models, \text
 top-performing classifiers across nearly all evaluation metrics.
 
 The \textit{Random Forest} model achieved the highest F1-score (93\%) and near-perfect classification in the confusion matrix, with only one instance misclassified. 
-This model benefited from its ensemble learning mechanism, which combines multiple decision trees to reduce overfitting and capture complex, non-linear patterns in the 
-data. Similarly, \textit{XGBoost} showed excellent generalization, with a high AUC of 0.96 and minimal misclassification, thanks to its gradient-boosted tree approach 
-that optimizes classification boundaries based on prior errors. \textit{Logistic Regression}, while a linear model, also performed competitively (F1-score of 89\%), 
-likely due to the high discriminative power of the selected features and the low-dimensional nature of the dataset.
+This model benefited from its ensemble learning mechanism, which combines multiple decision trees to reduce overfitting and capture complex, non-linear patterns 
+in the data. Similarly, \textit{XGBoost} showed excellent generalization, with a high AUC of 0.96 and minimal misclassification, thanks to its gradient-boosted 
+tree approach that optimizes classification boundaries based on prior errors. \textit{Logistic Regression}, while a linear model, also performed competitively 
+(F1-score of 89\%), likely due to the high discriminative power of the selected features and the low-dimensional nature of the dataset.
 
 In contrast, the \textit{Support Vector Machines (SVMs)}, especially the polynomial kernel variant, underperformed in comparison. While SVMs 
 with linear and RBF kernels achieved reasonable AUC values (0.92 and 1.00 respectively), their F1-scores remained moderate (85\%), and they showed a higher 
 false negative rate. This tendency to misclassify abnormal gait as normal is especially problematic in clinical applications where sensitivity to pathological cases 
 is critical. The observed performance gap can be attributed to the SVMs’ sensitivity to feature scaling, kernel parameter tuning, and decision boundary rigidity 
-in smaller datasets. While theoretically powerful, SVMs often require careful hyperparameter optimization and balanced class distributions—challenges that are 
-exacerbated when working with medical datasets of limited size.
+in smaller datasets. Lastly the \textit{KNN} model displayed the lowest overall performance. Its reliance on instance-based learning likely made it more 
+susceptible to local noise and feature overlap between classes, as shown by its high number of misclassifications.
 
-Lastly the \textit{KNN} model displayed the lowest overall performance. Its reliance on instance-based learning likely made it more susceptible to local noise and feature 
-overlap between classes, as shown by its high number of misclassifications. This reinforces the limitations of non-parametric methods when applied to small and 
-moderately imbalanced clinical datasets.
+Compared to the results of prior relevant studies, our study achieves similar or better performance while using only four simple gyroscope derived features from 
+shank-mounted IMUs and classical machine learning models. This minimalistic yet interpretable setup positions our method as a strong candidate for low-cost, 
+real-time clinical deployment, especially in settings where wearable simplicity, explainability, and generalizability are critical.
 
-From a clinical perspective, the outstanding performance of tree-based models is particularly encouraging. These models not only offer high classification accuracy but 
-also provide interpretable feature importances, which is valuable for clinicians aiming to understand the biomechanical rationale behind a patient’s diagnosis.
-Their robustness in small sample regimes and insensitivity to input scaling make them strong candidates for integration into real-time gait assessment tools.
-
-Overall, the results validate that a minimal feature set, focused on medically meaningful statistics such as extremal values of angular velocity can yield high predictive 
-performance when paired with appropriate classifiers. The success of simpler models like Logistic Regression and the superior results of ensemble models further 
-highlight the importance understanding the data and domain characteristics when selecting an artificial intelligence approach. 
+Overall, the results validate that a minimal feature set, focused on medically meaningful statistics such as extremal values of angular velocity can lead to 
+high predictive performance when paired with appropriate classifiers. The success of the combination of a simpler data source, data pipeline and models
+highlights the importance of understanding the characteristics of the domain when selecting an artificial intelligence approach.
