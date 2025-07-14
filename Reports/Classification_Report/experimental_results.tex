@@ -66,7 +66,9 @@ to convert that strength into high recall due to threshold misalignment.
 and specificity. Interestingly, \textit{Logistic Regression}, despite being a linear model, achieved a solid AUC of 0.92, showing that the selected features are 
 linearly separable to a great extent. In contrast, although the \textit{SVM Polynomial Kernel} model exhibited a relatively high AUC of 0.90, its 
 lower F1-score and higher misclassification rate suggest a potential overfitting or misalignment between model complexity and the dataset size. 
-
+While ensemble models like Random Forest and XGBoost show strong performance in terms of both F1-score and AUC, other models (e.g., SVM RBF) demonstrate an 
+AUC-recall mismatch. This consistency in ensemble models indicates greater robustness across multiple evaluation criteria, making them more reliable for 
+deployment in real-world applications where threshold tuning is not always feasible.
 
 \subsection{Confusion Matrix Evaluation}
 Fig.~\ref{fig:confusion_matrices} illustrates the confusion matrices for each classifier. Most models performed well on both classes, showing strong 
