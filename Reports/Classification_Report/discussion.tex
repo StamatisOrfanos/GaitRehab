@@ -23,14 +23,14 @@ kinematic channels to achieve over 90\% accuracy, while Pohl et al.~\cite{ref31}
 Other studies, such as those by Zhao et al.~\cite{ref28} and Li et al.~\cite{ref32}, relied on complex pipeline architectures involving ZUPT-aided navigation 
 or fuzzy logic with empirical mode decomposition, which although effective, are computationally intensive and not easily deployable in real-world clinical settings.
 
-In contrast, our feature set is minimal, interpretable, and clinically meaningful. By focusing on extremal values—metrics that can be easily understood and 
-potentially modified through rehabilitation—we provide a tool that not only classifies but also guides intervention. This low-dimensional, high-performance 
-approach makes it viable for embedded deployment in wearable systems with limited processing power, such as smartphones or edge-computing IMUs.
+In contrast, our feature set is minimal, interpretable, and clinically meaningful. By focusing on extremal values metrics that can be easily understood and 
+potentially modified through rehabilitation, we provide a tool that not only classifies but also guides intervention. This low-dimensional, high-performance 
+approach makes it viable for embedded deployment in wearable systems with limited processing power, such as smartphones or edge computing IMUs.
 
-In addition, while deep learning models like CNN-TCNs and multilayer perceptrons~\cite{ref33,ref34} have shown promise in stroke gait classification, 
-their reliance on large datasets and computational resources limits their feasibility for real-time, personalized rehabilitation applications. 
-Our results show that when the feature set is thoughtfully selected based on domain knowledge, classical models can offer excellent generalization 
-even with small sample sizes.
+In addition, while deep learning models like CNN-TCNs and multilayer perceptrons \cite{ref33,ref34} have shown promise achieving a performance of around 
+80\% and 96\% respectively in stroke gait classification, but their reliance on large datasets and computational resources limits their feasibility for real-time, 
+rehabilitation applications. Our results show better performance in cases, proving that when the feature set is thoughtfully selected based on domain knowledge, 
+classical models can offer excellent generalization even with small sample sizes.
 
 Overall, the results validate that a minimal feature set—focused on medically meaningful statistics such as the maximum and minimum angular velocities of 
 the lower limbs—can lead to high predictive performance when paired with appropriate classifiers. The success of combining simple IMU data, a lightweight 
