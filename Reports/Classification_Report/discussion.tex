@@ -17,10 +17,22 @@ is critical. The observed performance gap can be attributed to the SVMs’ sensi
 in smaller datasets. Lastly the \textit{KNN} model displayed the lowest overall performance. Its reliance on instance-based learning likely made it more 
 susceptible to local noise and feature overlap between classes, as shown by its high number of misclassifications.
 
-Compared to the results of prior relevant studies, our study achieves similar or better performance while using only four simple gyroscope derived features from 
-shank-mounted IMUs and classical machine learning models. This minimalistic yet interpretable setup positions our method as a strong candidate for low-cost, 
-real-time clinical deployment, especially in settings where wearable simplicity, explainability, and generalizability are critical.
+Compared to the results of prior relevant studies, our study achieves similar or better performance while using only four simple gyroscope-derived features 
+(maximum and minimum angular velocities from both shanks), extracted from a single IMU per leg. For instance, Trojaniello et al.~\cite{ref30} used seven 
+kinematic channels to achieve over 90\% accuracy, while Pohl et al.~\cite{ref31} employed both wrist and ankle IMUs and reported SVM performance up to 93\%. 
+Other studies, such as those by Zhao et al.~\cite{ref28} and Li et al.~\cite{ref32}, relied on complex pipeline architectures involving ZUPT-aided navigation 
+or fuzzy logic with empirical mode decomposition, which although effective, are computationally intensive and not easily deployable in real-world clinical settings.
 
-Overall, the results validate that a minimal feature set, focused on medically meaningful statistics such as extremal values of angular velocity can lead to 
-high predictive performance when paired with appropriate classifiers. The success of the combination of a simpler data source, data pipeline and models
-highlights the importance of understanding the characteristics of the domain when selecting an artificial intelligence approach.
+In contrast, our feature set is minimal, interpretable, and clinically meaningful. By focusing on extremal values—metrics that can be easily understood and 
+potentially modified through rehabilitation—we provide a tool that not only classifies but also guides intervention. This low-dimensional, high-performance 
+approach makes it viable for embedded deployment in wearable systems with limited processing power, such as smartphones or edge-computing IMUs.
+
+In addition, while deep learning models like CNN-TCNs and multilayer perceptrons~\cite{ref33,ref34} have shown promise in stroke gait classification, 
+their reliance on large datasets and computational resources limits their feasibility for real-time, personalized rehabilitation applications. 
+Our results show that when the feature set is thoughtfully selected based on domain knowledge, classical models can offer excellent generalization 
+even with small sample sizes.
+
+Overall, the results validate that a minimal feature set—focused on medically meaningful statistics such as the maximum and minimum angular velocities of 
+the lower limbs—can lead to high predictive performance when paired with appropriate classifiers. The success of combining simple IMU data, a lightweight 
+data pipeline, and classical models underscores the importance of domain understanding in designing effective and scalable artificial intelligence solutions 
+for clinical gait analysis.
