@@ -13,17 +13,17 @@ assessments of motor asymmetry are vital. It is very common for stroke patients 
 asymmetrical gait, identified by unequal stance or swing phases between limbs \cite{ref5}. The process of detecting and quantifying such asymmetries in a 
 reliable and scalable manner remains a major challenge in both inpatient and outpatient care settings. Although healthcare professionals can perform structured 
 gait assessments during scheduled visits, continuous, high-frequency monitoring throughout a patient's daily life is not feasible without technological assistance. 
-The early and continuous identification of gait deviations is important for creating personalized rehabilitation programs, tracking recovery progress, 
-and preventing secondary complications such as joint degeneration or in some cases falls and further injuries \cite{ref6}, \cite{ref7}.
+The early and continuous identification of gait deviations is important for developing personalized rehabilitation programs, tracking recovery progress, 
+and preventing secondary complications such as joint degeneration, falls or further injuries \cite{ref6}, \cite{ref7}.
 
-The advances in the Internet of Things (IoT) and embedded computing in the last decade, has created a increasing interest in using wearable sensors, 
+The advances in the Internet of Things (IoT) and embedded computing in the last decade, has created an increasing interest in using wearable sensors, 
 particularly inertial measurement units (IMUs), to provide low-cost and scalable alternatives to lab-based gait analysis systems \cite{ref8},\cite{ref9},\cite{ref10}. 
 Sensors including accelerometers and gyroscopes, provide three-dimensional monitoring in every day environments, creating an ideal case for remote monitoring and 
-rehabilitation \cite{ref11}, \cite{ref12}. These sensors combined with machine learning techniques, produce IMU data that we can be process, extract relevant 
+rehabilitation \cite{ref11}, \cite{ref12}. These sensors combined with machine learning techniques, produce IMU data that we can be process and extract relevant 
 temporal and kinematic features, enabling the classification of abnormal gait signals with high accuracy \cite{ref13}, \cite{ref14}.
 
-Studies thus far have used both machine and deep learning models such as Support Vector Machines (SVM), Random Forests, and Convolutional Neural Networks (CNN) 
-to classify human movement patterns using IMU features \cite{ref15}, \cite{ref16}. The models have shown promising results in general 
+Studies thus far have used both machine and deep learning models such as Support Vector Machines (SVM), Random Forests (RF), and Convolutional 
+Neural Networks (CNN) to classify human movement patterns using IMU features \cite{ref15}, \cite{ref16}. The models have shown promising results in general 
 human activity recognition and gait classification tasks. However, they often rely on extensive datasets, high computational resources, or 
 complicated feature extraction pipelines that limit their applicability in real-time or resource-constrained environments. Also, there is 
 a notable lack of lightweight and interpretable methods specifically made to detect clinically meaningful gait asymmetries—especially in 
@@ -31,10 +31,12 @@ populations recovering from neurological events such as stroke. The studies and 
 or healthy individuals, overlooking the unique gait deviations, inter-subject variability, and clinical needs associated with post-stroke 
 rehabilitation \cite{ref17}, \cite{ref18}, \cite{ref19}. 
 
-To address this gap, this work proposes a minimal-feature, machine learning-based pipeline for classifying normal versus abnormal gait signals using 
-statistical extrema from bilateral gyroscope signals. The approach is designed to be computationally efficient and interpretable, making it suitable 
-for both the embedded deployment in wearable rehabilitation systems and web applications used by healthcare professionals. We also used a leave-one-out 
-cross-validation (LOOCV) strategy in order to ensure model generalizability across individuals, particularly relevant for heterogeneous stroke populations.
+To address the need for efficient and interpretable gait classification, this work proposes a minimal-feature, machine learning–based pipeline that distinguishes 
+between normal and abnormal gait patterns using statistical extrema from bilateral gyroscope signals. Designed with computational efficiency and transparency 
+in mind, the proposed approach is well-suited for both embedded deployment in wearable rehabilitation systems and web-based applications for healthcare professionals. 
+To ensure generalizability across individuals—particularly important for heterogeneous stroke populations, we employed a leave-one-out cross-validation (LOOCV) 
+strategy. All data processing, feature engineering, model design, and evaluation are original contributions that build upon the gyroscope data from a prior study, 
+with the overarching goal of enhancing the clinical utility of the dataset.
 
 The contributions of this work are summarized as follows:
 \begin{itemize}
