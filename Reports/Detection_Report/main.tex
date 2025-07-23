@@ -39,17 +39,16 @@ Hat Yai, Songkhla 90110, Thailand \\
 
 \begin{abstract}
 Early identification of gait cycle asymmetries plays a critical role in effective stroke rehabilitation and recovery. This study presents 
-a novel approach to classify gait cycle symmetry levels using gyroscope signals from shank-mounted inertial measurement units (IMUs). 
-Building upon a previously collected dataset, we segmented the walking data into individual gait cycles and annotated each with a three-tier 
-confidence level indicating the degree of asymmetry high, moderate, and low. The confidence levels were mapped to a binary classification 
-task of symmetrical against asymmetrical gait cycles. 
+a novel approach to classify gait cycle symmetry levels using gyroscope signals from shank-mounted inertial measurement units. 
+Building upon a previously collected dataset, we segmented the walking data into individual gait cycles, annotated each with a three-tier 
+confidence level (high, moderate, low) based on the symmetrical difference of the movements of each leg. 
 
-
-
-Our preliminary testing on healthy individuals demonstrates the feasibility of real-time symmetry analysis using minimal sensor input. 
-This work lays the groundwork for future clinical deployment in post-stroke rehabilitation settings.
+% confidence level based on the and selected medically relevant features like stance and stride durations for each leg within the cycle.
+% Machine Learning models were trained to classify the gait cycles as symmetric or asymmetric for each confidence level, achieving an accuracy of 90\%
+% and f1-score of 94\% with ensemble methods like Random Forest and Gradient Boosting on the moderate confidence level. Better results were obtained 
+% for the high confidence level,
+% Our preliminary testing deployed a series of models on a smartphone connected with the on healthy individuals demonstrates the feasibility of real-time symmetry analysis using minimal sensor input. 
 \end{abstract}
-
 \begin{IEEEkeywords}
 Gait Symmetry Classification, Gait Cycle, Machine Learning, Wearable Sensors, Gyroscope Signals, Pilot Study, Stroke Rehabilitation
 \end{IEEEkeywords}

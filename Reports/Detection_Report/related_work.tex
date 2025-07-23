@@ -13,23 +13,15 @@ general purpose framework for human activity recognition with a 94\% accuracy. B
 provide specific classification metrics. 
 
 Mizuta et al \cite{ref34} used OpenPose to extract limb angles and lengths from video data, clustering post-stroke gait into interpretable patterns using Gaussian 
-Mixture Models.
+Mixture Models. Following this approach, Mohammed et al \cite{ref24} segmented gait phases from in-shoe pressure sensor data using regression and thresholding 
+techniques, achieving qualitative results that matched expert assessments. Furthermore, Zhou et al \cite{ref25} improved single-IMU worn at the waist to get 
+gait recognition by fusing temporal and spatial features using a CNN and Bi-LSTM, achieving an accuracy of 98.63\%.
 
-\begin{tabular}{|p{2cm}|p{3.2cm}|p{3.2cm}|p{2.8cm}|p{2.8cm}|p{4.5cm}|}
-\toprule
-First Author &            Device \& Protocol &                    Features Used &                     Model &                      Performance &                                          Main Goal \\
-\midrule
-      Yuwono &         Shimmer IMUs on legs &      Spectral features from STFT &             SOM + k-means &                     97\% accuracy & Develop a robust gait classifier for healthy vs... \\
-        Zhou &     Smart insole (FSR + IMU) &      Pressure, CoP, acceleration &         Rule-based fusion & Heel-strike 97.5\%, Toe-off 95.8\% & Create an adaptive gait event detection algorit... \\
-       Tunca & Smartphone + smartwatch IMUs &       Raw IMU data (no features) &     DeepSense (CNN + GRU) &                    \textasciitilde 94\% accuracy & Design a general-purpose deep learning framewor... \\
-   Boudarham &      8-camera motion capture &      Sagittal joint angles (PCA) &    None (descriptive PCA) &                              N/A & Assess variability in stroke patients’ gait kin... \\
-      Mizuta &     OpenPose (video, 120 Hz) &       Limb angle and limb length &   Gaussian Mixture Models &       5 gait types (no accuracy) & Cluster post-stroke gait into interpretable pat... \\
-    Mohammed &     In-shoe pressure sensors &            Center of Force (CoF) & Regression + thresholding &    Qualitative match with expert & Segment gait phases from CoF data for assistive... \\
-     Balaban &            Literature review & Spatiotemporal + EMG (discussed) &             None (review) &                              N/A & Review gait abnormalities in post-stroke patien... \\
-      Mizuta &         EMG + Motion capture &       Muscle synergies (PCA/NMF) &      Statistical analysis &                              N/A & Link merged swing muscle synergies with functio... \\
-        Zhou &               Waist-worn IMU &  Temporal \& spatial IMU features &             CNN + Bi-LSTM &                           98.63\% & Improve single-IMU gait recognition by fusing t... \\
-    Agostini &       Foot-switches (3/foot) &     Gait phase strings (H/F/P/S) &   Rule-based segmentation &          100\% healthy, 98\% path. & Automatically classify atypical gait cycles for... \\
-    Ferrante &            3D motion capture &  Joint angles (Winters patterns) & Pre/post pattern analysis &                  51\% improvement & Assess effect of biofeedback cycling on gait re... \\
- Kaczmarczyk &     APAS motion capture (3D) &     Joint angles over gait cycle &         ANN (MLP 51-27-3) &                           \textasciitilde 92.5\% & Use ANN to classify post-stroke gait patterns f... \\
-\bottomrule
-\end{tabular}
+More recently, Agostini et al \cite{ref26} used three switches per foot to create a dataset of gait phase strings, achieving 100\% accuracy for healthy subjects 
+and 98\% for pathological cases using rule-based segmentation. Ferrante et al \cite{ref27} made use of 3D motion capture to assess the effect of biofeedback cycling on 
+gait recovery, showing a 51\% improvement in gait patterns. Lastly Kaczmarczyk et al \cite{ref28} used an Artificial Neural Network (ANN) to classify post-stroke gait 
+patterns from joint angles captured by the APAS motion capture system, achieving an accuracy of approximately 92.5\%.
+
+These studies highlight the diversity of approaches in gait analysis, from traditional motion capture systems to wearable sensors and machine learning techniques.
+Provided all of the studies, there is a notable lack of a lightweight and interpretable method specifically designed to detect clinically meaningful asymmetries in 
+the limited data of a gait cycle, especially in populations recovering from neurological events such as stroke.
