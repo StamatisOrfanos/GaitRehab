@@ -14,9 +14,9 @@ velocities measured along the sagittal (x), frontal (y), and transverse (z) plan
 \subsection{Feature Extraction}
 This study presents a structured pipeline for extracting gait cycle features from gyroscopic data collected using Inertial Measurement Units (IMUs) placed 
 on the left and right shanks. The analysis focuses exclusively on the z-axis angular velocity component, as it effectively captures sagittal plane rotational 
-movement—making it a strong indicator of lower-limb kinematics during gait.
+movement, making it a strong indicator of lower-limb kinematics during gait.
 
-\subsubsection{Gait Cycle Detection}
+\textbf{Gait Cycle Detection}
 Let $G_L(t) \in \mathbb{R}$ denote the filtered z-axis gyroscope signal from the left shank over time $t$. To identify gait cycles, we apply peak detection 
 to $G_L(t)$ based on amplitude and temporal separation constraints. Peaks are defined as local maxima $P = \{p_1, p_2, \dots, p_n\}$ such that: 
 
@@ -25,92 +25,72 @@ to $G_L(t)$ based on amplitude and temporal separation constraints. Peaks are de
 where $\theta = 0.5$ deg/s and $d = 80$ samples (at 100 Hz) to ensure biomechanical plausibility. Each gait cycle is defined by the interval $[p_i, p_{i+1})$. 
 Only intervals with a minimum width of 10 samples are retained.
 
-\subsubsection{Feature Computation}
+\textbf{Feature Computation}
 Within each valid gait cycle window, we compute a comprehensive set of features from both the left $G_L(t)$ and right $G_R(t)$ shank signals.
+\begin{enumerate}
+    \item Descriptive Statistics: including mean, standard deviation, maximum and minimum values of the gyroscope signal. \\ 
+    \item Motion Score: We define a custom metric reflecting signal amplitude dynamics:
+    \[
+    M = \max \left( |G(t)| \right) - \min \left( |G(t)| \right).
+    \]
+    \newpage
+    \item Stance and Swing Phase Detection: Phase segmentation is performed using zero-crossing detection on the filtered gyroscope signal. Given zero-crossings at 
+    time indices $z_i$, we define valid intervals $[z_i, z_{i+1}]$. The minimum angular velocity within each interval marks the transition between stance and swing. 
+    The duration of each phase is computed as: 
+    \[
+    T_{\text{stance}} = t_{\min} - t_{\text{start}},
+    \]
+    \[
+    T_{\text{swing}} = t_{\text{end}} - t_{\min},
+    \]
+    where $t_{\min}$ is the timestamp at which the minimum occurs between zero-crossings. \\
 
-
-\begin{table}[htbp]
-    \centering
-    \renewcommand{\arraystretch}{1.5}
-    \begin{tabular}{@{}p{3.5cm} p{11cm}@{}}
-    \toprule
-    \textbf{Feature Category} & \textbf{Description and Mathematical Formulation} \\
-    \midrule
-    \multirow{4}{*}{Descriptive Statistics} 
-    & For each signal \( G(t) \in \{G_L(t), G_R(t)\} \), we compute: \\
-    & Mean: \quad \( \mu = \frac{1}{N} \sum_{i=1}^N G(t_i) \) \\
-    & Standard deviation: \quad \( \sigma = \sqrt{ \frac{1}{N} \sum_{i=1}^N (G(t_i) - \mu)^2 } \) \\
-    & Maximum: \quad \( G_{\max} = \max_i G(t_i) \) \\
-    & Minimum: \quad \( G_{\min} = \min_i G(t_i) \) \\
-
-    \midrule
-
-    Motion Score 
-    & A custom metric that reflects the dynamic range of the angular velocity signal: \\
-    & \[
-    M = \max \left( |G(t)| \right) - \min \left( |G(t)| \right)
-    \] \\
-
-    \midrule
-
-    \multirow{3}{*}{Stance and Swing Phase Detection}
-    & Phase segmentation is performed using zero-crossing detection on the filtered gyroscope signal. Given zero-crossings at time indices \( z_i \), valid intervals \( [z_i, z_{i+1}] \) are considered. The duration of each phase is: \\
-    & \[
-    T_{\text{stance}} = t_{\min} - t_{\text{start}}, \quad T_{\text{swing}} = t_{\text{end}} - t_{\min}
-    \] \\
-    & where \( t_{\min} \) is the timestamp of the minimum angular velocity between zero-crossings. \\
-
-    \midrule
-
-    Stride Time 
-    & The stride time for each leg is computed as the sum of stance and swing durations: \\
-    & \[
+    \item Stride Time: The stride time for each leg is computed as:
+    \[
     T_{\text{stride}} = T_{\text{stance}} + T_{\text{swing}}
-    \] \\
-
-    \bottomrule
-    \end{tabular}
-    \caption{Summary of feature categories and their mathematical definitions computed per gait cycle.}
-    \label{tab:feature_extraction}
-\end{table}
+    \]
+\end{enumerate}
 
 
-
-\newpage
-
-Asymmetry Metrics and Label Assignment
-
+\textbf{Asymmetry Metrics and Label Assignment}
 To quantify gait asymmetry, we compute two indices based on the stride durations of the left ($T_L$) and right ($T_R$) limbs:
 
-1. **Asymmetry Index (AI)**:
+\begin{enumerate}
+    \item Asymmetry Index (AI):
+    \[
+    \text{AI} = \frac{T_L - T_R}{T_L + T_R}, \quad T_L + T_R \neq 0.
+    \]
+    
+    \item Symmetry Ratio (SR):
+    \[
+    \text{SR} = \frac{\min(T_L, T_R)}{\max(T_L, T_R)}, \quad \max(T_L, T_R) \neq 0 \\
+    \]
+\end{enumerate}
 
-   $$
-   \text{AI} = \frac{T_L - T_R}{T_L + T_R}, \quad T_L + T_R \neq 0.
-   $$
-
-2. **Symmetry Ratio (SR)**:
-
-   $$
-   \text{SR} = \frac{\min(T_L, T_R)}{\max(T_L, T_R)}, \quad \max(T_L, T_R) \neq 0.
-   $$
+If either $T_L$ or $T_R$ is undefined for a given cycle, the window is marked invalid, and no asymmetry metrics are computed. Following this rule we were able to
+obtain a total of over 2500 valid gait cycles from the original dataset. 
+\begin{figure}
+    \centering
+    \includegraphics[width=0.85\columnwidth]{Images/sensors-placements.jpg}
+    \caption{Sensor placement schematic adapted from~\cite{ref35}.}
+    \label{fig:sensor_placement}
+\end{figure}
 
 Using these two metrics, we assign labels reflecting confidence levels of gait asymmetry:
 
-* **High-confidence asymmetry**:
+\begin{enumerate}
+    \item High-confidence asymmetry:
+    \[
+       |\text{AI}| > 0.2 \quad \text{or} \quad \text{SR} < 0.8
+    \]
+    \item Moderate-confidence asymmetry:
+    \[
+       |\text{AI}| > 0.15 \quad \text{or} \quad \text{SR} < 0.85
+    \]
+    \item Low-confidence asymmetry:
+    \[
+       |\text{AI}| > 0.1 \quad \text{or} \quad \text{SR} < 0.9
+    \]
+\end{enumerate}
 
-  $$
-  |\text{AI}| > 0.2 \quad \text{or} \quad \text{SR} < 0.8.
-  $$
-* **Moderate-confidence asymmetry**:
-
-  $$
-  |\text{AI}| > 0.15 \quad \text{or} \quad \text{SR} < 0.85.
-  $$
-* **Low-confidence asymmetry**:
-
-  $$
-  |\text{AI}| > 0.1 \quad \text{or} \quad \text{SR} < 0.9.
-  $$
-
-If either $T_L$ or $T_R$ is undefined for a given cycle, the window is marked invalid, and no asymmetry metrics are computed.
 
