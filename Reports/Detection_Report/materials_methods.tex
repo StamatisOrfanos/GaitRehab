@@ -1,0 +1,116 @@
+
+\section{Materials and Methods}
+\label{sec:materials_and_methods}
+This study builds upon data previously collected in the work of Sanghan et al.~\cite{ref22}, which involved a comprehensive investigation comparing the 3D 
+shank kinematics of stroke patients to healthy individuals.
+
+\subsection{Data Source}
+The original experiment included sixteen stroke patients and sixteen healthy individuals, all of whom walked on a flat 10-meter indoor walkway while wearing IMU sensors 
+(MBIENTLAB Inc., USA) placed bilaterally on their shanks as seen on Figure \ref{fig:sensor_placement}. Data acquisition protocols, participant criteria, and ethical 
+approvals were thoroughly detailed in the original publication~\cite{ref22}. The recorded data consisted of tri-axial gyroscope signals sampled at 100 Hz, with angular 
+velocities measured along the sagittal (x), frontal (y), and transverse (z) planes.
+
+
+\subsection{Feature Extraction}
+This study presents a structured pipeline for extracting gait cycle features from gyroscopic data collected using Inertial Measurement Units (IMUs) placed 
+on the left and right shanks. The analysis focuses exclusively on the z-axis angular velocity component, as it effectively captures sagittal plane rotational 
+movement—making it a strong indicator of lower-limb kinematics during gait.
+
+\subsubsection{Gait Cycle Detection}
+Let $G_L(t) \in \mathbb{R}$ denote the filtered z-axis gyroscope signal from the left shank over time $t$. To identify gait cycles, we apply peak detection 
+to $G_L(t)$ based on amplitude and temporal separation constraints. Peaks are defined as local maxima $P = \{p_1, p_2, \dots, p_n\}$ such that: 
+
+\[G_L(p_i) > \theta \quad \text{and} \quad p_{i+1} - p_i \geq d,\]
+
+where $\theta = 0.5$ deg/s and $d = 80$ samples (at 100 Hz) to ensure biomechanical plausibility. Each gait cycle is defined by the interval $[p_i, p_{i+1})$. 
+Only intervals with a minimum width of 10 samples are retained.
+
+\subsubsection{Feature Computation}
+Within each valid gait cycle window, we compute a comprehensive set of features from both the left $G_L(t)$ and right $G_R(t)$ shank signals.
+
+
+\begin{table}[htbp]
+    \centering
+    \renewcommand{\arraystretch}{1.5}
+    \begin{tabular}{@{}p{3.5cm} p{11cm}@{}}
+    \toprule
+    \textbf{Feature Category} & \textbf{Description and Mathematical Formulation} \\
+    \midrule
+    \multirow{4}{*}{Descriptive Statistics} 
+    & For each signal \( G(t) \in \{G_L(t), G_R(t)\} \), we compute: \\
+    & Mean: \quad \( \mu = \frac{1}{N} \sum_{i=1}^N G(t_i) \) \\
+    & Standard deviation: \quad \( \sigma = \sqrt{ \frac{1}{N} \sum_{i=1}^N (G(t_i) - \mu)^2 } \) \\
+    & Maximum: \quad \( G_{\max} = \max_i G(t_i) \) \\
+    & Minimum: \quad \( G_{\min} = \min_i G(t_i) \) \\
+
+    \midrule
+
+    Motion Score 
+    & A custom metric that reflects the dynamic range of the angular velocity signal: \\
+    & \[
+    M = \max \left( |G(t)| \right) - \min \left( |G(t)| \right)
+    \] \\
+
+    \midrule
+
+    \multirow{3}{*}{Stance and Swing Phase Detection}
+    & Phase segmentation is performed using zero-crossing detection on the filtered gyroscope signal. Given zero-crossings at time indices \( z_i \), valid intervals \( [z_i, z_{i+1}] \) are considered. The duration of each phase is: \\
+    & \[
+    T_{\text{stance}} = t_{\min} - t_{\text{start}}, \quad T_{\text{swing}} = t_{\text{end}} - t_{\min}
+    \] \\
+    & where \( t_{\min} \) is the timestamp of the minimum angular velocity between zero-crossings. \\
+
+    \midrule
+
+    Stride Time 
+    & The stride time for each leg is computed as the sum of stance and swing durations: \\
+    & \[
+    T_{\text{stride}} = T_{\text{stance}} + T_{\text{swing}}
+    \] \\
+
+    \bottomrule
+    \end{tabular}
+    \caption{Summary of feature categories and their mathematical definitions computed per gait cycle.}
+    \label{tab:feature_extraction}
+\end{table}
+
+
+
+\newpage
+
+Asymmetry Metrics and Label Assignment
+
+To quantify gait asymmetry, we compute two indices based on the stride durations of the left ($T_L$) and right ($T_R$) limbs:
+
+1. **Asymmetry Index (AI)**:
+
+   $$
+   \text{AI} = \frac{T_L - T_R}{T_L + T_R}, \quad T_L + T_R \neq 0.
+   $$
+
+2. **Symmetry Ratio (SR)**:
+
+   $$
+   \text{SR} = \frac{\min(T_L, T_R)}{\max(T_L, T_R)}, \quad \max(T_L, T_R) \neq 0.
+   $$
+
+Using these two metrics, we assign labels reflecting confidence levels of gait asymmetry:
+
+* **High-confidence asymmetry**:
+
+  $$
+  |\text{AI}| > 0.2 \quad \text{or} \quad \text{SR} < 0.8.
+  $$
+* **Moderate-confidence asymmetry**:
+
+  $$
+  |\text{AI}| > 0.15 \quad \text{or} \quad \text{SR} < 0.85.
+  $$
+* **Low-confidence asymmetry**:
+
+  $$
+  |\text{AI}| > 0.1 \quad \text{or} \quad \text{SR} < 0.9.
+  $$
+
+If either $T_L$ or $T_R$ is undefined for a given cycle, the window is marked invalid, and no asymmetry metrics are computed.
+

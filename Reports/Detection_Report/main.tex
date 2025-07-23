@@ -6,6 +6,9 @@
 \usepackage{graphicx}
 \usepackage{textcomp}
 \usepackage{xcolor}
+\usepackage{booktabs}
+\usepackage{float}
+\usepackage{multirow}
 \usepackage{orcidlink}
 \def\BibTeX{{\rm B\kern-.05em{\sc i\kern-.025em b}\kern-.08em
     T\kern-.1667em\lower.7ex\hbox{E}\kern-.125emX}}
@@ -41,13 +44,13 @@ Hat Yai, Songkhla 90110, Thailand \\
 Early identification of gait cycle asymmetries plays a critical role in effective stroke rehabilitation and recovery. This study presents 
 a novel approach to classify gait cycle symmetry levels using gyroscope signals from shank-mounted inertial measurement units. 
 Building upon a previously collected dataset, we segmented the walking data into individual gait cycles, annotated each with a three-tier 
-confidence level (high, moderate, low) based on the symmetrical difference of the movements of each leg. 
+confidence level (high, moderate, low) based on the symmetrical difference of the movements of each leg. Features were extracted from the
+gait cycles, including stance and stride durations for each leg, and machine learning models were trained to classify the gait cycles as symmetric or asymmetric. 
+The models achieved an accuracy of 90\% and an f1-score of 94\% using ensemble methods like Random Forest and Gradient Boosting on the moderate confidence 
+level, with even better results for the high confidence level. Preliminary testing on healthy individuals using a smartphone connected to the gyroscope sensors 
+demonstrates the feasibility of real-time symmetry analysis with minimal sensor input. This approach has the potential to enhance stroke rehabilitation by 
+providing real-time feedback on gait symmetry, enabling timely interventions and personalized rehabilitation strategies.
 
-% confidence level based on the and selected medically relevant features like stance and stride durations for each leg within the cycle.
-% Machine Learning models were trained to classify the gait cycles as symmetric or asymmetric for each confidence level, achieving an accuracy of 90\%
-% and f1-score of 94\% with ensemble methods like Random Forest and Gradient Boosting on the moderate confidence level. Better results were obtained 
-% for the high confidence level,
-% Our preliminary testing deployed a series of models on a smartphone connected with the on healthy individuals demonstrates the feasibility of real-time symmetry analysis using minimal sensor input. 
 \end{abstract}
 \begin{IEEEkeywords}
 Gait Symmetry Classification, Gait Cycle, Machine Learning, Wearable Sensors, Gyroscope Signals, Pilot Study, Stroke Rehabilitation
@@ -56,6 +59,8 @@ Gait Symmetry Classification, Gait Cycle, Machine Learning, Wearable Sensors, Gy
 \input{introduction.tex}
 \input{related_work.tex}
 \input{materials_methods.tex}
+\newpage
+\newpage
 \input{experimental_results.tex}
 \input{discussions.tex}
 \input{conclusion.tex}

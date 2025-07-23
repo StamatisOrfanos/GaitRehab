@@ -1,25 +1,30 @@
 \section{Introduction}
 \label{sec:introduction}
-The human gait cycle—the sequence of movements occurring between two successive foot contacts of the same limb—offers critical insights into motor coordination, 
-balance, and neurological function. In clinical practice, accurate assessment of the gait cycle is essential for identifying pathological asymmetries, especially 
-in post-stroke patients, where hemiparesis often leads to disrupted stance and swing phase dynamics \cite{ref1, ref2}.
+A gait cycle is the complete sequence of movements by one limb from initial contact to the next initial contact on the same side—typically divided into stance 
+(60\% of the cycle) and swing phases (40\%) and further subdivided into clinically relevant events such as heel-strike and toe-off \cite{Chambers2002,WikiGaitCycle}.
 
-Traditional gait analysis systems using optical motion capture and force plates provide detailed temporal and kinematic data but remain impractical for routine 
-use due to high costs, space requirements, and operational complexity \cite{ref3, ref4}. These limitations hinder frequent assessments in stroke rehabilitation, 
-where ongoing monitoring of gait asymmetry is vital to tailor therapy and track recovery progress \cite{ref5}.
+Clinical gait cycle analysis—traditionally done in motion laboratories using tools like optical motion capture, force plates, and electromyography—provides precise 
+temporal and kinematic data essential for diagnosing abnormalities and planning interventions \cite{PMC3761742,ScienceDirectGuide}. However, the high cost, spatial 
+requirements, and complexity of these systems limit their use for frequent assessments, especially in stroke rehabilitation where gait asymmetry must be monitored 
+regularly \cite{PMC9800936}.
 
-Recent advancements in wearable sensors—particularly inertial measurement units (IMUs)—have enabled portable, cost-effective alternatives for gait cycle analysis 
-outside laboratory settings \cite{ref6, ref7}. When paired with machine learning, IMU data can be used to extract interpretable features that reflect clinically 
-relevant gait events.
+Wearable technologies, particularly IMUs and pressure sensors, offer portable alternatives to lab-based gait cycle analysis. These devices enable the extraction of 
+interpretable gait features—even in home settings—and have been successfully combined with machine learning methods to detect and quantify gait cycle events and 
+pathological deviations \cite{PMC3761742,ClinicalSensors2023}. While advanced classifier frameworks (e.g., SVMs, CNNs, LSTMs) achieve high detection accuracies, 
+they often rely on extensive feature extraction pipelines and substantial computational resources, limiting their deployment in real-time or resource-constrained 
+environments \cite{ClinicalSensors2023}.
 
-This study introduces a lightweight and interpretable pipeline that classifies gait cycle asymmetries using bilateral gyroscopic data. By focusing on extrema-based 
-statistical features and employing subject-wise validation, the proposed approach balances accuracy and computational efficiency—supporting real-world deployment 
-in embedded or web-based rehabilitation tools.
+In this study, we propose a lightweight pipeline to analyze gait cycle asymmetries using bilateral gyroscope data. The method focuses on extrema-based statistical 
+features and traditional machine learning models, aiming for interpretability, efficiency, and suitability for embedded or web-based rehabilitation platforms. 
 
-\textbf{The main contributions are:}
+
+The main contributions are:
 \begin{itemize}
-    \item A minimal-feature extraction method using bilateral gyroscope signals for gait cycle asymmetry detection.
-    \item A comparative evaluation of traditional machine learning models using leave-one-out cross-validation (LOOCV) across subjects.
-    \item Demonstration of high classification performance (AUC $>$ 0.95) with reduced computational complexity.
+    \item A gait cycle labeling method that segments walking data into individual gait cycles and annotates them with a three-tier confidence levels based on the 
+    symmetrical difference of each leg's movements.
+    \item A minimal feature extraction method using bilateral gyroscope signals for gait cycle asymmetry detection.
+    \item A comparative evaluation of traditional machine learning models.
+    \item Demonstration of high classification performance across all accuracy metrics with reduced computational complexity.
+    \item Preliminary validation on healthy subjects, showcasing the feasibility of real-time gait symmetry analysis.
 \end{itemize}
 
