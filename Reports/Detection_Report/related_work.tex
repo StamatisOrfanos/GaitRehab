@@ -2,28 +2,36 @@
 \label{sec:related_work}
 
 To contextualize our approach, we reviewed studies focused on gait cycle analysis and classification, particularly in post-stroke or pathological gait conditions.
-Yuwono et al. \cite{ref10} proposed a method for classifying healthy and pathological gait using Shimmer IMUs placed on the legs. They extracted spectral features 
+Yuwono et al. \cite{ref9} proposed a method for classifying healthy and pathological gait using Shimmer IMUs placed on the legs. They extracted spectral features 
 from the Short-Time Fourier Transform (STFT) of gyroscope signals and achieved a classification accuracy of 97\% using a Self-Organizing Map (SOM) combined with 
-k-means clustering. Building upon this, Zhou et al. \cite{ref11} developed an adaptive gait event detection algorithm using a smart insole equipped with pressure 
+k-means clustering. Building upon this, Zhou et al. \cite{ref10} developed an adaptive gait event detection algorithm using a smart insole equipped with pressure 
 sensors and IMUs.
 
-Further advancements were introduced by Tunca et al. \cite{ref12}, who proposed a smartphone- and smartwatch-based system that utilized raw IMU data without preprocessing. 
+Further advancements were introduced by Tunca et al. \cite{ref11}, who proposed a smartphone- and smartwatch-based system that utilized raw IMU data without preprocessing. 
 Their deep learning model, DeepSense, combined Convolutional Neural Networks (CNNs) and Gated Recurrent Units (GRUs) to form a general-purpose framework for human activity 
-recognition, achieving approximately 94\% classification accuracy. Mellone et al.\ \cite{ref13} validated the use of smartphone-based inertial sensors to capture gait parameters 
+recognition, achieving approximately 94\% classification accuracy. Mellone et al.\ \cite{ref12} validated the use of smartphone-based inertial sensors to capture gait parameters 
 during the Timed Up and Go test. Their results support the feasibility of low-cost remote gait assessments, providing a foundation for non-laboratory clinical use. In a broader 
-review, Bai et al.\ \cite{ref14} highlighted the variety of wearable sensor technologies and feature extraction techniques used for gait recognition, emphasizing their applications 
+review, Bai et al.\ \cite{ref13} highlighted the variety of wearable sensor technologies and feature extraction techniques used for gait recognition, emphasizing their applications 
 in health monitoring.
 
-Rojek et al.\ \cite{ref15} focused on AI-based methods in post-stroke gait analysis, exploring deep learning and hybrid systems for classifying and interpreting gait 
-cycles. Zhou et al.\ \cite{ref16} further improved gait recognition using a single waist-worn IMU by combining spatial and temporal feature extraction through a CNN 
-and Bi-LSTM architecture, achieving 98.63\% accuracy. Panah et al.\ \cite{ref17} conducted a comprehensive review of wearable sensors in rehabilitation, outlining their 
-roles in mobility assessment and feedback-based training. Muro-de-la-Herran et al.\ \cite{ref18} reviewed both wearable and non-wearable gait analysis systems, comparing 
+Rojek et al.\ \cite{ref14} focused on AI-based methods in post-stroke gait analysis, exploring deep learning and hybrid systems for classifying and interpreting gait 
+cycles. Zhou et al.\ \cite{ref15} further improved gait recognition using a single waist-worn IMU by combining spatial and temporal feature extraction through a CNN 
+and Bi-LSTM architecture, achieving 98.63\% accuracy. Panah et al.\ \cite{ref16} conducted a comprehensive review of wearable sensors in rehabilitation, outlining their 
+roles in mobility assessment and feedback-based training. Muro-de-la-Herran et al.\ \cite{ref17} reviewed both wearable and non-wearable gait analysis systems, comparing 
 their clinical applications, limitations, and use cases.
 
-Ferrante et al.\ \cite{ref20} examined the effect of biofeedback cycling rehabilitation on gait recovery in 153 chronic stroke patients. Using 3D motion capture and 
-gait pattern classification, they reported improvements in 51\% of participants. Finally, Kaczmarczyk et al.\ \cite{ref21} employed an artificial neural network (ANN) 
+Ferrante et al.\ \cite{ref18} examined the effect of biofeedback cycling rehabilitation on gait recovery in 153 chronic stroke patients. Using 3D motion capture and 
+gait pattern classification, they reported improvements in 51\% of participants. Finally, Kaczmarczyk et al.\ \cite{ref19} employed an artificial neural network (ANN) 
 to classify post-stroke gait patterns from joint angle trajectories captured via the APAS motion system. Their model achieved classification accuracies of up to 100\% 
 for knee joint data and approximately 92.5\% overall.
+
+Salminen et al.~\cite{ref20} proposed a novel method for dividing the gait cycle into seven detailed phases using shank angular velocity signals. Their work 
+demonstrated the value of angular kinematics in fine-grained temporal gait segmentation, which could enhance clinical interpretability in wearable gait 
+assessments. Yang et al.~\cite{ref21} estimated spatio-temporal parameters of post-stroke hemiparetic gait using inertial sensors, showing that wearable IMUs can 
+approximate clinical benchmarks for stride and stance time, even in individuals with asymmetrical gait impairments. Finally, Hwang et al.~\cite{ref22} developed a 
+machine learning-based framework for abnormal gait classification using IMUs while accounting for joint impairment. Their work emphasizes the importance of 
+biomechanical context when designing classifiers for clinical gait abnormalities.
+
 
 These studies collectively illustrate the wide range of sensing technologies and learning models applied to gait cycle analysis. However, despite these advances, 
 there remains a notable gap in lightweight, interpretable methods that detect clinically meaningful gait asymmetries—particularly in post-stroke populations with 

@@ -1,0 +1,20 @@
+\section{Discussions}
+\label{sec:discussions}
+The classification results across all confidence levels demonstrate that traditional machine learning models, when paired with carefully engineered temporal features, 
+can effectively detect gait asymmetry with high accuracy. Among the evaluated classifiers, ensemble-based methods such as Random Forest and XGBoost consistently achieved 
+superior performance in terms of both accuracy and F1-score, particularly at the high and moderate confidence levels. K-Nearest Neighbors (KNN) also performed 
+exceptionally well, especially in high-confidence cycles where class separation is more distinct. In contrast, support vector machines, while achieving perfect 
+precision in many configurations, tended to suffer from lower recall, indicating a more conservative behavior that may limit sensitivity in clinical applications.
+
+Feature selection through Recursive Feature Elimination (RFE) highlighted the central role of stance and swing durations for both legs, reaffirming their biomechanical 
+relevance to gait symmetry. These features, derived from z-axis gyroscope signals, are interpretable, computationally lightweight, and suitable for real-time 
+analysis, an essential consideration for deployment in wearable systems. Interestingly, motion scores provided additional discriminative power and were frequently 
+retained in the final feature subset. This suggests that dynamic variability in angular velocity may complement phase timing in identifying subtle asymmetries.
+
+The confidence-based stratification scheme further enhances the practical applicability of the system by enabling adaptive decision-making thresholds. 
+High-confidence windows are likely to correspond to clear pathological gait, while low-confidence segments may reflect either compensatory patterns or normal 
+variability. This multi-tiered labeling approach ensures that the system can support diverse clinical scenarios—from conservative screening to continuous 
+rehabilitation monitoring—without sacrificing interpretability or robustness.
+
+Overall, the proposed framework demonstrates that even a minimal set of biomechanically relevant features can achieve reliable gait symmetry classification, 
+supporting the development of lightweight, interpretable, and portable assessment tools for stroke rehabilitation and beyond.
