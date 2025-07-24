@@ -15,15 +15,6 @@ comparatively lower recall ($0.82$), reinforcing its tendency toward under-detec
 At the low-confidence level, the KNN classifier outperformed other models with the highest accuracy ($0.92$), F1-score ($0.95$), and AUC ($0.95$). 
 XGBoost and Random Forest followed closely, demonstrating strong generalization even under noisy or subtly asymmetric conditions.
 
-\subsection{Confusion Matrices and Model Behavior}
-To further interpret model behavior, we examined the confusion matrices for each confidence level. As seen on the Table \ref{tab:confidence_metrics_cm} at the 
-high-confidence level, the best-performing model (KNN) achieved a near-perfect balance, correctly identifying the majority of stroke-related gait cycles with 
-only a small number of false positives and false negatives. This indicates both high sensitivity and specificity in cases of clear asymmetry. For the 
-moderate-confidence group, a slight increase in false negatives was observed, reflecting the ambiguous nature of borderline gait cycles. In the low-confidence group, 
-while overall accuracy remained high, the confusion matrices showed a relative increase in misclassifications—particularly false negatives—suggesting the limits of 
-distinguishability in near-symmetric gait windows. These patterns support the model's robustness in confidently asymmetric cycles and its graceful degradation 
-in lower-confidence scenarios.
-
 \begin{table*}[t]
 \centering
 \caption{Classification Metrics and Confusion Matrix Summary by Confidence Level and Model}
@@ -41,8 +32,8 @@ in lower-confidence scenarios.
 & SVM (Linear Kernel)       & 0.76 & 1.00 & 0.70 & 0.82 & 0.85 & 315 & 136 & 117 & 0 \\
 & SVM (RBF Kernel)          & 0.78 & 1.00 & 0.73 & 0.84 & 0.91 & 328 & 123 & 117 & 0 \\
 & SVM (Polynomial Kernel)   & 0.81 & 0.96 & 0.80 & 0.87 & 0.89 & 361 & 90 & 100 & 17 \\
-& XGBoost                   & 0.91 & 0.93 & 0.95 & 0.94 & 0.96 & 428 & 23 & 87 & 30 \\
-& KNN                       & 0.93 & 0.96 & 0.96 & 0.96 & 0.96 & 431 & 20 & 98 & 19 \\
+& XGBoost                   & 0.91 & 0.93 & 0.95 & 0.94 & 0.95 & 428 & 23 & 87 & 30 \\
+& \textbf{KNN}              & \textbf{0.93} & \textbf{0.96} & \textbf{0.96} & \textbf{0.96} & \textbf{0.95} & 431 & 20 & 98 & 19 \\
 
 \midrule
 \multirow{7}{*}{Moderate}
@@ -51,7 +42,7 @@ in lower-confidence scenarios.
 & SVM (Polynomial Kernel)   & 0.82 & 0.95 & 0.83 & 0.89 & 0.89 & 197 & 39 & 37 & 11 \\
 & SVM (RBF Kernel)          & 0.79 & 1.00 & 0.75 & 0.86 & 0.92 & 177 & 59 & 48 & 0 \\
 & SVM (Linear Kernel)       & 0.77 & 1.00 & 0.73 & 0.84 & 0.87 & 172 & 64 & 48 & 0 \\
-& XGBoost                   & 0.91 & 0.93 & 0.96 & 0.95 & 0.96 & 226 & 10 & 32 & 16 \\
+& \textbf{XGBoost}          & \textbf{0.91} & \textbf{0.93} & \textbf{0.96} & \textbf{0.95} & \textbf{0.96} & 226 & 10 & 32 & 16 \\
 & KNN                       & 0.90 & 0.93 & 0.95 & 0.94 & 0.96 & 225 & 11 & 32 & 16 \\
 
 
@@ -63,11 +54,22 @@ in lower-confidence scenarios.
 & SVM (RBF Kernel)          & 0.79 & 1.00 & 0.74 & 0.85 & 0.92 & 166 & 59 & 59 & 0 \\
 & SVM (Polynomial Kernel)   & 0.81 & 0.94 & 0.81 & 0.87 & 0.89 & 182 & 43 & 47 & 12 \\
 & XGBoost                   & 0.92 & 0.94 & 0.96 & 0.95 & 0.96 & 216 & 9 & 46 & 13 \\
-& KNN                       & 0.93 & 0.96 & 0.96 & 0.96 & 0.96 & 219 & 6 & 53 & 6 \\
+& \textbf{KNN}              & \textbf{0.93} & \textbf{0.96} & \textbf{0.96} & \textbf{0.96} & \textbf{0.96} & 219 & 6 & 53 & 6 \\
 
 \bottomrule
 \end{tabular}
 \end{table*}
+
+
+\subsection{Confusion Matrices and Model Behavior}
+To further interpret model behavior, we examined the confusion matrices for each confidence level. As seen on the Table \ref{tab:confidence_metrics_cm} at the 
+high-confidence level, the best-performing model (KNN) achieved a near-perfect balance, correctly identifying the majority of stroke-related gait cycles with 
+only a small number of false positives and false negatives. This indicates both high sensitivity and specificity in cases of clear asymmetry. For the 
+moderate-confidence group, a slight increase in false negatives was observed, reflecting the ambiguous nature of borderline gait cycles. In the low-confidence group, 
+while overall accuracy remained high, the confusion matrices showed a relative increase in misclassifications—particularly false negatives—suggesting the limits of 
+distinguishability in near-symmetric gait windows. These patterns support the model's robustness in confidently asymmetric cycles and its graceful degradation 
+in lower-confidence scenarios.
+
 
 \subsection{Preliminary Testing and Validation}
 To evaluate the real-time feasibility, preliminary testing was conducted using a smartphone paired with shank-mounted IMU sensors on healthy individuals. 

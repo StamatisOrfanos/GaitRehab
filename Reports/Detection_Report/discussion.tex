@@ -1,10 +1,19 @@
-\section{Discussions}
-\label{sec:discussions}
+\section{Discussion}
+\label{sec:discussion}
 The classification results across all confidence levels demonstrate that traditional machine learning models, when paired with carefully engineered temporal features, 
 can effectively detect gait asymmetry with high accuracy. Among the evaluated classifiers, ensemble-based methods such as Random Forest and XGBoost consistently achieved 
 superior performance in terms of both accuracy and F1-score, particularly at the high and moderate confidence levels. K-Nearest Neighbors (KNN) also performed 
 exceptionally well, especially in high-confidence cycles where class separation is more distinct. In contrast, support vector machines, while achieving perfect 
 precision in many configurations, tended to suffer from lower recall, indicating a more conservative behavior that may limit sensitivity in clinical applications.
+
+Compared to prior work in the field, the proposed method offers a more interpretable and lightweight alternative to deep learning approaches while maintaining 
+competitive performance. For example, unlike the spectral feature extraction and Self-Organizing Map-based clustering used by Yuwono et al.\cite{ref10}, 
+our method relies solely on time-domain features that are both clinically meaningful and computationally efficient. Similarly, while deep learning frameworks 
+such as DeepSense\cite{ref12} or CNN-LSTM hybrids~\cite{ref13} have reported high accuracies using raw IMU signals, they often require extensive training data, 
+higher latency, and lack transparency in decision-making. In contrast, our approach prioritizes simplicity, real-time feasibility, and ease of deployment on 
+mobile or wearable devices. Furthermore, the integration of confidence-level stratification—absent in previous works—adds a clinically relevant dimension by 
+allowing variable sensitivity based on asymmetry severity. This balance of performance, interpretability, and practicality positions our method as a compelling 
+solution for stroke rehabilitation and remote gait monitoring scenarios.
 
 Feature selection through Recursive Feature Elimination (RFE) highlighted the central role of stance and swing durations for both legs, reaffirming their biomechanical 
 relevance to gait symmetry. These features, derived from z-axis gyroscope signals, are interpretable, computationally lightweight, and suitable for real-time 
@@ -15,6 +24,10 @@ The confidence-based stratification scheme further enhances the practical applic
 High-confidence windows are likely to correspond to clear pathological gait, while low-confidence segments may reflect either compensatory patterns or normal 
 variability. This multi-tiered labeling approach ensures that the system can support diverse clinical scenarios—from conservative screening to continuous 
 rehabilitation monitoring—without sacrificing interpretability or robustness.
-
-Overall, the proposed framework demonstrates that even a minimal set of biomechanically relevant features can achieve reliable gait symmetry classification, 
+  
+Overall, the proposed framework demonstrates that even a minimal set of relevant features can achieve reliable gait symmetry classification, 
 supporting the development of lightweight, interpretable, and portable assessment tools for stroke rehabilitation and beyond.
+
+
+
+
