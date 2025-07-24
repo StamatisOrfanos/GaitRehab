@@ -1,151 +1,151 @@
 
 \section{Materials and Methods}
 \label{sec:materials_and_methods}
-This study builds upon data previously collected in the work of Sanghan et al.~\cite{ref22}, which involved a comprehensive investigation comparing the 3D 
-shank kinematics of stroke patients to healthy individuals.
+ 
+
+% This stratification confirms that even patients undergoing rehabilitation may occasionally exhibit gait cycles resembling normal patterns.
+
+
+% \subsection{Feature Selection}
+% We conducted Recursive Feature Elimination (RFE) analysis using a Random Forest Classifier to refine the feature set further. In this process we 
+% iteratively removed the least important features based on the contribution to the accuracy of the model, until we got the optimal subset of features.
+% The RFE results, shown in Table~\ref{tab:rfe}, indicate that the most significant features for classification include stance and swing times for both legs,
+% as well as the motion scores derived from the gyroscope signals. The stance and stride times were consistently ranked as the most important across all confidence 
+% levels, while the left motion score was selected for the high and moderate confidence levels, and the right motion score for the low confidence level.
+
+% \begin{table}[h]
+%     \centering
+%     \caption{Recursive feature elimination (RFE) results}
+%     \small
+%     \begin{tabular}{l c c}
+%         \hline
+%         \textbf{Feature} & \textbf{Importance} & \textbf{Ranking} \\
+%         \hline
+%         \texttt{right\_stance\_time}  & 0.18 & 1 \\
+%         \texttt{right\_swing\_time}   & 0.12 & 1 \\
+%         \texttt{left\_stance\_time}   & 0.11 & 1 \\
+%         \texttt{left\_swing\_time}    & 0.05 & 1 \\
+%         \texttt{left\_motion\_score}  & 0.05 & 1 \\
+%         \texttt{right\_motion\_score} & 0.05 & 1 \\
+%         \hline
+%     \end{tabular}
+%     \label{tab:rfe}
+% \end{table}
+
+% Provided that we wanted to keep the model interpretable and medically relevant, which means that we are going to use the stride and stance times as
+% the main features for the classification task, since those features can be easily computed in real-time using IMUs and smartphone solution.
+
+% \subsection{Classification Models}
+% The relatively modest dimensionality of the feature space, guided us to use classical machine learning models rather than deep learning approaches. Machine
+% learning models are well-suited for structured datasets with limited size, providing robust performance and greater interpretability. To evaluate classification 
+% performance, we tested a diverse set of algorithms: Logistic Regression, Random Forest, Support Vector Machines (SVM) with linear, radial basis function (RBF), 
+% and polynomial kernels, Extreme Gradient Boosting (XGBoost), and K-Nearest Neighbors (KNN). These models offer a mix of linear and non-linear decision boundaries, 
+% ensemble learning, and instance-based reasoning, enabling a comprehensive comparison across different learning paradigms.
 
 \subsection{Data Source}
-The original experiment included sixteen stroke patients and sixteen healthy individuals, all of whom walked on a flat 10-meter indoor walkway while wearing IMU sensors 
-(MBIENTLAB Inc., USA) placed bilaterally on their shanks as seen on Figure \ref{fig:sensor_placement}. Data acquisition protocols, participant criteria, and ethical 
-approvals were thoroughly detailed in the original publication~\cite{ref22}. The recorded data consisted of tri-axial gyroscope signals sampled at 100 Hz, with angular 
-velocities measured along the sagittal (x), frontal (y), and transverse (z) planes.
-
+This study builds upon the dataset introduced by Sanghan et al.~\cite{ref22}, which compared 3D shank kinematics between sixteen stroke patients and sixteen 
+healthy individuals. Each participant walked on a flat 10-meter indoor walkway while wearing IMU sensors (MBIENTLAB Inc., USA) bilaterally on the shanks. 
+Gyroscope data were collected at 100 Hz across sagittal (x), frontal (y), and transverse (z) axes. This work focuses solely on the z-axis signal, which best 
+captures sagittal-plane gait motion.
 
 \subsection{Feature Engineering}
-This study presents a structured pipeline for extracting gait cycle features from gyroscopic data collected using Inertial Measurement Units (IMUs) placed 
-on the left and right shanks. The analysis focuses exclusively on the z-axis angular velocity component, as it effectively captures sagittal plane rotational 
-movement, making it a strong indicator of lower-limb kinematics during gait. \\
+To assess gait asymmetry, we developed a lightweight pipeline that processes bilateral z-axis gyroscope signals to extract gait cycles and generate 
+interpretable features.
 
-\textbf{Gait Cycle Detection}
-Let $G_L(t) \in \mathbb{R}$ denote the filtered z-axis gyroscope signal from the left shank over time $t$. To identify gait cycles, we apply peak detection 
-to $G_L(t)$ based on amplitude and temporal separation constraints. Peaks are defined as local maxima $P = \{p_1, p_2, \dots, p_n\}$ such that: 
+\textbf{Gait Cycle Detection:}
+We define $G_L(t)$ as the filtered z-axis gyroscope signal from the left shank. Gait cycles are identified by detecting local peaks:
+\[
+G_L(p_i) > \theta \quad \text{and} \quad p_{i+1} - p_i \geq d,
+\]
+where $\theta = 0.5$ deg/s and $d = 80$ samples (at 100 Hz). Each gait cycle spans the interval $[p_i, p_{i+1})$ and is retained only if its duration 
+exceeds 10 samples.
 
-\[G_L(p_i) > \theta \quad \text{and} \quad p_{i+1} - p_i \geq d,\]
-
-where $\theta = 0.5$ deg/s and $d = 80$ samples (at 100 Hz) to ensure biomechanical plausibility. Each gait cycle is defined by the interval $[p_i, p_{i+1})$. 
-Only intervals with a minimum width of 10 samples are retained. \\
-
-\textbf{Feature Computation}
-Within each valid gait cycle window, we compute a comprehensive set of features from both the left $G_L(t)$ and right $G_R(t)$ shank signals.
-\begin{enumerate}
-    \item Descriptive Statistics: including mean, standard deviation, maximum and minimum values of the gyroscope signal. \\ 
-    \item Motion Score: We define a custom metric reflecting signal amplitude dynamics:
+\textbf{Feature Computation:}
+For each valid cycle, we extract:
+\begin{itemize}
+    \item \textit{Descriptive statistics:} mean, standard deviation, min, and max of $G_L(t)$ and $G_R(t)$.
+    \item \textit{Motion score:} 
     \[
-    M = \max \left( |G(t)| \right) - \min \left( |G(t)| \right).
+    M = \max(|G(t)|) - \min(|G(t)|).
     \]
-    \newpage
-    \item Stance and Swing Phase Detection: Phase segmentation is performed using zero-crossing detection on the filtered gyroscope signal. Given zero-crossings at 
-    time indices $z_i$, we define valid intervals $[z_i, z_{i+1}]$. The minimum angular velocity within each interval marks the transition between stance and swing. 
-    The duration of each phase is computed as: 
+    \item \textit{Stance and swing phase durations:} derived via zero-crossing detection and computed as
     \[
-    T_{\text{stance}} = t_{\min} - t_{\text{start}},
-    \]
-    \[
+    T_{\text{stance}} = t_{\min} - t_{\text{start}}, \quad
     T_{\text{swing}} = t_{\text{end}} - t_{\min},
     \]
-    where $t_{\min}$ is the timestamp at which the minimum occurs between zero-crossings. \\
-
-    \item Stride Time: The stride time for each leg is computed as:
+    where $t_{\min}$ corresponds to the minimum angular velocity within each phase.
+    \item \textit{Stride time:}
     \[
-    T_{\text{stride}} = T_{\text{stance}} + T_{\text{swing}}
+    T_{\text{stride}} = T_{\text{stance}} + T_{\text{swing}}.
     \]
-\end{enumerate}
+\end{itemize}
 
-
-\textbf{Asymmetry Metrics and Label Assignment}
-To quantify gait asymmetry, we compute two indices based on the stride durations of the left ($T_L$) and right ($T_R$) limbs:
-
-\begin{enumerate}
-    \item Asymmetry Index (AI):
-    \[
-    \text{AI} = \frac{T_L - T_R}{T_L + T_R}, \quad T_L + T_R \neq 0.
-    \]
-    
-    \item Symmetry Ratio (SR):
-    \[
-    \text{SR} = \frac{\min(T_L, T_R)}{\max(T_L, T_R)}, \quad \max(T_L, T_R) \neq 0 \\
-    \]
-\end{enumerate}
-
-If either $T_L$ or $T_R$ is undefined for a given cycle, the window is marked invalid, and no asymmetry metrics are computed. Following this rule we were able to
-obtain a total of over 2500 valid gait cycles from the original dataset as seen on the Table~\ref{tab:valid_invalid_cycles}. 
-\begin{table}[h]
-    \centering
-    \caption{Number of valid and invalid gait cycles}
-    \label{tab:valid_invalid_cycles}
-    \renewcommand{\arraystretch}{1.2}
-    \begin{tabular}{cc}
-    \toprule
-    \textbf{Valid Gait Cycles} &\textbf{Invalid Gait Cycles} \\
-    \toprule
-        2837 & 884 \\
-    \bottomrule
-    \end{tabular}
-\end{table}
+\textbf{Asymmetry Metrics:}
+We compute two bilateral stride-based asymmetry metrics:
+\[
+\text{AI} = \frac{T_L - T_R}{T_L + T_R}, \quad
+\text{SR} = \frac{\min(T_L, T_R)}{\max(T_L, T_R)},
+\]
+where $T_L$ and $T_R$ are stride durations for the left and right shank respectively. Cycles with undefined values are marked as invalid. Out of 3721 total windows, 
+2837 were retained as valid for analysis.
 
 \newpage
-Using the two symmetry metrics, Asymmetry Index and Symmetry Ratio, each gait window is categorized into a confidence level that reflects the likelihood and 
-severity of gait asymmetry. These thresholds are designed to support clinical interpretability and model stratification based on asymmetry certainty.
+\textbf{Confidence Level Assignment:}
+Each gait cycle is assigned to one of three asymmetry confidence levels based on the AI and SR metrics:
 
-\textbf{Confidence Levels}
-Table~\ref{tab:confidence_distribution} summarizes the distribution of gait windows categorized into the three confidence levels. As expected, a greater proportion 
-of the high-confidence asymmetric cycles belong to the stroke group, whereas the healthy class dominates the low-confidence windows. The moderate-confidence 
-group reflects a transitional state and includes a mixed distribution of both subject types. Despite the overall class imbalance, especially at high confidence 
-levels, stroke-related asymmetry remains consistently detectable across all tiers. This stratification confirms that even patients undergoing rehabilitation may 
-occasionally exhibit gait cycles resembling normal patterns.
+\begin{itemize}
+    \item High Confidence: $\text{AI} > 0.2$ or $\text{SR} < 0.8$
+    \item Moderate Confidence: $\text{AI} > 0.15$ or $\text{SR} < 0.85$
+    \item Low Confidence: $\text{AI} > 0.1$ or $\text{SR} < 0.9$
+\end{itemize}
 
+Table~\ref{tab:confidence_distribution} summarizes the class distribution by confidence level. While healthy gait windows dominate, stroke-related asymmetry 
+is consistently represented across all tiers.
 
 \begin{table}[h]
     \centering
-    \caption{Distribution of Stroke vs. Healthy Gait Windows by Confidence Level}
+    \caption{Distribution of Stroke vs. Healthy Gait Windows}
     \label{tab:confidence_distribution}
-    \renewcommand{\arraystretch}{1.2}
-    \begin{tabular}{lccc}
+    \begin{tabular}{lcc}
+        \toprule
+        \textbf{Confidence Level} & \textbf{Stroke} & \textbf{Healthy} \\
+        \midrule
+        High     & 586 & 2251 \\
+        Moderate & 484 & 2353 \\
+        Low      & 367 & 2470 \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+\subsection{Feature Selection}
+To reduce dimensionality and enhance interpretability, we employed Recursive Feature Elimination (RFE) using a Random Forest classifier. Features were 
+iteratively ranked by importance until the optimal subset was identified. As shown in Table~\ref{tab:rfe}, stance and swing times for both legs, along 
+with motion scores, were consistently selected across confidence levels.
+
+\begin{table}[h]
+\centering
+\caption{Recursive Feature Elimination Results}
+\label{tab:rfe}
+    \begin{tabular}{lcc}
     \toprule
-    \textbf{Confidence Level} & \textbf{Class Rules} & \textbf{Stroke Windows} & \textbf{Healthy Windows} \\
+    \textbf{Feature} & \textbf{Importance} & \textbf{Selected} \\
     \midrule
-    High      & $\text{AI} > 0.2$ or $\text{SR} < 0.8$   & 586  & 2251 \\
-    Moderate  & $\text{AI} > 0.15$ or $\text{SR} < 0.75$ & 484  & 2353  \\
-    Low       & $\text{AI} > 0.1$ or $\text{SR} < 0.9$   & 367  & 2470   \\
+        Right stance time   & 0.18 & True \\
+        Right swing time    & 0.12 & True \\
+        Left stance time    & 0.11 & True \\
+        Left swing time     & 0.05 & True \\
+        Left motion score   & 0.05 & True \\
+        Right motion score  & 0.05 & True \\
     \bottomrule
     \end{tabular}
 \end{table}
 
-
-\subsection{Feature Selection}
-We conducted Recursive Feature Elimination (RFE) analysis using a Random Forest Classifier to refine the feature set further. In this process we 
-iteratively removed the least important features based on the contribution to the accuracy of the model, until we got the optimal subset of features.
-The RFE results, shown in Table~\ref{tab:rfe}, indicate that the most significant features for classification include stance and swing times for both legs,
-as well as the motion scores derived from the gyroscope signals. The stance and stride times were consistently ranked as the most important across all confidence 
-levels, while the left motion score was selected for the high and moderate confidence levels, and the right motion score for the low confidence level.
-
-\begin{table}[h]
-    \centering
-    \caption{Recursive feature elimination (RFE) results}
-    \small
-    \begin{tabular}{l c c}
-        \hline
-        \textbf{Feature} & \textbf{Importance} & \textbf{Ranking} \\
-        \hline
-        \texttt{right\_stance\_time}  & 0.18 & 1 \\
-        \texttt{right\_swing\_time}   & 0.12 & 1 \\
-        \texttt{left\_stance\_time}   & 0.11 & 1 \\
-        \texttt{left\_swing\_time}    & 0.05 & 1 \\
-        \texttt{left\_motion\_score}  & 0.05 & 1 \\
-        \texttt{right\_motion\_score} & 0.05 & 1 \\
-        \hline
-    \end{tabular}
-    \label{tab:rfe}
-\end{table}
-
-Provided that we wanted to keep the model interpretable and medically relevant, which means that we are going to use the stride and stance times as
-the main features for the classification task, since those features can be easily computed in real-time using IMUs and smartphone solution.
+The stance and stride times were consistently ranked as the most important across all confidence levels, while the left motion score was selected for the high 
+and moderate confidence levels, and the right motion score for the low confidence level. To preserve real-time applicability and medical relevance, we prioritized 
+stride and stance times as our primary input features.
 
 \subsection{Classification Models}
-The relatively small dataset size along with the modest dimensionality of the feature space, guided us to use classical machine learning models rather than 
-deep learning approaches. Deep learning models typically require large volumes of training data to generalize effectively and are more prone to overfitting 
-in small-data problems. On the other hand, machine learning models are well-suited for structured datasets with limited size, providing robust performance 
-and greater interpretability. To evaluate classification performance, we tested a diverse set of algorithms: Logistic Regression, Random Forest, Support 
-Vector Machines (SVM) with linear, radial basis function (RBF), and polynomial kernels, Extreme Gradient Boosting (XGBoost), and K-Nearest Neighbors (KNN). 
-These models offer a mix of linear and non-linear decision boundaries, ensemble learning, and instance-based reasoning, enabling a comprehensive comparison 
-across different learning paradigms.
+Given the structured nature and limited size of the dataset, we employed traditional machine learning models rather than deep learning approaches. 
+The selected classifiers included: Logistic Regression, Random Forest, Support Vector Machines (SVM) with linear, RBF, and polynomial kernels, Extreme 
+Gradient Boosting (XGBoost), and K-Nearest Neighbors (KNN). This ensemble covers a range of decision boundaries—from linear to non-parametric—enabling 
+a robust comparison across feature complexity and asymmetry levels.
