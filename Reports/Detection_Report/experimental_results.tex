@@ -17,11 +17,11 @@ XGBoost and Random Forest followed closely, demonstrating strong generalization 
 
 \subsection{Confusion Matrices and Model Behavior}
 To further interpret model behavior, we examined the confusion matrices for each confidence level. At the high-confidence level, the best-performing model (KNN)
-achieved a near-perfect balance, correctly identifying the majority of stroke-related gait cycles with only a small number of false positives and false negatives 
-(e.g., 22 FN, 30 FP). This indicates both high sensitivity and specificity in cases of clear asymmetry. For the moderate-confidence group, a slight increase in 
-false negatives was observed, reflecting the ambiguous nature of borderline gait cycles. In the low-confidence group, while overall accuracy remained high, the 
-confusion matrices showed a relative increase in misclassifications—particularly false negatives—suggesting the limits of distinguishability in near-symmetric 
-gait windows. These patterns support the model's robustness in confidently asymmetric cycles and its graceful degradation in lower-confidence scenarios.
+achieved a near-perfect balance, correctly identifying the majority of stroke-related gait cycles with only a small number of false positives and false negatives. 
+This indicates both high sensitivity and specificity in cases of clear asymmetry. For the moderate-confidence group, a slight increase in false negatives was observed, 
+reflecting the ambiguous nature of borderline gait cycles. In the low-confidence group, while overall accuracy remained high, the confusion matrices showed a relative 
+increase in misclassifications—particularly false negatives—suggesting the limits of distinguishability in near-symmetric gait windows. These patterns support the 
+model's robustness in confidently asymmetric cycles and its graceful degradation in lower-confidence scenarios.
 
 
 \begin{table*}[t]
@@ -68,3 +68,5 @@ gait windows. These patterns support the model's robustness in confidently asymm
 \bottomrule
 \end{tabular}
 \end{table*}
+
+\subsection{Preliminary Testing and Validation}
