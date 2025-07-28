@@ -16,6 +16,10 @@ dependencyResolutionManagement {
     repositories {
         google()
         mavenCentral()
+        ivy {
+            url = uri("https://mbientlab.com/releases/ivyrep")
+            layout("gradle")
+        }
     }
 }
 

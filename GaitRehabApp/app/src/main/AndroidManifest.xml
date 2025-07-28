@@ -19,6 +19,9 @@
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:theme="@style/Theme.GaitRehabApp">
+
+        <service android:name="com.mbientlab.metawear.android.BtleService" />
+
         <activity
             android:name=".MainActivity"
             android:exported="true"
