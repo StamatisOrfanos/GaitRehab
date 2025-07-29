@@ -1,78 +1,91 @@
 package com.example.gaitrehabapp;
 
 import android.Manifest;
-import android.annotation.SuppressLint;
-import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothDevice;
-import android.bluetooth.BluetoothManager;
-import android.bluetooth.le.BluetoothLeScanner;
-import android.bluetooth.le.ScanCallback;
-import android.bluetooth.le.ScanResult;
 import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
 import android.content.ServiceConnection;
-import android.content.pm.PackageManager;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.IBinder;
-import android.util.Log;
-import android.widget.Button;
 import android.widget.Toast;
-import androidx.annotation.NonNull;
+
+import androidx.annotation.RequiresPermission;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.app.ActivityCompat;
-import com.mbientlab.metawear.MetaWearBoard;
+
+import com.example.gaitrehabapp.services.ImuScannerService;
 import com.mbientlab.metawear.android.BtleService;
 
 public class MainActivity extends AppCompatActivity {
-    private static final int PERMISSION_REQUEST_CODE = 1;
+    private ImuScannerService imuScannerService;
+    private BtleService.LocalBinder btleBinder;
 
-    private BluetoothAdapter bluetoothAdapter;
-    private BluetoothLeScanner bluetoothScanner;
-    private BtleService.LocalBinder serviceBinder;
-    private MetaWearBoard metaWearBoard;
-
-    private final ServiceConnection serviceConnection = new ServiceConnection() {
+    private final ServiceConnection imuServiceConnection = new ServiceConnection() {
         @Override
         public void onServiceConnected(ComponentName name, IBinder service) {
-            serviceBinder = (BtleService.LocalBinder) service;
+            imuScannerService = ((ImuScannerService.LocalBinder) service).getService();
+            imuScannerService.setConnectionListener(connectionListener);
+            imuScannerService.initialize(MainActivity.this, btleBinder);
         }
 
         @Override
         public void onServiceDisconnected(ComponentName name) {
-            serviceBinder = null;
+            imuScannerService = null;
         }
     };
 
+    private final ServiceConnection btleServiceConnection = new ServiceConnection() {
+        @Override
+        public void onServiceConnected(ComponentName name, IBinder service) {
+            btleBinder = (BtleService.LocalBinder) service;
+
+            // Bind IMU scanner after BTLE is ready
+            Intent imuIntent = new Intent(MainActivity.this, ImuScannerService.class);
+            bindService(imuIntent, imuServiceConnection, Context.BIND_AUTO_CREATE);
+        }
+
+        @Override
+        public void onServiceDisconnected(ComponentName name) {
+            btleBinder = null;
+        }
+    };
+
+    private final ImuScannerService.ConnectionListener connectionListener = new ImuScannerService.ConnectionListener() {
+        @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
+        @Override
+        public void onDeviceFound(BluetoothDevice device) {
+            Toast.makeText(MainActivity.this, "Found: " + device.getName(), Toast.LENGTH_SHORT).show();
+        }
+
+        @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
+        @Override
+        public void onConnected(BluetoothDevice device) {
+            Toast.makeText(MainActivity.this, "Connected to " + device.getName(), Toast.LENGTH_SHORT).show();
+        }
+
+        @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
+        @Override
+        public void onConnectionFailed(BluetoothDevice device) {
+            Toast.makeText(MainActivity.this, "Connection failed: " + device.getName(), Toast.LENGTH_SHORT).show();
+        }
+    };
+
+    @RequiresPermission(Manifest.permission.BLUETOOTH_SCAN)
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
-        bindService(new Intent(this, BtleService.class), serviceConnection, Context.BIND_AUTO_CREATE);
+        requestPermissions();
 
-        BluetoothManager bluetoothManager = (BluetoothManager) getSystemService(Context.BLUETOOTH_SERVICE);
-        bluetoothAdapter = bluetoothManager.getAdapter();
-        bluetoothScanner = bluetoothAdapter.getBluetoothLeScanner();
+        bindService(new Intent(this, BtleService.class), btleServiceConnection, Context.BIND_AUTO_CREATE);
 
-        Button scanButton = findViewById(R.id.scanButton);
-        scanButton.setOnClickListener(v -> {
-            if (hasPermissions()) {
-                startScan();
-            } else {
-                requestPermissions();
+        findViewById(R.id.scanButton).setOnClickListener(v -> {
+            if (imuScannerService != null) {
+                imuScannerService.scanForDevices();
             }
         });
-    }
-
-    private boolean hasPermissions() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            return ActivityCompat.checkSelfPermission(this, Manifest.permission.BLUETOOTH_SCAN) == PackageManager.PERMISSION_GRANTED &&
-                    ActivityCompat.checkSelfPermission(this, Manifest.permission.BLUETOOTH_CONNECT) == PackageManager.PERMISSION_GRANTED &&
-                    ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED;
-        } else {
-            return ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED;
-        }
     }
 
     private void requestPermissions() {
@@ -83,67 +96,20 @@ public class MainActivity extends AppCompatActivity {
                             Manifest.permission.BLUETOOTH_CONNECT,
                             Manifest.permission.ACCESS_FINE_LOCATION
                     },
-                    PERMISSION_REQUEST_CODE);
+                    1);
         } else {
             ActivityCompat.requestPermissions(this,
-                    new String[]{Manifest.permission.ACCESS_FINE_LOCATION},
-                    PERMISSION_REQUEST_CODE);
+                    new String[]{
+                            Manifest.permission.ACCESS_FINE_LOCATION
+                    },
+                    1);
         }
-    }
-
-    @SuppressLint("MissingPermission")
-    private void startScan() {
-        Log.d("SCAN", "Started scanning...");
-        bluetoothScanner.startScan(new ScanCallback() {
-            @Override
-            public void onScanResult(int callbackType, ScanResult result) {
-                BluetoothDevice device = result.getDevice();
-                Log.d("SCAN", "Found device: " + device.getName() + " [" + device.getAddress() + "]");
-                if (device.getName() != null && device.getName().contains("MetaWear")) {
-                    bluetoothScanner.stopScan(this);
-                    Toast.makeText(MainActivity.this, "Found device: " + device.getName(), Toast.LENGTH_SHORT).show();
-                    connectToMetaWear(device);
-                }
-            }
-
-            @Override
-            public void onScanFailed(int errorCode) {
-                Log.d("SCAN", "BLE scan failed with error: " + errorCode);
-            }
-        });
-    }
-
-    @SuppressLint("MissingPermission")
-    private void connectToMetaWear(BluetoothDevice device) {
-        metaWearBoard = serviceBinder.getMetaWearBoard(device);
-        metaWearBoard.connectAsync().continueWith(task -> {
-            runOnUiThread(() -> {
-                if (task.isFaulted()) {
-                    Toast.makeText(MainActivity.this, "Connection failed", Toast.LENGTH_SHORT).show();
-                } else {
-                    Toast.makeText(MainActivity.this, "Connected to " + device.getName(), Toast.LENGTH_SHORT).show();
-                }
-            });
-            return null;
-        });
     }
 
     @Override
     protected void onDestroy() {
         super.onDestroy();
-        unbindService(serviceConnection);
-    }
-
-    // Handle the result of permission request
-    @Override
-    public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions, @NonNull int[] grantResults) {
-        if (requestCode == PERMISSION_REQUEST_CODE) {
-            if (hasPermissions()) {
-                startScan();
-            } else {
-                Toast.makeText(this, "Permissions denied", Toast.LENGTH_SHORT).show();
-            }
-        }
-        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        unbindService(imuServiceConnection);
+        unbindService(btleServiceConnection);
     }
 }

@@ -3,4 +3,7 @@
     <string name="title_home">Home</string>
     <string name="title_dashboard">Dashboard</string>
     <string name="title_notifications">Notifications</string>
+    <string name="scan_button">Scan for Devices</string>
+    <string name="app_description">Monitor gait symmetry in stroke rehabilitation using wearable IMUs and real-time motion analysis.</string>
+    <string name="app_title">GaitRehab Prototype</string>
 </resources>
