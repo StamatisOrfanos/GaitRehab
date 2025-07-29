@@ -10,5 +10,6 @@
         android:id="@+id/scanButton"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
+        android:layout_marginTop="100dp"
         android:text="Scan for IMU" />
 </LinearLayout>

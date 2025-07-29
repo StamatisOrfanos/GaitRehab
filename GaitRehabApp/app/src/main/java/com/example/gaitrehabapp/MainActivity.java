@@ -16,6 +16,7 @@ import android.content.pm.PackageManager;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.IBinder;
+import android.util.Log;
 import android.widget.Button;
 import android.widget.Toast;
 import androidx.annotation.NonNull;
@@ -92,15 +93,22 @@ public class MainActivity extends AppCompatActivity {
 
     @SuppressLint("MissingPermission")
     private void startScan() {
+        Log.d("SCAN", "Started scanning...");
         bluetoothScanner.startScan(new ScanCallback() {
             @Override
             public void onScanResult(int callbackType, ScanResult result) {
                 BluetoothDevice device = result.getDevice();
+                Log.d("SCAN", "Found device: " + device.getName() + " [" + device.getAddress() + "]");
                 if (device.getName() != null && device.getName().contains("MetaWear")) {
                     bluetoothScanner.stopScan(this);
                     Toast.makeText(MainActivity.this, "Found device: " + device.getName(), Toast.LENGTH_SHORT).show();
                     connectToMetaWear(device);
                 }
+            }
+
+            @Override
+            public void onScanFailed(int errorCode) {
+                Log.d("SCAN", "BLE scan failed with error: " + errorCode);
             }
         });
     }
