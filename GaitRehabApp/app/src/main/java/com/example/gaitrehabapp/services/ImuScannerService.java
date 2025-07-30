@@ -11,20 +11,20 @@ import android.content.Context;
 import android.content.Intent;
 import android.os.Binder;
 import android.os.IBinder;
-
+import android.util.Log;
 import androidx.annotation.Nullable;
 import androidx.annotation.RequiresPermission;
-
 import com.example.gaitrehabapp.models.ImuDevice;
 import com.mbientlab.metawear.MetaWearBoard;
 import com.mbientlab.metawear.android.BtleService;
-
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
 public class ImuScannerService extends android.app.Service {
+
+    private static final String TAG = "ImuScannerService";
     private final IBinder binder = new LocalBinder();
 
     public interface ScanListener {
@@ -76,13 +76,17 @@ public class ImuScannerService extends android.app.Service {
         MetaWearBoard board = btleBinder.getMetaWearBoard(imuDevice.getBluetoothDevice());
         imuDevice.setBoard(board);
 
+        Log.d("ImuScannerService", "Attempting connection to: " + imuDevice.getMacAddress());
         board.connectAsync().continueWith(task -> {
-            imuDevice.setConnected(!task.isFaulted());
+            boolean connected = !task.isFaulted();
+            imuDevice.setConnected(connected);
             if (scanListener != null) {
-                if (task.isFaulted()) {
-                    scanListener.onConnectionFailed(imuDevice);
-                } else {
+                if (connected) {
+                    Log.d("ImuScannerService", "Connected to: " + imuDevice.getMacAddress());
                     scanListener.onDeviceConnected(imuDevice);
+                } else {
+                    Log.e("ImuScannerService", "Connection failed to: " + imuDevice.getMacAddress(), task.getError());
+                    scanListener.onConnectionFailed(imuDevice);
                 }
             }
             return null;
@@ -94,11 +98,17 @@ public class ImuScannerService extends android.app.Service {
         @Override
         public void onScanResult(int callbackType, ScanResult result) {
             BluetoothDevice device = result.getDevice();
-            if (device.getName() != null && device.getName().contains("MetaWear")) {
-                String mac = device.getAddress();
-                if (!discoveredDevices.containsKey(mac)) {
+            String name = device.getName();
+            String mac = device.getAddress();
+            if (!discoveredDevices.containsKey(mac)) {
+                if (device.getName() != null && device.getName().contains("MetaWear")) {
+                    Log.d(TAG, "Discovered device: " + device.getName() + " - " + device.getAddress());
+
                     ImuDevice imu = new ImuDevice(device);
+                    Log.d(TAG, "IMU device is: " + imu.getName() + " - " + imu.getMacAddress() + " - " + imu.getBluetoothDevice());
                     discoveredDevices.put(mac, imu);
+                    Log.d(TAG, "Here check for the scanListener: " + (scanListener != null));
+
                     if (scanListener != null) {
                         scanListener.onDeviceDiscovered(imu);
                     }
