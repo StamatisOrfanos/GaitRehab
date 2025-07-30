@@ -11,25 +11,34 @@ import android.content.Context;
 import android.content.Intent;
 import android.os.Binder;
 import android.os.IBinder;
+
 import androidx.annotation.Nullable;
 import androidx.annotation.RequiresPermission;
+
+import com.example.gaitrehabapp.models.ImuDevice;
 import com.mbientlab.metawear.MetaWearBoard;
 import com.mbientlab.metawear.android.BtleService;
+
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 
 public class ImuScannerService extends android.app.Service {
     private final IBinder binder = new LocalBinder();
 
-    public interface ConnectionListener {
-        void onDeviceFound(BluetoothDevice device);
-        void onConnected(BluetoothDevice device);
-        void onConnectionFailed(BluetoothDevice device);
+    public interface ScanListener {
+        void onDeviceDiscovered(ImuDevice device);
+        void onDeviceConnected(ImuDevice device);
+        void onConnectionFailed(ImuDevice device);
     }
 
-    private ConnectionListener connectionListener;
+    private ScanListener scanListener;
     private BluetoothLeScanner scanner;
     private BluetoothAdapter adapter;
     private BtleService.LocalBinder btleBinder;
-    private MetaWearBoard metaWearBoard;
+
+    private final Map<String, ImuDevice> discoveredDevices = new HashMap<>();
 
     public class LocalBinder extends Binder {
         public ImuScannerService getService() {
@@ -37,8 +46,8 @@ public class ImuScannerService extends android.app.Service {
         }
     }
 
-    public void setConnectionListener(ConnectionListener listener) {
-        this.connectionListener = listener;
+    public void setScanListener(ScanListener listener) {
+        this.scanListener = listener;
     }
 
     public void initialize(Context context, BtleService.LocalBinder btleBinder) {
@@ -49,42 +58,54 @@ public class ImuScannerService extends android.app.Service {
     }
 
     @RequiresPermission(Manifest.permission.BLUETOOTH_SCAN)
-    public void scanForDevices() {
+    public void startScan() {
+        discoveredDevices.clear();
         scanner.startScan(scanCallback);
     }
 
-    private final ScanCallback scanCallback = new ScanCallback() {
-        @RequiresPermission(allOf = {Manifest.permission.BLUETOOTH_CONNECT, Manifest.permission.BLUETOOTH_SCAN})
-        @Override
-        public void onScanResult(int callbackType, ScanResult result) {
-            BluetoothDevice device = result.getDevice();
-            if (device.getName() != null && device.getName().contains("MetaWear")) {
-                scanner.stopScan(this);
-                if (connectionListener != null) {
-                    connectionListener.onDeviceFound(device);
-                }
-                connectToDevice(device);
-            }
-        }
-    };
+    @RequiresPermission(Manifest.permission.BLUETOOTH_SCAN)
+    public void stopScan() {
+        scanner.stopScan(scanCallback);
+    }
 
-    private void connectToDevice(BluetoothDevice device) {
-        metaWearBoard = btleBinder.getMetaWearBoard(device);
-        metaWearBoard.connectAsync().continueWith(task -> {
-            if (connectionListener != null) {
+    public List<ImuDevice> getDiscoveredDevices() {
+        return new ArrayList<>(discoveredDevices.values());
+    }
+
+    public void connectToDevice(ImuDevice imuDevice) {
+        MetaWearBoard board = btleBinder.getMetaWearBoard(imuDevice.getBluetoothDevice());
+        imuDevice.setBoard(board);
+
+        board.connectAsync().continueWith(task -> {
+            imuDevice.setConnected(!task.isFaulted());
+            if (scanListener != null) {
                 if (task.isFaulted()) {
-                    connectionListener.onConnectionFailed(device);
+                    scanListener.onConnectionFailed(imuDevice);
                 } else {
-                    connectionListener.onConnected(device);
+                    scanListener.onDeviceConnected(imuDevice);
                 }
             }
             return null;
         });
     }
 
-    public MetaWearBoard getBoard() {
-        return metaWearBoard;
-    }
+    private final ScanCallback scanCallback = new ScanCallback() {
+        @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
+        @Override
+        public void onScanResult(int callbackType, ScanResult result) {
+            BluetoothDevice device = result.getDevice();
+            if (device.getName() != null && device.getName().contains("MetaWear")) {
+                String mac = device.getAddress();
+                if (!discoveredDevices.containsKey(mac)) {
+                    ImuDevice imu = new ImuDevice(device);
+                    discoveredDevices.put(mac, imu);
+                    if (scanListener != null) {
+                        scanListener.onDeviceDiscovered(imu);
+                    }
+                }
+            }
+        }
+    };
 
     @Nullable
     @Override

@@ -1,4 +1,4 @@
-package com.example.gaitrehabapp.Models;
+package com.example.gaitrehabapp.models;
 
 import android.Manifest;
 import android.bluetooth.BluetoothDevice;

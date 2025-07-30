@@ -6,4 +6,8 @@
     <string name="scan_button">Scan for Devices</string>
     <string name="app_description">Monitor gait symmetry in stroke rehabilitation using wearable IMUs and real-time motion analysis.</string>
     <string name="app_title">GaitRehab Prototype</string>
+    <string name="selection_title">Select 2 IMU Devices</string>
+    <string name="select_devices_button">Select Devices</string>
+    <string name="metawear_device">MetaWear Device</string>
+    <string name="use_this_device_checkbox">Use this device</string>
 </resources>

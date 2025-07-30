@@ -7,7 +7,7 @@ import android.util.Log;
 
 import androidx.annotation.Nullable;
 
-import com.example.gaitrehabapp.Models.ImuDevice;
+import com.example.gaitrehabapp.models.ImuDevice;
 import com.mbientlab.metawear.module.Accelerometer;
 import com.mbientlab.metawear.module.Gyro;
 
