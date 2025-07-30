@@ -9,6 +9,7 @@ constraintlayout = "2.2.1"
 lifecycleLivedataKtx = "2.9.2"
 lifecycleViewmodelKtx = "2.9.2"
 metawear = "3.8.0"
+metawearVersion = "4.0.0"
 navigationFragment = "2.9.2"
 navigationUi = "2.9.2"
 
@@ -22,6 +23,7 @@ constraintlayout = { group = "androidx.constraintlayout", name = "constraintlayo
 lifecycle-livedata-ktx = { group = "androidx.lifecycle", name = "lifecycle-livedata-ktx", version.ref = "lifecycleLivedataKtx" }
 lifecycle-viewmodel-ktx = { group = "androidx.lifecycle", name = "lifecycle-viewmodel-ktx", version.ref = "lifecycleViewmodelKtx" }
 metawear = { module = "com.mbientlab:metawear", version.ref = "metawear" }
+metawear-v400 = { module = "com.mbientlab:metawear", version.ref = "metawearVersion" }
 navigation-fragment = { group = "androidx.navigation", name = "navigation-fragment", version.ref = "navigationFragment" }
 navigation-ui = { group = "androidx.navigation", name = "navigation-ui", version.ref = "navigationUi" }
 
