@@ -24,11 +24,11 @@
         <service android:name=".services.ImuScannerService" />
         <service android:name=".services.ImuStreamService" />
         <activity android:name=".DeviceScanActivity" android:exported="true"/>
+        <activity android:name=".ImuStreamActivity"/>
 
         <activity
             android:name=".MainActivity"
-            android:exported="true"
-            android:label="@string/app_name">
+            android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
 

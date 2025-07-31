@@ -1,43 +1,59 @@
 package com.example.gaitrehabapp;
 
 import android.Manifest;
+import android.bluetooth.BluetoothAdapter;
+import android.bluetooth.BluetoothDevice;
+import android.bluetooth.BluetoothManager;
+import android.bluetooth.le.BluetoothLeScanner;
+import android.bluetooth.le.ScanCallback;
+import android.bluetooth.le.ScanResult;
 import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
 import android.content.ServiceConnection;
 import android.os.Bundle;
 import android.os.IBinder;
+import android.util.Log;
 import android.widget.Button;
 import android.widget.Toast;
+
 import androidx.annotation.Nullable;
 import androidx.annotation.RequiresPermission;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
+
 import com.example.gaitrehabapp.adapters.DeviceAdapter;
 import com.example.gaitrehabapp.models.ImuDevice;
-import com.example.gaitrehabapp.services.ImuScannerService;
+import com.mbientlab.metawear.MetaWearBoard;
+import com.mbientlab.metawear.android.BtleService;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
-public class DeviceScanActivity extends AppCompatActivity implements ImuScannerService.ScanListener {
+public class DeviceScanActivity extends AppCompatActivity {
 
-    private ImuScannerService scannerService;
+    private static final String TAG = "DeviceScanActivity";
+    private BtleService.LocalBinder serviceBinder;
+
+    private BluetoothLeScanner bluetoothScanner;
     private DeviceAdapter adapter;
+    private final Map<String, ImuDevice> discoveredDevices = new HashMap<>();
 
-    private final ServiceConnection scannerConnection = new ServiceConnection() {
+    private final ServiceConnection btleConnection = new ServiceConnection() {
         @RequiresPermission(Manifest.permission.BLUETOOTH_SCAN)
         @Override
         public void onServiceConnected(ComponentName name, IBinder service) {
-            scannerService = ((ImuScannerService.LocalBinder) service).getService();
-            scannerService.setScanListener(DeviceScanActivity.this);
-            scannerService.startScan();
+            Log.d(TAG, "BtleService connected");
+            serviceBinder = (BtleService.LocalBinder) service;
+            setupScanner();
         }
 
         @Override
         public void onServiceDisconnected(ComponentName name) {
-            scannerService = null;
+            serviceBinder = null;
         }
     };
 
@@ -47,9 +63,10 @@ public class DeviceScanActivity extends AppCompatActivity implements ImuScannerS
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_device_scan);
 
-        // Bind the scanner service
-        Intent scannerIntent = new Intent(this, ImuScannerService.class);
-        bindService(scannerIntent, scannerConnection, Context.BIND_AUTO_CREATE);
+        Log.d(TAG, "DeviceScanActivity onCreate");
+
+        // Bind the BtleService
+        bindService(new Intent(this, BtleService.class), btleConnection, Context.BIND_AUTO_CREATE);
 
         // RecyclerView setup
         RecyclerView deviceList = findViewById(R.id.deviceList);
@@ -60,9 +77,9 @@ public class DeviceScanActivity extends AppCompatActivity implements ImuScannerS
         // Rescan Button
         Button rescanButton = findViewById(R.id.rescanButton);
         rescanButton.setOnClickListener(v -> {
-            if (scannerService != null) {
-                scannerService.startScan();
-                Toast.makeText(this, "Scanning for devices...", Toast.LENGTH_SHORT).show();
+            if (bluetoothScanner != null) {
+                startScan();
+                Toast.makeText(this, "Rescanning for devices...", Toast.LENGTH_SHORT).show();
             }
         });
 
@@ -80,32 +97,59 @@ public class DeviceScanActivity extends AppCompatActivity implements ImuScannerS
                 startActivity(intent);
             }
         });
-
     }
 
-    @Override
-    public void onDeviceDiscovered(ImuDevice device) {
-        runOnUiThread(() -> {
-            List<ImuDevice> devices = scannerService.getDiscoveredDevices();
-            adapter.updateDevices(devices);
-        });
+    @RequiresPermission(Manifest.permission.BLUETOOTH_SCAN)
+    private void setupScanner() {
+        BluetoothManager bluetoothManager = (BluetoothManager) getSystemService(Context.BLUETOOTH_SERVICE);
+        BluetoothAdapter bluetoothAdapter = bluetoothManager.getAdapter();
+        bluetoothScanner = bluetoothAdapter.getBluetoothLeScanner();
+        startScan();
     }
 
-    @Override
-    public void onDeviceConnected(ImuDevice device) {
-        // Optional feedback
+    @RequiresPermission(Manifest.permission.BLUETOOTH_SCAN)
+    private void startScan() {
+        discoveredDevices.clear();
+        bluetoothScanner.startScan(scanCallback);
     }
 
-    @Override
-    public void onConnectionFailed(ImuDevice device) {
-        runOnUiThread(() ->
-                Toast.makeText(this, "Failed to connect to " + device.getName(), Toast.LENGTH_SHORT).show()
-        );
-    }
+    private final ScanCallback scanCallback = new ScanCallback() {
+        @RequiresPermission(allOf = {Manifest.permission.BLUETOOTH_SCAN, Manifest.permission.BLUETOOTH_CONNECT})
+        @Override
+        public void onScanResult(int callbackType, ScanResult result) {
+            BluetoothDevice device = result.getDevice();
+            String name = device.getName();
+            String address = device.getAddress();
 
+            if (name != null && name.contains("MetaWear") && !discoveredDevices.containsKey(address)) {
+                bluetoothScanner.stopScan(this);
+
+                MetaWearBoard board = serviceBinder.getMetaWearBoard(device);
+                board.connectAsync().continueWith(task -> {
+                    if (!task.isFaulted()) {
+                        ImuDevice imuDevice = new ImuDevice(device);
+                        discoveredDevices.put(address, imuDevice);
+
+                        runOnUiThread(() -> {
+                            adapter.updateDevices(new ArrayList<>(discoveredDevices.values()));
+                            Toast.makeText(DeviceScanActivity.this, "Connected to " + name, Toast.LENGTH_SHORT).show();
+                        });
+                    } else {
+                        runOnUiThread(() ->
+                                Toast.makeText(DeviceScanActivity.this, "Failed to connect to " + name, Toast.LENGTH_SHORT).show()
+                        );
+                    }
+                    return null;
+                });
+            }
+        }
+    };
+
+    @RequiresPermission(Manifest.permission.BLUETOOTH_SCAN)
     @Override
     protected void onDestroy() {
         super.onDestroy();
-        unbindService(scannerConnection);
+        bluetoothScanner.stopScan(scanCallback);
+        unbindService(btleConnection);
     }
 }
