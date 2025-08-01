@@ -86,14 +86,14 @@ public class DeviceScanActivity extends AppCompatActivity {
         // Select Devices Button
         Button selectButton = findViewById(R.id.selectButton);
         selectButton.setOnClickListener(v -> {
-            List<ImuDevice> selected = adapter.getSelectedDevices();
-            if (selected.isEmpty()) {
+            List<ImuDevice> selectedDevices = adapter.getSelectedDevices();
+            if (selectedDevices.isEmpty()) {
                 Toast.makeText(this, "Select at least one device.", Toast.LENGTH_SHORT).show();
-            } else if (selected.size() > 2) {
+            } else if (selectedDevices.size() > 2) {
                 Toast.makeText(this, "You can only select up to 2 devices.", Toast.LENGTH_SHORT).show();
             } else {
-                Intent intent = new Intent(this, ImuStreamActivity.class);
-                intent.putParcelableArrayListExtra("selected_devices", new ArrayList<>(selected));
+                Intent intent = new Intent(DeviceScanActivity.this, ImuStreamActivity.class);
+                intent.putParcelableArrayListExtra("selected_devices", new ArrayList<>(selectedDevices));
                 startActivity(intent);
             }
         });

@@ -20,6 +20,8 @@ import java.util.List;
 public class ImuStreamActivity extends AppCompatActivity {
 
     private boolean isPaused = false;
+    private boolean btleReady = false;
+    private boolean streamReady = false;
     private TextView device1Name, device1GyroZ;
     private TextView device2Name, device2GyroZ;
     private List<ImuDevice> selectedDevices;
@@ -31,20 +33,8 @@ public class ImuStreamActivity extends AppCompatActivity {
         @Override
         public void onServiceConnected(ComponentName name, IBinder service) {
             btleBinder = (BtleService.LocalBinder) service;
-
-            for (ImuDevice device : selectedDevices) {
-                MetaWearBoard board = btleBinder.getMetaWearBoard(device.getBluetoothDevice());
-                device.setBoard(board);
-                board.connectAsync().continueWith(task -> {
-                    if (!task.isFaulted()) {
-                        device.setConnected(true);
-                        runOnUiThread(() -> startStreamingForDevice(device));
-                    } else {
-                        Log.e("IMU", "Connection failed: " + device.getName());
-                    }
-                    return null;
-                });
-            }
+            btleReady = true;
+            checkAndStartStreaming();
         }
 
         @Override
@@ -57,6 +47,8 @@ public class ImuStreamActivity extends AppCompatActivity {
         @Override
         public void onServiceConnected(ComponentName name, IBinder service) {
             streamService = ((ImuStreamService.LocalBinder) service).getService();
+            streamReady = true;
+            checkAndStartStreaming();
         }
 
         @Override
@@ -105,6 +97,25 @@ public class ImuStreamActivity extends AppCompatActivity {
 
         bindService(new Intent(this, BtleService.class), btleConnection, Context.BIND_AUTO_CREATE);
         bindService(new Intent(this, ImuStreamService.class), streamConnection, Context.BIND_AUTO_CREATE);
+    }
+
+
+    private void checkAndStartStreaming() {
+        if (!btleReady || !streamReady || selectedDevices == null) return;
+
+        for (ImuDevice device : selectedDevices) {
+            MetaWearBoard board = btleBinder.getMetaWearBoard(device.getBluetoothDevice());
+            device.setBoard(board);
+            board.connectAsync().continueWith(task -> {
+                if (!task.isFaulted()) {
+                    device.setConnected(true);
+                    runOnUiThread(() -> startStreamingForDevice(device));
+                } else {
+                    Log.e("IMU", "Connection failed: " + device.getName());
+                }
+                return null;
+            });
+        }
     }
 
     private void startStreamingForDevice(ImuDevice device) {
