@@ -77,14 +77,14 @@ public class ImuStreamService extends Service {
     public void pauseStreaming(ImuDevice device) {
         if (device != null) {
             pausedMap.put(device.getMacAddress(), true);
-            Log.i(TAG, "Paused streaming for " + device.getName());
+            Log.i(TAG, "Paused streaming for " + device.getModel());
         }
     }
 
     public void resumeStreaming(ImuDevice device) {
         if (device != null) {
             pausedMap.put(device.getMacAddress(), false);
-            Log.i(TAG, "Resumed streaming for " + device.getName());
+            Log.i(TAG, "Resumed streaming for " + device.getModel());
         }
     }
 
@@ -100,7 +100,7 @@ public class ImuStreamService extends Service {
             device.getBoard().getModule(Accelerometer.class).acceleration().stop();
             device.getBoard().getModule(Accelerometer.class).stop();
 
-            Log.i(TAG, "Stopped streaming for " + device.getName());
+            Log.i(TAG, "Stopped streaming for " + device.getModel());
         } catch (Exception e) {
             Log.e(TAG, "Error stopping: " + e.getMessage());
         }

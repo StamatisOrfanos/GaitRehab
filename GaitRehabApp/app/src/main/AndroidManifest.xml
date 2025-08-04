@@ -22,7 +22,7 @@
 
         <service android:name="com.mbientlab.metawear.android.BtleService" />
         <service android:name=".services.ImuStreamService" />
-        <activity android:name=".DeviceScanActivity" android:exported="true"/>
+        <activity android:name=".ImuScanActivity" android:exported="true"/>
         <activity android:name=".ImuStreamActivity"/>
 
         <activity

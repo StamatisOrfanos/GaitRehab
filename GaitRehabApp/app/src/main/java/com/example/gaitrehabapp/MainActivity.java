@@ -19,7 +19,7 @@ public class MainActivity extends AppCompatActivity {
         setContentView(R.layout.activity_main);
         findViewById(R.id.scanButton).setOnClickListener(v -> {
             if (hasPermissions()) {
-                startActivity(new Intent(MainActivity.this, DeviceScanActivity.class));
+                startActivity(new Intent(MainActivity.this, ImuScanActivity.class));
             } else {
                 requestPermissions();
             }

@@ -32,7 +32,7 @@ public class DeviceAdapter extends RecyclerView.Adapter<DeviceAdapter.DeviceView
     @Override
     public void onBindViewHolder(@NonNull DeviceViewHolder holder, int position) {
         ImuDevice device = devices.get(position);
-        holder.deviceName.setText(device.getName() != null ? device.getName() : "Unnamed Device");
+        holder.deviceName.setText(device.getModel() != null ? device.getModel() : "Unnamed Device");
         holder.deviceMac.setText(device.getMacAddress());
 
         holder.deviceCheckbox.setOnCheckedChangeListener(null);

@@ -16,31 +16,30 @@ import android.os.IBinder;
 import android.util.Log;
 import android.widget.Button;
 import android.widget.Toast;
-
 import androidx.annotation.Nullable;
 import androidx.annotation.RequiresPermission;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
-
 import com.example.gaitrehabapp.adapters.DeviceAdapter;
 import com.example.gaitrehabapp.models.ImuDevice;
 import com.mbientlab.metawear.MetaWearBoard;
 import com.mbientlab.metawear.android.BtleService;
-
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
-public class DeviceScanActivity extends AppCompatActivity {
+public class ImuScanActivity extends AppCompatActivity {
 
     private static final String TAG = "DeviceScanActivity";
     private BtleService.LocalBinder serviceBinder;
-
     private BluetoothLeScanner bluetoothScanner;
     private DeviceAdapter adapter;
     private final Map<String, ImuDevice> discoveredDevices = new HashMap<>();
+    private final Set<String> seenAddresses = new HashSet<>();
 
     private final ServiceConnection btleConnection = new ServiceConnection() {
         @RequiresPermission(Manifest.permission.BLUETOOTH_SCAN)
@@ -54,6 +53,38 @@ public class DeviceScanActivity extends AppCompatActivity {
         @Override
         public void onServiceDisconnected(ComponentName name) {
             serviceBinder = null;
+        }
+    };
+
+    private final ScanCallback metaWearScanCallback = new ScanCallback() {
+        @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
+        @Override
+        public void onScanResult(int callbackType, ScanResult result) {
+            BluetoothDevice device = result.getDevice();
+
+            if (device.getAddress() == null || seenAddresses.contains(device.getAddress())) return;
+            seenAddresses.add(device.getAddress());
+
+            MetaWearBoard board = serviceBinder.getMetaWearBoard(device);
+
+            board.connectAsync().continueWith(task -> {
+                if (!task.isFaulted()) {
+                    String name = board.getModelString().toString();
+                    Log.d(TAG, "Model name for " + device.getAddress() + ": " + name);
+
+                    if (name.contains("MetaMotion")) {
+                        ImuDevice imu = new ImuDevice(device);
+                        imu.setBoard(board);
+                        imu.setModel(name);
+                        runOnUiThread(() -> handleValidImuDevice(imu));
+                    } else { board.disconnectAsync(); }
+                }
+                else {
+                    Exception e = task.getError();
+                    Log.e(TAG, "Connection failed for " + device.getAddress(), e);
+                }
+                return null;
+            });
         }
     };
 
@@ -92,7 +123,7 @@ public class DeviceScanActivity extends AppCompatActivity {
             } else if (selectedDevices.size() > 2) {
                 Toast.makeText(this, "You can only select up to 2 devices.", Toast.LENGTH_SHORT).show();
             } else {
-                Intent intent = new Intent(DeviceScanActivity.this, ImuStreamActivity.class);
+                Intent intent = new Intent(ImuScanActivity.this, ImuStreamActivity.class);
                 intent.putParcelableArrayListExtra("selected_devices", new ArrayList<>(selectedDevices));
                 startActivity(intent);
             }
@@ -110,46 +141,26 @@ public class DeviceScanActivity extends AppCompatActivity {
     @RequiresPermission(Manifest.permission.BLUETOOTH_SCAN)
     private void startScan() {
         discoveredDevices.clear();
-        bluetoothScanner.startScan(scanCallback);
+        seenAddresses.clear();
+        bluetoothScanner.startScan(metaWearScanCallback);
     }
 
-    private final ScanCallback scanCallback = new ScanCallback() {
-        @RequiresPermission(allOf = {Manifest.permission.BLUETOOTH_SCAN, Manifest.permission.BLUETOOTH_CONNECT})
-        @Override
-        public void onScanResult(int callbackType, ScanResult result) {
-            BluetoothDevice device = result.getDevice();
-            String name = device.getName();
-            String address = device.getAddress();
-
-            if (name != null && name.contains("MetaWear") && !discoveredDevices.containsKey(address)) {
-                bluetoothScanner.stopScan(this);
-
-                MetaWearBoard board = serviceBinder.getMetaWearBoard(device);
-                board.connectAsync().continueWith(task -> {
-                    if (!task.isFaulted()) {
-                        ImuDevice imuDevice = new ImuDevice(device);
-                        discoveredDevices.put(address, imuDevice);
-
-                        runOnUiThread(() -> {
-                            adapter.updateDevices(new ArrayList<>(discoveredDevices.values()));
-                            Toast.makeText(DeviceScanActivity.this, "Connected to " + name, Toast.LENGTH_SHORT).show();
-                        });
-                    } else {
-                        runOnUiThread(() ->
-                                Toast.makeText(DeviceScanActivity.this, "Failed to connect to " + name, Toast.LENGTH_SHORT).show()
-                        );
-                    }
-                    return null;
-                });
-            }
+    private void handleValidImuDevice(ImuDevice imu) {
+        String address = imu.getMacAddress();
+        if (!discoveredDevices.containsKey(address)) {
+            discoveredDevices.put(address, imu);
+            adapter.updateDevices(new ArrayList<>(discoveredDevices.values()));
+            Toast.makeText(this, "Discovered: " + imu.getModel(), Toast.LENGTH_SHORT).show();
         }
-    };
+    }
 
     @RequiresPermission(Manifest.permission.BLUETOOTH_SCAN)
     @Override
     protected void onDestroy() {
         super.onDestroy();
-        bluetoothScanner.stopScan(scanCallback);
+        if (bluetoothScanner != null) {
+            bluetoothScanner.stopScan(metaWearScanCallback);
+        }
         unbindService(btleConnection);
     }
 }

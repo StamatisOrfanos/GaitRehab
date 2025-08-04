@@ -9,6 +9,7 @@ import com.mbientlab.metawear.MetaWearBoard;
 
 public class ImuDevice implements Parcelable {
     private final String name;
+    private String model;
     private final String macAddress;
     private final BluetoothDevice bluetoothDevice;
     private boolean isConnected;
@@ -30,6 +31,7 @@ public class ImuDevice implements Parcelable {
         bluetoothDevice = in.readParcelable(BluetoothDevice.class.getClassLoader());
         isConnected = in.readByte() != 0;
         role = in.readString();
+        model = in.readString();
     }
 
     public static final Creator<ImuDevice> CREATOR = new Creator<ImuDevice>() {
@@ -56,11 +58,14 @@ public class ImuDevice implements Parcelable {
         dest.writeParcelable(bluetoothDevice, flags);
         dest.writeByte((byte) (isConnected ? 1 : 0));
         dest.writeString(role);
+        dest.writeString(model);
     }
 
-    public String getName() {
-        return name;
-    }
+    public String getName() { return name; }
+
+    public String getModel() { return model; }
+
+    public void setModel(String model) { this.model = model; }
 
     public String getMacAddress() {
         return macAddress;
