@@ -10,10 +10,8 @@ import android.util.Log;
 import androidx.annotation.Nullable;
 import androidx.annotation.RequiresApi;
 import com.example.gaitrehabapp.models.ImuDevice;
-import com.mbientlab.metawear.data.Acceleration;
 import com.mbientlab.metawear.data.AngularVelocity;
 import com.mbientlab.metawear.module.Accelerometer;
-import com.mbientlab.metawear.module.AccelerometerBmi160;
 import com.mbientlab.metawear.module.Gyro;
 import java.io.File;
 import java.io.FileWriter;
@@ -25,11 +23,6 @@ import java.util.Map;
 public class ImuStreamService extends Service {
 
     private static final String TAG = "IMU_STREAM";
-
-    public interface DataCallback {
-        void onGyroZ(float zValue);
-        void onAccelZ(float zValue);
-    }
 
     private final IBinder binder = new LocalBinder();
     public class LocalBinder extends Binder {
@@ -58,35 +51,9 @@ public class ImuStreamService extends Service {
         sessionBuffers.put(deviceId, new StringBuilder());
         StringBuilder buffer = sessionBuffers.get(deviceId);
 
-        // Accelerometer
-        AccelerometerBmi160 acc = device.getBoard().getModule(AccelerometerBmi160.class);
-        acc.configure()
-                .odr(AccelerometerBmi160.OutputDataRate.ODR_100_HZ)
-                .range(AccelerometerBmi160.AccRange.AR_4G)
-                .commit();
-
-        acc.acceleration().addRouteAsync(source ->
-                source.stream((data, env) -> {
-                    if (Boolean.FALSE.equals(pausedMap.get(deviceId))) {
-                        Acceleration accel = data.value(Acceleration.class);
-                        long timestamp = System.currentTimeMillis();
-                        buffer.append(timestamp).append(",accel,")
-                                .append(accel.x()).append(",")
-                                .append(accel.y()).append(",")
-                                .append(accel.z()).append("\n");
-                        accelZCallback.onAccelZ(accel.z());
-                    }
-                })
-        ).continueWithTask(task -> {
-            acc.acceleration().start();
-            acc.start();
-            return null;
-        });
-
-
         // Gyroscope
         Gyro gyro = device.getBoard().getModule(Gyro.class);
-        gyro.configure().odr(Gyro.OutputDataRate.ODR_100_HZ).commit();
+        gyro.configure().odr(Gyro.OutputDataRate.ODR_50_HZ).commit();
 
         gyro.angularVelocity().addRouteAsync(source ->
                 source.stream((data, env) -> {

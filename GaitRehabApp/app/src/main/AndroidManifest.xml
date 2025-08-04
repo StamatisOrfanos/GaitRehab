@@ -21,7 +21,6 @@
         android:theme="@style/Theme.GaitRehabApp">
 
         <service android:name="com.mbientlab.metawear.android.BtleService" />
-        <service android:name=".services.ImuScannerService" />
         <service android:name=".services.ImuStreamService" />
         <activity android:name=".DeviceScanActivity" android:exported="true"/>
         <activity android:name=".ImuStreamActivity"/>
