@@ -40,7 +40,7 @@ public class ImuStreamService extends Service {
     private final Map<String, Boolean> pausedMap = new HashMap<>();
     private final Map<String, StringBuilder> sessionBuffers = new HashMap<>();
 
-    public void startStreaming(ImuDevice device, AccelZCallback accelZCallback, GyroZCallback zCallback) {
+    public void startStreaming(ImuDevice device, GyroZCallback zCallback) {
         if (device == null || device.getBoard() == null) {
             Log.e(TAG, "Cannot stream: null device or board");
             return;

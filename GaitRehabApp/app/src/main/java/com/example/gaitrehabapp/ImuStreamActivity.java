@@ -125,9 +125,6 @@ public class ImuStreamActivity extends AppCompatActivity {
 
         streamService.startStreaming(
                 device,
-                accelZ -> runOnUiThread(() -> {
-                    Log.d("IMU", "Accel Z for " + deviceName + ": " + accelZ);
-                }),
                 gyroZ -> runOnUiThread(() -> {
                     if (device == selectedDevices.get(0)) {
                         device1Name.setText(deviceName);
