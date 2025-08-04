@@ -3,7 +3,7 @@
     xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:padding="16dp">
+    android:padding="25dp">
 
     <LinearLayout
         android:orientation="vertical"
@@ -13,12 +13,13 @@
         <!-- Title -->
         <TextView
             android:id="@+id/streamTitle"
-            android:text="Live Gyroscope Streaming"
+            android:layout_width="266dp"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="30dp"
+            android:text="@string/gyroscope_streaming_title"
             android:textSize="20sp"
             android:textStyle="bold"
-            android:layout_marginBottom="16dp"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content" />
+            android:textAlignment="center"/>
 
         <!-- Section for Device 1 -->
         <LinearLayout
@@ -30,20 +31,20 @@
 
             <TextView
                 android:id="@+id/device1Name"
-                android:text="Device 1"
-                android:textSize="16sp"
+                android:text="@string/device_1_title"
+                android:textSize="25sp"
                 android:textStyle="bold"
-                android:layout_marginBottom="4dp"
-                android:layout_height="25dp"
+                android:layout_marginBottom="8dp"
+                android:layout_height="30dp"
                 android:layout_width="350dp"/>
 
             <TextView
                 android:id="@+id/device1GyroZ"
-                android:text="Gyro Z: --"
-                android:textSize="16sp"
-                android:textColor="@android:color/holo_blue_dark"
-                android:layout_height="25dp"
-                android:layout_width="80dp"/>
+                android:text="@string/gyro_z_1"
+                android:textSize="20sp"
+                android:textColor="@color/gait_pink"
+                android:layout_height="50dp"
+                android:layout_width="300dp"/>
         </LinearLayout>
 
         <!-- Section for Device 2 (if used) -->
@@ -51,32 +52,33 @@
             android:id="@+id/device2Section"
             android:orientation="vertical"
             android:layout_width="match_parent"
-            android:layout_height="wrap_content">
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="24dp">
 
             <TextView
                 android:id="@+id/device2Name"
-                android:text="Device 2"
-                android:textSize="16sp"
+                android:text="@string/device_2_title"
+                android:textSize="25sp"
                 android:textStyle="bold"
-                android:layout_marginBottom="4dp"
-                android:layout_height="25dp"
+                android:layout_marginBottom="8dp"
+                android:layout_height="30dp"
                 android:layout_width="350dp"/>
 
             <TextView
                 android:id="@+id/device2GyroZ"
-                android:text="Gyro Z: --"
-                android:textSize="16sp"
-                android:textColor="@android:color/holo_green_dark"
-                android:layout_height="25dp"
-                android:layout_width="80dp"/>
+                android:text="@string/gyro_z_2"
+                android:textSize="20sp"
+                android:textColor="@color/gait_green"
+                android:layout_height="50dp"
+                android:layout_width="300dp"/>
         </LinearLayout>
 
         <Button
             android:id="@+id/pauseResumeButton"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="Pause Streaming"
-            android:layout_marginTop="32dp" />
+            android:text="@string/pause_streaming_button"
+            android:layout_marginTop="300dp" />
     </LinearLayout>
 
 

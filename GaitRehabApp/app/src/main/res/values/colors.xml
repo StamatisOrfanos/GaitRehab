@@ -8,4 +8,6 @@
     <color name="black">#FF000000</color>
     <color name="white">#FFFFFFFF</color>
     <color name="tan">#FFFEF7</color>
+    <color name="gait_pink">#e4146d</color>
+    <color name="gait_green">#04b494</color>
 </resources>

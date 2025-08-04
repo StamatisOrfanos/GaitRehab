@@ -10,4 +10,10 @@
     <string name="select_devices_button">Select Devices</string>
     <string name="metawear_device">MetaWear Device</string>
     <string name="use_this_device_checkbox">Use this device</string>
+    <string name="gyroscope_streaming_title">Live Gyroscope Streaming</string>
+    <string name="device_1_title">Device 1</string>
+    <string name="device_2_title">Device 2</string>
+    <string name="gyro_z_1">Gyro Z: --</string>
+    <string name="gyro_z_2">Gyro Z: --</string>
+    <string name="pause_streaming_button">Pause Streaming</string>
 </resources>
