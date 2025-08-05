@@ -1,5 +1,7 @@
 package com.example.gaitrehabapp.services;
 
+import static kotlinx.coroutines.scheduling.WorkQueueKt.BUFFER_CAPACITY;
+
 import android.app.Service;
 import android.content.Intent;
 import android.os.Binder;
@@ -9,6 +11,8 @@ import android.os.Environment;
 import android.util.Log;
 import androidx.annotation.Nullable;
 import androidx.annotation.RequiresApi;
+
+import com.example.gaitrehabapp.models.CircularBuffer;
 import com.example.gaitrehabapp.models.ImuDevice;
 import com.mbientlab.metawear.data.AngularVelocity;
 import com.mbientlab.metawear.module.Accelerometer;
@@ -23,7 +27,8 @@ import java.util.Map;
 public class ImuStreamService extends Service {
 
     private static final String TAG = "IMU_STREAM";
-
+    private final Map<String, CircularBuffer> bufferMap = new HashMap<>();
+    private final int BUFFER_CAPACITY = 200;
     private final IBinder binder = new LocalBinder();
     public class LocalBinder extends Binder {
         public ImuStreamService getService() {
@@ -48,22 +53,22 @@ public class ImuStreamService extends Service {
 
         String deviceId = device.getMacAddress();
         pausedMap.put(deviceId, false);
-        sessionBuffers.put(deviceId, new StringBuilder());
-        StringBuilder buffer = sessionBuffers.get(deviceId);
 
         // Gyroscope
         Gyro gyro = device.getBoard().getModule(Gyro.class);
-        gyro.configure().odr(Gyro.OutputDataRate.ODR_50_HZ).commit();
+        gyro.configure().odr(Gyro.OutputDataRate.ODR_100_HZ).commit();
 
         gyro.angularVelocity().addRouteAsync(source ->
                 source.stream((data, env) -> {
                     if (Boolean.FALSE.equals(pausedMap.get(deviceId))) {
                         AngularVelocity gyroData = data.value(AngularVelocity.class);
+                        float z_axis = gyroData.z();
                         long timestamp = System.currentTimeMillis();
-                        buffer.append(timestamp).append(",gyro,")
-                                .append(gyroData.x()).append(",")
-                                .append(gyroData.y()).append(",")
-                                .append(gyroData.z()).append("\n");
+
+                        CircularBuffer cb = bufferMap.computeIfAbsent(deviceId, id -> new CircularBuffer(BUFFER_CAPACITY));
+                        cb.add(z_axis, timestamp);
+
+
                         zCallback.onGyroZ(gyroData.z());
                     }
                 })
