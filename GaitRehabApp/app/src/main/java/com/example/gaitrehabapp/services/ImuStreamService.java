@@ -1,6 +1,8 @@
 package com.example.gaitrehabapp.services;
 
-import static com.example.gaitrehabapp.services.GaitFeatureExtractorService.extractFromBuffers;
+import static com.example.gaitrehabapp.services.GaitFeatureExtractorService.featureExtraction;
+import static java.lang.String.format;
+
 import android.app.Service;
 import android.content.Intent;
 import android.os.Binder;
@@ -79,13 +81,16 @@ public class ImuStreamService extends Service {
             }
 
             if (!leftZ.isEmpty() && !rightZ.isEmpty()) {
-                GaitWindowResult result = extractFromBuffers(leftZ, rightZ);
+                GaitWindowResult result = featureExtraction(leftZ, rightZ);
 
+                Log.i(TAG, "==== Gait Values ====");
                 Log.i(TAG, "Left Stance:  " + result.leftStance + "s");
                 Log.i(TAG, "Left Swing :  " + result.leftSwing + "s");
                 Log.i(TAG, "Right Stance: " + result.rightStance + "s");
                 Log.i(TAG, "Right Swing : " + result.rightSwing + "s");
+                Log.i(TAG, "========================");
             }
+
 
             analysisHandler.postDelayed(this, ANALYSIS_INTERVAL_MS);
         }

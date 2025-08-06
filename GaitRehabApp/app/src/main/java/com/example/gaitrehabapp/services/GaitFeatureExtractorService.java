@@ -8,7 +8,7 @@ import java.util.List;
 
 public class GaitFeatureExtractorService {
 
-    public static GaitWindowResult extractFromBuffers(List<DataPoint> leftZ, List<DataPoint> rightZ) {
+    public static GaitWindowResult featureExtraction(List<DataPoint> leftZ, List<DataPoint> rightZ) {
     GaitWindowResult result = new GaitWindowResult();
 
     List<GaitCycle> leftPhases = detectStanceSwing(leftZ);
