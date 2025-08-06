@@ -1,5 +1,6 @@
 package com.example.gaitrehabapp;
 
+import android.annotation.SuppressLint;
 import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
@@ -9,6 +10,7 @@ import android.os.IBinder;
 import android.util.Log;
 import android.widget.Button;
 import android.widget.TextView;
+import android.widget.Toast;
 import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
 import com.example.gaitrehabapp.models.ImuDevice;
@@ -18,14 +20,12 @@ import com.mbientlab.metawear.android.BtleService;
 import java.util.List;
 
 public class ImuStreamActivity extends AppCompatActivity {
-
     private boolean isPaused = false;
     private boolean btleReady = false;
     private boolean streamReady = false;
     private TextView device1Name, device1GyroZ;
     private TextView device2Name, device2GyroZ;
     private List<ImuDevice> selectedDevices;
-
     private BtleService.LocalBinder btleBinder;
     private ImuStreamService streamService;
 
@@ -103,13 +103,21 @@ public class ImuStreamActivity extends AppCompatActivity {
     private void checkAndStartStreaming() {
         if (!btleReady || !streamReady || selectedDevices == null) return;
 
-        for (ImuDevice device : selectedDevices) {
+        if (selectedDevices.size() < 2) {
+            Toast.makeText(this, "Two IMU devices required for gait symmetry analysis.", Toast.LENGTH_LONG).show();
+            return;
+        }
+
+        for (int i = 0; i < selectedDevices.size(); i++) {
+            ImuDevice device = selectedDevices.get(i);
+            String side = (i == 0) ? "left" : "right";
+
             MetaWearBoard board = btleBinder.getMetaWearBoard(device.getBluetoothDevice());
             device.setBoard(board);
             board.connectAsync().continueWith(task -> {
                 if (!task.isFaulted()) {
                     device.setConnected(true);
-                    runOnUiThread(() -> startStreamingForDevice(device));
+                    runOnUiThread(() -> startStreamingForDevice(device, side));
                 } else {
                     Log.e("IMU", "Connection failed: " + device.getName());
                 }
@@ -118,19 +126,21 @@ public class ImuStreamActivity extends AppCompatActivity {
         }
     }
 
-    private void startStreamingForDevice(ImuDevice device) {
+    @SuppressLint("SetTextI18n")
+    private void startStreamingForDevice(ImuDevice device, String side) {
         String deviceName = device.getName() != null ? device.getName() : device.getMacAddress();
 
         if (streamService == null || device.getBoard() == null) return;
 
         streamService.startStreaming(
                 device,
+                side,
                 gyroZ -> runOnUiThread(() -> {
-                    if (device == selectedDevices.get(0)) {
-                        device1Name.setText(deviceName);
+                    if (side.equals("left")) {
+                        device1Name.setText(deviceName + " (Left)");
                         device1GyroZ.setText("Gyro Z: " + gyroZ);
-                    } else if (selectedDevices.size() > 1 && device == selectedDevices.get(1)) {
-                        device2Name.setText(deviceName);
+                    } else {
+                        device2Name.setText(deviceName + " (Right)");
                         device2GyroZ.setText("Gyro Z: " + gyroZ);
                     }
                 })

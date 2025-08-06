@@ -3,7 +3,6 @@ package com.example.gaitrehabapp.services;
 import com.example.gaitrehabapp.models.DataPoint;
 import com.example.gaitrehabapp.models.GaitCycle;
 import com.example.gaitrehabapp.models.GaitWindowResult;
-
 import java.util.ArrayList;
 import java.util.List;
 
@@ -25,7 +24,6 @@ public class GaitFeatureExtractorService {
 
     private static List<GaitCycle> detectStanceSwing(List<DataPoint> data) {
         List<GaitCycle> result = new ArrayList<>();
-        if (data.size() < 3) return result;
 
         List<Integer> zeroCrossings = new ArrayList<>();
         for (int i = 1; i < data.size(); i++) {
