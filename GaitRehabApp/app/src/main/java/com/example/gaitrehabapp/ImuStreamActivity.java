@@ -26,6 +26,7 @@ public class ImuStreamActivity extends AppCompatActivity {
     private TextView device1Name, device1GyroZ;
     private TextView device2Name, device2GyroZ;
     private List<ImuDevice> selectedDevices;
+
     private BtleService.LocalBinder btleBinder;
     private ImuStreamService streamService;
 
@@ -99,7 +100,6 @@ public class ImuStreamActivity extends AppCompatActivity {
         bindService(new Intent(this, ImuStreamService.class), streamConnection, Context.BIND_AUTO_CREATE);
     }
 
-
     private void checkAndStartStreaming() {
         if (!btleReady || !streamReady || selectedDevices == null) return;
 
@@ -108,25 +108,30 @@ public class ImuStreamActivity extends AppCompatActivity {
             return;
         }
 
-        for (int i = 0; i < selectedDevices.size(); i++) {
-            ImuDevice device = selectedDevices.get(i);
-            String side = (i == 0) ? "left" : "right";
-
-            MetaWearBoard board = btleBinder.getMetaWearBoard(device.getBluetoothDevice());
-            device.setBoard(board);
-            board.connectAsync().continueWith(task -> {
-                if (!task.isFaulted()) {
-                    device.setConnected(true);
-                    runOnUiThread(() -> startStreamingForDevice(device, side));
-                } else {
-                    Log.e("IMU", "Connection failed: " + device.getName());
-                }
-                return null;
-            });
-        }
+        connectDeviceSequentially(0);
     }
 
-    @SuppressLint("SetTextI18n")
+    private void connectDeviceSequentially(int index) {
+        if (index >= selectedDevices.size()) return;
+
+        ImuDevice device = selectedDevices.get(index);
+        String side = (index == 0) ? "left" : "right";
+
+        MetaWearBoard board = btleBinder.getMetaWearBoard(device.getBluetoothDevice());
+        device.setBoard(board);
+
+        board.connectAsync().continueWith(task -> {
+            if (!task.isFaulted()) {
+                device.setConnected(true);
+                runOnUiThread(() -> startStreamingForDevice(device, side));
+                connectDeviceSequentially(index + 1);
+            } else {
+                Log.e("IMU", "Connection failed: " + device.getName() + " | ");
+            }
+            return null;
+        });
+    }
+
     private void startStreamingForDevice(ImuDevice device, String side) {
         String deviceName = device.getName() != null ? device.getName() : device.getMacAddress();
 
@@ -137,11 +142,11 @@ public class ImuStreamActivity extends AppCompatActivity {
                 side,
                 gyroZ -> runOnUiThread(() -> {
                     if (side.equals("left")) {
-                        device1Name.setText(deviceName + " (Left)");
-                        device1GyroZ.setText("Gyro Z: " + gyroZ);
+                        device1Name.setText(deviceName);
+                        device1GyroZ.setText(new StringBuilder().append("Gyro Z: ").append(gyroZ).toString());
                     } else {
-                        device2Name.setText(deviceName + " (Right)");
-                        device2GyroZ.setText("Gyro Z: " + gyroZ);
+                        device2Name.setText(deviceName);
+                        device2GyroZ.setText(new StringBuilder().append("Gyro Z: ").append(gyroZ).toString());
                     }
                 })
         );
@@ -150,6 +155,15 @@ public class ImuStreamActivity extends AppCompatActivity {
     @Override
     protected void onDestroy() {
         super.onDestroy();
+
+        if (selectedDevices != null) {
+            for (ImuDevice device : selectedDevices) {
+                if (device.getBoard() != null && device.getBoard().isConnected()) {
+                    device.getBoard().disconnectAsync();
+                }
+            }
+        }
+
         unbindService(btleConnection);
         unbindService(streamConnection);
     }

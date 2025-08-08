@@ -83,12 +83,12 @@ public class ImuStreamService extends Service {
             if (!leftZ.isEmpty() && !rightZ.isEmpty()) {
                 GaitWindowResult result = featureExtraction(leftZ, rightZ);
 
-                Log.i(TAG, "==== Gait Values ====");
-                Log.i(TAG, "Left Stance:  " + result.leftStance + "s");
-                Log.i(TAG, "Left Swing :  " + result.leftSwing + "s");
-                Log.i(TAG, "Right Stance: " + result.rightStance + "s");
-                Log.i(TAG, "Right Swing : " + result.rightSwing + "s");
-                Log.i(TAG, "========================");
+                Log.d(TAG, "==== Gait Values ====");
+                Log.d(TAG, "Left Stance:  " + result.leftStance + "s");
+                Log.d(TAG, "Left Swing :  " + result.leftSwing + "s");
+                Log.d(TAG, "Right Stance: " + result.rightStance + "s");
+                Log.d(TAG, "Right Swing : " + result.rightSwing + "s");
+                Log.d(TAG, "========================");
             }
 
 
