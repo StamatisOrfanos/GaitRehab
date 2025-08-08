@@ -1,5 +1,6 @@
 package com.example.gaitrehabapp;
 
+import android.annotation.SuppressLint;
 import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
@@ -9,6 +10,7 @@ import android.os.IBinder;
 import android.util.Log;
 import android.widget.Button;
 import android.widget.TextView;
+import android.widget.Toast;
 import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
 import com.example.gaitrehabapp.models.ImuDevice;
@@ -18,7 +20,6 @@ import com.mbientlab.metawear.android.BtleService;
 import java.util.List;
 
 public class ImuStreamActivity extends AppCompatActivity {
-
     private boolean isPaused = false;
     private boolean btleReady = false;
     private boolean streamReady = false;
@@ -99,39 +100,53 @@ public class ImuStreamActivity extends AppCompatActivity {
         bindService(new Intent(this, ImuStreamService.class), streamConnection, Context.BIND_AUTO_CREATE);
     }
 
-
     private void checkAndStartStreaming() {
         if (!btleReady || !streamReady || selectedDevices == null) return;
 
-        for (ImuDevice device : selectedDevices) {
-            MetaWearBoard board = btleBinder.getMetaWearBoard(device.getBluetoothDevice());
-            device.setBoard(board);
-            board.connectAsync().continueWith(task -> {
-                if (!task.isFaulted()) {
-                    device.setConnected(true);
-                    runOnUiThread(() -> startStreamingForDevice(device));
-                } else {
-                    Log.e("IMU", "Connection failed: " + device.getName());
-                }
-                return null;
-            });
+        if (selectedDevices.size() < 2) {
+            Toast.makeText(this, "Two IMU devices required for gait symmetry analysis.", Toast.LENGTH_LONG).show();
+            return;
         }
+
+        connectDeviceSequentially(0);
     }
 
-    private void startStreamingForDevice(ImuDevice device) {
+    private void connectDeviceSequentially(int index) {
+        if (index >= selectedDevices.size()) return;
+
+        ImuDevice device = selectedDevices.get(index);
+        String side = (index == 0) ? "left" : "right";
+
+        MetaWearBoard board = btleBinder.getMetaWearBoard(device.getBluetoothDevice());
+        device.setBoard(board);
+
+        board.connectAsync().continueWith(task -> {
+            if (!task.isFaulted()) {
+                device.setConnected(true);
+                runOnUiThread(() -> startStreamingForDevice(device, side));
+                connectDeviceSequentially(index + 1);
+            } else {
+                Log.e("IMU", "Connection failed: " + device.getName() + " | ");
+            }
+            return null;
+        });
+    }
+
+    private void startStreamingForDevice(ImuDevice device, String side) {
         String deviceName = device.getName() != null ? device.getName() : device.getMacAddress();
 
         if (streamService == null || device.getBoard() == null) return;
 
         streamService.startStreaming(
                 device,
+                side,
                 gyroZ -> runOnUiThread(() -> {
-                    if (device == selectedDevices.get(0)) {
+                    if (side.equals("left")) {
                         device1Name.setText(deviceName);
-                        device1GyroZ.setText("Gyro Z: " + gyroZ);
-                    } else if (selectedDevices.size() > 1 && device == selectedDevices.get(1)) {
+                        device1GyroZ.setText(new StringBuilder().append("Gyro Z: ").append(gyroZ).toString());
+                    } else {
                         device2Name.setText(deviceName);
-                        device2GyroZ.setText("Gyro Z: " + gyroZ);
+                        device2GyroZ.setText(new StringBuilder().append("Gyro Z: ").append(gyroZ).toString());
                     }
                 })
         );
@@ -140,6 +155,15 @@ public class ImuStreamActivity extends AppCompatActivity {
     @Override
     protected void onDestroy() {
         super.onDestroy();
+
+        if (selectedDevices != null) {
+            for (ImuDevice device : selectedDevices) {
+                if (device.getBoard() != null && device.getBoard().isConnected()) {
+                    device.getBoard().disconnectAsync();
+                }
+            }
+        }
+
         unbindService(btleConnection);
         unbindService(streamConnection);
     }
