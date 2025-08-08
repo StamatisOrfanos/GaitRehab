@@ -8,6 +8,9 @@ import android.os.Build;
 import android.os.Handler;
 import android.os.IBinder;
 import android.os.Environment;
+import android.os.VibrationEffect;
+import android.os.Vibrator;
+import android.os.VibratorManager;
 import android.util.Log;
 import androidx.annotation.Nullable;
 import androidx.annotation.RequiresApi;
@@ -40,6 +43,8 @@ public class ImuStreamService extends Service {
     private final List<DataPoint> leftZ = new ArrayList<>();
     private final List<DataPoint> rightZ = new ArrayList<>();
     private ModelPredictor predictor;
+    private Vibrator vibrator;
+
 
     public class LocalBinder extends Binder {
         public ImuStreamService getService() {
@@ -61,6 +66,13 @@ public class ImuStreamService extends Service {
             Log.i(TAG, "ModelPredictor initialized successfully");
         } catch (Exception e) {
             Log.e(TAG, "Failed to initialize ModelPredictor: " + e.getMessage());
+        }
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            VibratorManager vm = (VibratorManager) getSystemService(VIBRATOR_MANAGER_SERVICE);
+            vibrator = vm.getDefaultVibrator();
+        } else {
+            vibrator = (Vibrator) getSystemService(VIBRATOR_SERVICE);
         }
     }
 
@@ -106,6 +118,7 @@ public class ImuStreamService extends Service {
                 try {
                     if (predictor != null) {
                         int prediction = predictor.predict(features);
+                        asymmetryAlert(prediction);
                         Log.d(TAG, "Predicted gait status: " + prediction);
                     } else {
                         Log.w(TAG, "Predictor not initialized, skipping prediction");
@@ -211,6 +224,12 @@ public class ImuStreamService extends Service {
             Log.i(TAG, "Saved session to: " + file.getAbsolutePath());
         } catch (IOException e) {
             Log.e(TAG, "CSV export failed: " + e.getMessage());
+        }
+    }
+
+    private void asymmetryAlert(int prediction) {
+        if (prediction == 1 && vibrator != null && vibrator.hasVibrator()) {
+            vibrator.vibrate(VibrationEffect.createOneShot(300, VibrationEffect.DEFAULT_AMPLITUDE));
         }
     }
 }
