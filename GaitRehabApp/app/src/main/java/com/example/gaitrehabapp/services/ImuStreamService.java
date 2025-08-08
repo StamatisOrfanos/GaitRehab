@@ -1,8 +1,6 @@
 package com.example.gaitrehabapp.services;
 
 import static com.example.gaitrehabapp.services.GaitFeatureExtractorService.featureExtraction;
-import static java.lang.String.format;
-
 import android.app.Service;
 import android.content.Intent;
 import android.os.Binder;
@@ -17,6 +15,7 @@ import com.example.gaitrehabapp.models.CircularBuffer;
 import com.example.gaitrehabapp.models.DataPoint;
 import com.example.gaitrehabapp.models.GaitWindowResult;
 import com.example.gaitrehabapp.models.ImuDevice;
+import com.example.gaitrehabapp.models.ModelPredictor;
 import com.mbientlab.metawear.data.AngularVelocity;
 import com.mbientlab.metawear.module.Gyro;
 import java.io.File;
@@ -32,16 +31,15 @@ public class ImuStreamService extends Service {
     private static final String TAG = "IMU_STREAM";
     private static final int BUFFER_CAPACITY = 200;
     private static final int ANALYSIS_INTERVAL_MS = 2000;
-
     private final IBinder binder = new LocalBinder();
     private final Map<String, CircularBuffer> bufferMap = new HashMap<>();
     private final Map<String, Boolean> pausedMap = new HashMap<>();
     private final Map<String, StringBuilder> sessionBuffers = new HashMap<>();
     private final Handler analysisHandler = new Handler();
     private final Map<String, String> deviceToSideMap = new HashMap<>();
-
     private final List<DataPoint> leftZ = new ArrayList<>();
     private final List<DataPoint> rightZ = new ArrayList<>();
+    private ModelPredictor predictor;
 
     public class LocalBinder extends Binder {
         public ImuStreamService getService() {
@@ -53,6 +51,17 @@ public class ImuStreamService extends Service {
     @Override
     public IBinder onBind(Intent intent) {
         return binder;
+    }
+
+    @Override
+    public void onCreate() {
+        super.onCreate();
+        try {
+            predictor = new ModelPredictor(getApplicationContext());
+            Log.i(TAG, "ModelPredictor initialized successfully");
+        } catch (Exception e) {
+            Log.e(TAG, "Failed to initialize ModelPredictor: " + e.getMessage());
+        }
     }
 
     private final Runnable analysisRunnable = new Runnable() {
@@ -88,7 +97,25 @@ public class ImuStreamService extends Service {
                 Log.d(TAG, "Left Swing :  " + result.leftSwing + "s");
                 Log.d(TAG, "Right Stance: " + result.rightStance + "s");
                 Log.d(TAG, "Right Swing : " + result.rightSwing + "s");
+
+                float[] features = new float[] {
+                        (float) result.leftStance, (float) result.leftSwing,
+                        (float) result.rightStance, (float) result.rightSwing
+                };
+
+                try {
+                    if (predictor != null) {
+                        int prediction = predictor.predict(features);
+                        Log.d(TAG, "Predicted gait status: " + prediction);
+                    } else {
+                        Log.w(TAG, "Predictor not initialized, skipping prediction");
+                    }
+                } catch (Exception e) {
+                    Log.e(TAG, "Prediction failed: " + e.getMessage());
+                }
+
                 Log.d(TAG, "========================");
+
             }
 
 
