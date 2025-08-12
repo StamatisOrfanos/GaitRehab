@@ -4,11 +4,11 @@
 \subsection{Data Source}
 This study builds upon the dataset introduced by Sanghan et al.~\cite{ref23}, which compared 3D shank kinematics between sixteen stroke patients and sixteen 
 healthy individuals. Each participant walked on a flat 10-meter indoor walkway while wearing IMU sensors (MBIENTLAB Inc., USA) bilaterally on the shanks. 
-Gyroscope data were collected at 100 Hz across sagittal (x), frontal (y), and transverse (z) axes. This work focuses solely on the z-axis signal, which best 
-captures sagittal-plane gait motion.
+Gyroscope data were collected at 100 Hz across frontal (x), transverse (y), and sagittal (z) axes. This current work focuses solely on the z-axis signal, 
+which best captures sagittal-plane gait motion.
 
 \subsection{System Overview}
-Figure~\ref{fig:system_architecture} illustrates the system architecture used in this study. Inertial Measurement Units (IMUs) are placed bilaterally on the 
+Figure~\ref{fig:system_architecture} illustrates the system architecture used in this study. IMUs are placed bilaterally on the 
 lower shanks to capture sagittal-plane motion via z-axis gyroscope signals during gait. The raw sensor data are transmitted via Bluetooth to the
 mobile application, where they go through a minimal data pipeline and are fed to a lightweight machine learning model that processes the data in real time,
 providing immediate feedback on gait symmetry to the user through an interface and a vibration alert.
@@ -16,7 +16,7 @@ providing immediate feedback on gait symmetry to the user through an interface a
 \begin{figure}[htbp]
     \centering
     \includegraphics[width=\linewidth]{Images/architecture.png}
-    \caption{System architecture showing IMU data acquisition, preprocessing, feature extraction, classification, and feedback delivery.}
+    \caption{System architecture showing IMU data acquisition, data pipeline, classification, and feedback delivery.}
     \label{fig:system_architecture}
 \end{figure}
 
@@ -36,7 +36,7 @@ exceeds 10 samples.
 \textbf{Feature Computation:}
 For each valid cycle, we extract:
 \begin{itemize}
-    \item \textit{Descriptive statistics:} mean, standard deviation, min, and max of $G_L(t)$ and $G_R(t)$.
+    \item \textit{Descriptive statistics:} mean, standard deviation, minimum, and maximum of $G_L(t)$ and $G_R(t)$.
     \item \textit{Motion score:} 
     \[
     M = \max(|G(t)|) - \min(|G(t)|).
@@ -46,7 +46,7 @@ For each valid cycle, we extract:
     T_{\text{stance}} = t_{\min} - t_{\text{start}}, \quad
     T_{\text{swing}} = t_{\text{end}} - t_{\min},
     \]
-    where $t_{\min}$ corresponds to the minimum angular velocity within each phase.
+    where $t_{\min}$ corresponds to the time of the minimum angular velocity within each phase.
     \item \textit{Stride time:}
     \[
     T_{\text{stride}} = T_{\text{stance}} + T_{\text{swing}}.
@@ -54,13 +54,13 @@ For each valid cycle, we extract:
 \end{itemize}
 
 \textbf{Asymmetry Metrics:}
-We compute two bilateral stride-based asymmetry metrics:
+We compute two bilateral stride-based asymmetry metrics Asymmetry Index (AI) and Symmetry Ratio (SR) to quantify gait asymmetry:
 \[
 \text{AI} = \frac{T_L - T_R}{T_L + T_R}, \quad
 \text{SR} = \frac{\min(T_L, T_R)}{\max(T_L, T_R)},
 \]
-where $T_L$ and $T_R$ are stride durations for the left and right shank respectively. Cycles with undefined values are marked as invalid. Out of 3721 total windows, 
-2837 were retained as valid for analysis.
+where $T_L$ and $T_R$ are stride durations for the left and right shank respectively. Cycles with undefined values are marked as invalid. Out of 3,721 total windows, 
+2,837 were retained as valid for analysis.
 
 \textbf{Confidence Level Assignment:}
 Defining multiple levels of confidence allows us to stratify gait cycles by the degree of asymmetry, enabling more nuanced model evaluation and ensuring that 

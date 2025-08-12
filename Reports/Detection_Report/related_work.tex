@@ -1,13 +1,13 @@
 \section{Related Work}
 \label{sec:related_work}
 
-To contextualize our approach, we reviewed studies focused on gait cycle analysis and classification, particularly in post-stroke or pathological gait conditions.
+To contextualize our approach, we reviewed studies focused on gait analysis and classification, particularly in post-stroke or pathological gait conditions.
 Yuwono et al. \cite{ref9} proposed a method for classifying healthy and pathological gait using Shimmer IMUs placed on the legs. They extracted spectral features 
 from the Short-Time Fourier Transform (STFT) of gyroscope signals and achieved a classification accuracy of 97\% using a Self-Organizing Map (SOM) combined with 
 k-means clustering. Building upon this, Zhou et al. \cite{ref10} developed an adaptive gait event detection algorithm using a smart insole equipped with pressure 
 sensors and IMUs.
 
-Further advancements were introduced by Tunca et al. \cite{ref11}, who proposed a smartphone- and smartwatch-based system that utilized raw IMU data without preprocessing. 
+Further advancements were introduced by Tunca et al. \cite{ref11}, who proposed a smartphone- and smartwatch-based systems that utilized raw IMU data without preprocessing. 
 Their deep learning model, DeepSense, combined Convolutional Neural Networks (CNNs) and Gated Recurrent Units (GRUs) to form a general-purpose framework for human activity 
 recognition, achieving approximately 94\% classification accuracy. Mellone et al.\ \cite{ref12} validated the use of smartphone-based inertial sensors to capture gait parameters 
 during the Timed Up and Go test. Their results support the feasibility of low-cost remote gait assessments, providing a foundation for non-laboratory clinical use. In a broader 
@@ -28,11 +28,10 @@ for knee joint data and approximately 92.5\% overall.
 Salminen et al.~\cite{ref20} proposed a novel method for dividing the gait cycle into seven detailed phases using shank angular velocity signals. Their work 
 demonstrated the value of angular kinematics in fine-grained temporal gait segmentation, which could enhance clinical interpretability in wearable gait 
 assessments. Yang et al.~\cite{ref21} estimated spatio-temporal parameters of post-stroke hemiparetic gait using inertial sensors, showing that wearable IMUs can 
-approximate clinical benchmarks for stride and stance time, even in individuals with asymmetrical gait impairments. Finally, Hwang et al.~\cite{ref22} developed a 
-machine learning-based framework for abnormal gait classification using IMUs while accounting for joint impairment. Their work emphasizes the importance of 
-biomechanical context when designing classifiers for clinical gait abnormalities.
+approximate clinical benchmarks for stride and stance time, even in individuals with asymmetrical gait impairments. Additionally, Hwang et al.~\cite{ref22} 
+developed a machine learning-based framework for abnormal gait classification using IMUs while accounting for joint impairment. Their work emphasizes the 
+importance of biomechanical context when designing classifiers for clinical gait abnormalities.
 
-
-These studies collectively illustrate the wide range of sensing technologies and learning models applied to gait cycle analysis. However, despite these advances, 
+These studies collectively illustrated the wide range of sensing technologies and learning models applied to gait cycle analysis. However, despite these advances, 
 there remains a notable gap in lightweight, interpretable methods that detect clinically meaningful gait asymmetries—particularly in post-stroke populations with 
 limited, real-world sensor data.
