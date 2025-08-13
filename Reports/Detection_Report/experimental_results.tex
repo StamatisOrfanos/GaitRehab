@@ -3,7 +3,7 @@
 
 \subsection{Model Accuracy Metrics}
 The classification performance across the three gait asymmetry confidence levels—high, moderate, and low, demonstrates consistent trends in model behavior 
-and discriminative capacity as seen on the Table \ref{tab:confidence_metrics_cm}. At the high-confidence level, the best overall performance was achieved by 
+and discriminative capacity as shown in the Table \ref{tab:confidence_metrics_cm}. At the high-confidence level, the best overall performance was achieved by 
 K-Nearest Neighbors (KNN), which yielded accuracy of $0.93$ and a balanced F1-score of $0.95$, closely followed by XGBoost and Random Forest, both of which also 
 achieved AUC scores above $0.94$. Notably, all support vector machine (SVM) variants reached perfect precision ($1.0$), but at the cost of lower recall, indicating 
 conservative but specific predictions.
@@ -15,7 +15,7 @@ comparatively lower recall ($0.82$), reinforcing its tendency toward under-detec
 At the low-confidence level, the KNN classifier outperformed other models with the highest accuracy ($0.92$), F1-score ($0.95$), and AUC ($0.95$). 
 XGBoost and Random Forest followed closely, demonstrating strong generalization even under noisy or subtly asymmetric conditions.
 
-\begin{table*}[t]
+\begin{table*}
 \centering
 \caption{Classification Metrics and Confusion Matrix Summary by Confidence Level and Model}
 \label{tab:confidence_metrics_cm}
@@ -72,7 +72,7 @@ in lower-confidence scenarios.
 
 
 \subsection{Preliminary Testing and Validation}
-To evaluate the real-time feasibility, preliminary testing was conducted using a smartphone paired with shank-mounted IMU sensors on healthy individuals. 
+To evaluate the real-time feasibility, preliminary testing was conducted using a smartphone paired with shank-mounted IMU sensors on healthy volunteers. 
 The system successfully captured bilateral gyroscope data, processed gait cycles on-device, and generated asymmetry labels without requiring external 
 computation. Although full performance metrics are pending, the initial results confirm that the proposed pipeline operates efficiently in a mobile environment 
 and is suitable for deployment in outpatient or rehabilitation settings.

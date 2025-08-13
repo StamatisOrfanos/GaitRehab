@@ -8,9 +8,9 @@ Gyroscope data were collected at 100 Hz across frontal (x), transverse (y), and 
 which best captures sagittal-plane gait motion.
 
 \subsection{System Overview}
-Figure~\ref{fig:system_architecture} illustrates the system architecture used in this study. IMUs are placed bilaterally on the 
-lower shanks to capture sagittal-plane motion via z-axis gyroscope signals during gait. The raw sensor data are transmitted via Bluetooth to the
-mobile application, where they go through a minimal data pipeline and are fed to a lightweight machine learning model that processes the data in real time,
+Figure~\ref{fig:system_architecture} illustrates the system architecture used in this study. IMUs were placed bilaterally on the 
+lower shanks to capture sagittal-plane motion via z-axis gyroscope signals during gait movement. The raw sensor data were transmitted via Bluetooth to the
+mobile application we developed, where we applied a data pipeline and fed it to a lightweight machine learning model that processes the data in real time,
 providing immediate feedback on gait symmetry to the user through an interface and a vibration alert.
 
 \begin{figure}[htbp]
@@ -20,6 +20,12 @@ providing immediate feedback on gait symmetry to the user through an interface a
     \label{fig:system_architecture}
 \end{figure}
 
+In alignment with the training pipeline, the mobile application applied the same preprocessing steps used during model development, including the 
+application of an identical normalization scaler to ensure consistency in feature distributions. Predictions are generated every 2 seconds, a window 
+size empirically chosen to capture at least one complete gait cycle, including both left and right leg movement. This ensured temporal resolution sufficient 
+for robust asymmetry detection while minimizing computational overhead. One important goal was to enhance user experience and prevent over-alerting, the system 
+incorporates a staggered vibration feedback mechanism that limits repetitive notifications. This design choice balances responsiveness with usability, ensuring that 
+feedback is both timely and meaningful without overwhelming the user during prolonged walking sessions.
 
 \subsection{Feature Engineering}
 To assess gait asymmetry, we developed a lightweight pipeline that processes bilateral z-axis gyroscope signals to extract gait cycles and generate 
@@ -34,10 +40,10 @@ where $\theta = 0.5$ deg/s and $d = 80$ samples (at 100 Hz). Each gait cycle spa
 exceeds 10 samples.
 
 \textbf{Feature Computation:}
-For each valid cycle, we extract:
+For each valid cycle, we extracted:
 \begin{itemize}
     \item \textit{Descriptive statistics:} mean, standard deviation, minimum, and maximum of $G_L(t)$ and $G_R(t)$.
-    \item \textit{Motion score:} 
+    \item \textit{Motion score:}
     \[
     M = \max(|G(t)|) - \min(|G(t)|).
     \]
@@ -54,7 +60,7 @@ For each valid cycle, we extract:
 \end{itemize}
 
 \textbf{Asymmetry Metrics:}
-We compute two bilateral stride-based asymmetry metrics Asymmetry Index (AI) and Symmetry Ratio (SR) to quantify gait asymmetry:
+We also computed two bilateral stride-based asymmetry metrics Asymmetry Index (AI) and Symmetry Ratio (SR) to quantify gait asymmetry:
 \[
 \text{AI} = \frac{T_L - T_R}{T_L + T_R}, \quad
 \text{SR} = \frac{\min(T_L, T_R)}{\max(T_L, T_R)},
@@ -62,8 +68,9 @@ We compute two bilateral stride-based asymmetry metrics Asymmetry Index (AI) and
 where $T_L$ and $T_R$ are stride durations for the left and right shank respectively. Cycles with undefined values are marked as invalid. Out of 3,721 total windows, 
 2,837 were retained as valid for analysis.
 
+\newpage
 \textbf{Confidence Level Assignment:}
-Defining multiple levels of confidence allows us to stratify gait cycles by the degree of asymmetry, enabling more nuanced model evaluation and ensuring that 
+Defining multiple levels of confidence allowed us to stratify gait cycles by the degree of asymmetry, enabling more nuanced model evaluation and ensuring that 
 the classification system can adapt its sensitivity based on clinical risk or application context. Each gait cycle is assigned to one of three asymmetry confidence 
 levels based on the AI and SR metrics:
 
@@ -91,7 +98,6 @@ is consistently represented across all tiers.
     \end{tabular}
 \end{table}
 
-\newpage
 \subsection{Feature Selection}
 In order to enhance interpretability, we employed Recursive Feature Elimination (RFE) using a Random Forest classifier. Features were 
 iteratively ranked by importance until the optimal subset was identified as shown in Table~\ref{tab:rfe}.
