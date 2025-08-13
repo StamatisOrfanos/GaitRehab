@@ -10,7 +10,7 @@ in the data. Similarly, \textit{XGBoost} showed excellent generalization, with a
 tree approach that optimizes classification boundaries based on prior errors. \textit{Logistic Regression}, while a linear model, also performed competitively 
 (F1-score of 89\%), likely due to the high discriminative power of the selected features and the low-dimensional nature of the dataset.
 
-In contrast, the \textit{Support Vector Machines (SVMs)}, especially the polynomial kernel variant, underperformed in comparison. While SVMs 
+In contrast, the \textit{SVMs}, especially the polynomial kernel variant, underperformed in comparison. While SVMs 
 with linear and RBF kernels achieved reasonable AUC values (0.92 and 1.00 respectively), their F1-scores remained moderate (85\%), and they showed a higher 
 false negative rate. This tendency to misclassify abnormal gait as normal is especially problematic in clinical applications where sensitivity to pathological cases 
 is critical. The observed performance gap can be attributed to the SVMs’ sensitivity to feature scaling, kernel parameter tuning, and decision boundary rigidity 

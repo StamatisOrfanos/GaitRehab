@@ -11,12 +11,12 @@ velocities measured along the sagittal (x), frontal (y), and transverse (z) plan
 
 
 \subsection{Feature Extraction}
-In the process of extracting features from the gyroscope data, that were located on both the shanks of the participants we focused on the z-axis angular velocity 
+In the process of extracting features from the gyroscope data, that were located on both shanks of the participants we focused on the z-axis angular velocity 
 as it it is the most relevant to the gait cycle, since the z-axis gyroscope signals correspond to leg rotation, highly indicative of gait abnormalities.
 IMU placement on the lateral shank and the use of z-axis angular velocity for gait phase identification are consistent with previous methods that demonstrated high 
 accuracy in segmenting gait cycles and estimating spatio-temporal parameters~\cite{ref36},\cite{ref37}.Furthermore we decided to use the data derived from the shanks 
 only, due to the fact that data from other points of the lower or upper body did not provide any additional information for the task, which is also supported by the 
-research of Hwang et al.~\cite{ref38}, who used only shank-mounted IMUs for accurate gait classification in joint impairment detection tasks. 
+research of Hwang et al.~\cite{ref38}, who got the best results from the shank-mounted IMUs for accurate gait classification in joint impairment detection tasks. 
 
 \begin{figure}
     \centering
@@ -86,11 +86,11 @@ The results of the BFS analysis are shown below in Table~\ref{tab:bfs_results}.
         \hline
         \textbf{\#} & \textbf{Feature} & \textbf{Correlation} & \textbf{p-value} \\
         \hline
-        1 & left-z-axis-(deg/s)-min   & 0.835873 & 1.56   \\
-        2 & right-z-axis-(deg/s)-min  & 0.769553 & 0.0001  \\
-        3 & z\_corr\_mean             & -0.530388 & 0.02    \\
-        4 & left-z-axis-(deg/s)-mad   & -0.554982 & 0.01     \\
-        5 & left-z-axis-(deg/s)-mean  & -0.611453 & 0.0007    \\ 
+        1 & left-z-axis-(deg/s)-min   & 0.835 & 1.56   \\
+        2 & right-z-axis-(deg/s)-min  & 0.769 & 0.0001  \\
+        3 & z\_corr\_mean             & -0.53 & 0.02    \\
+        4 & left-z-axis-(deg/s)-mad   & -0.55 & 0.01     \\
+        5 & left-z-axis-(deg/s)-mean  & -0.61 & 0.0007    \\ 
         \hline
     \end{tabularx}
     \label{tab:bfs_results}
