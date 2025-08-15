@@ -5,9 +5,9 @@ import android.app.Service;
 import android.content.Intent;
 import android.os.Binder;
 import android.os.Build;
+import android.os.Environment;
 import android.os.Handler;
 import android.os.IBinder;
-import android.os.Environment;
 import android.os.VibrationEffect;
 import android.os.Vibrator;
 import android.os.VibratorManager;
@@ -29,22 +29,31 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-
 public class ImuStreamService extends Service {
     private static final String TAG = "IMU_STREAM";
-    private static final int BUFFER_CAPACITY = 200;
-    private static final int ANALYSIS_INTERVAL_MS = 2000;
+
+    private static final int FS_HZ = 100;
+    private static final int WINDOW_MS = 2000;
+    private static final int WINDOW_SAMPLES = (FS_HZ * WINDOW_MS) / 1000;
+    private static final int ANALYSIS_INTERVAL_MS = WINDOW_MS;
+    private static final long INFERENCE_COOLDOWN_MS = WINDOW_MS;
+    private static final long BUZZ_COOLDOWN_MS = WINDOW_MS;
+
+    private static final int BUFFER_CAPACITY = WINDOW_SAMPLES;
+    private long lastInferenceTs = 0L;
+    private long lastBuzzTs = 0L;
+    private boolean analysisStarted = false;
+
     private final IBinder binder = new LocalBinder();
     private final Map<String, CircularBuffer> bufferMap = new HashMap<>();
     private final Map<String, Boolean> pausedMap = new HashMap<>();
     private final Map<String, StringBuilder> sessionBuffers = new HashMap<>();
-    private final Handler analysisHandler = new Handler();
     private final Map<String, String> deviceToSideMap = new HashMap<>();
+    private final Handler analysisHandler = new Handler();
     private final List<DataPoint> leftZ = new ArrayList<>();
     private final List<DataPoint> rightZ = new ArrayList<>();
     private ModelPredictor predictor;
     private Vibrator vibrator;
-
 
     public class LocalBinder extends Binder {
         public ImuStreamService getService() {
@@ -70,7 +79,7 @@ public class ImuStreamService extends Service {
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             VibratorManager vm = (VibratorManager) getSystemService(VIBRATOR_MANAGER_SERVICE);
-            vibrator = vm.getDefaultVibrator();
+            vibrator = vm != null ? vm.getDefaultVibrator() : null;
         } else {
             vibrator = (Vibrator) getSystemService(VIBRATOR_SERVICE);
         }
@@ -82,60 +91,76 @@ public class ImuStreamService extends Service {
             leftZ.clear();
             rightZ.clear();
 
+            // Build 2s windows (last 200 samples) per device, mapped to left/right
             for (Map.Entry<String, CircularBuffer> entry : bufferMap.entrySet()) {
                 String deviceId = entry.getKey();
                 CircularBuffer buffer = entry.getValue();
 
                 float[] zVals = buffer.getZArray();
                 long[] timestamps = buffer.getTimestampArray();
+                int len = zVals.length;
+                if (len == 0) continue;
 
-                List<DataPoint> points = new ArrayList<>();
-                for (int i = 0; i < zVals.length; i++) {
+                int start = Math.max(0, len - WINDOW_SAMPLES);
+                List<DataPoint> points = new ArrayList<>(len - start);
+                for (int i = start; i < len; i++) {
                     points.add(new DataPoint(zVals[i], timestamps[i]));
                 }
 
-                if ("left".equals(deviceToSideMap.get(deviceId))) {
+                String side = deviceToSideMap.get(deviceId);
+                if ("left".equals(side)) {
                     leftZ.addAll(points);
-                } else if ("right".equals(deviceToSideMap.get(deviceId))) {
+                } else if ("right".equals(side)) {
                     rightZ.addAll(points);
                 }
             }
 
-            if (!leftZ.isEmpty() && !rightZ.isEmpty()) {
-                GaitWindowResult result = featureExtraction(leftZ, rightZ);
+            long now = System.currentTimeMillis();
 
-                Log.d(TAG, "==== Gait Values ====");
-                Log.d(TAG, "Left Stance:  " + result.leftStance + "s");
-                Log.d(TAG, "Left Swing :  " + result.leftSwing + "s");
-                Log.d(TAG, "Right Stance: " + result.rightStance + "s");
-                Log.d(TAG, "Right Swing : " + result.rightSwing + "s");
-
-                float[] features = new float[] {
-                        (float) result.leftStance, (float) result.leftSwing,
-                        (float) result.rightStance, (float) result.rightSwing
-                };
-
-                try {
-                    if (predictor != null) {
-                        int prediction = predictor.predict(features);
-                        asymmetryAlert(prediction);
-                        Log.d(TAG, "Predicted gait status: " + prediction);
-                    } else {
-                        Log.w(TAG, "Predictor not initialized, skipping prediction");
-                    }
-                } catch (Exception e) {
-                    Log.e(TAG, "Prediction failed: " + e.getMessage());
-                }
-
-                Log.d(TAG, "========================");
-
+            // Require a full window on both sides
+            if (leftZ.size() < WINDOW_SAMPLES || rightZ.size() < WINDOW_SAMPLES) {
+                analysisHandler.postDelayed(this, ANALYSIS_INTERVAL_MS);
+                return;
             }
 
+            // Throttle inferences to once per 2 seconds
+            if (now - lastInferenceTs < INFERENCE_COOLDOWN_MS) {
+                analysisHandler.postDelayed(this, ANALYSIS_INTERVAL_MS);
+                return;
+            }
+            lastInferenceTs = now;
+
+            // Extract features
+            GaitWindowResult result = featureExtraction(leftZ, rightZ);
+
+            Log.d(TAG, "==== Gait Values ====");
+            Log.d(TAG, "Left Stance:  " + result.leftStance + "s");
+            Log.d(TAG, "Left Swing :  " + result.leftSwing + "s");
+            Log.d(TAG, "Right Stance: " + result.rightStance + "s");
+            Log.d(TAG, "Right Swing : " + result.rightSwing + "s");
+
+            float[] features = new float[] {
+                    (float) result.leftStance, (float) result.leftSwing,
+                    (float) result.rightStance, (float) result.rightSwing
+            };
+
+            try {
+                if (predictor != null) {
+                    int prediction = predictor.predict(features);
+                    asymmetryAlert(prediction);
+                    Log.d(TAG, "Predicted gait status: " + prediction);
+                } else {
+                    Log.w(TAG, "Predictor not initialized, skipping prediction");
+                }
+            } catch (Exception e) {
+                Log.e(TAG, "Prediction failed: " + e.getMessage());
+            }
+
+            Log.d(TAG, "========================");
 
             analysisHandler.postDelayed(this, ANALYSIS_INTERVAL_MS);
         }
     };
-
 
     public void startStreaming(ImuDevice device, String side, GyroZCallback zCallback) {
         if (device == null || device.getBoard() == null) {
@@ -167,7 +192,8 @@ public class ImuStreamService extends Service {
             gyro.angularVelocity().start();
             gyro.start();
 
-            if (!analysisHandler.hasCallbacks(analysisRunnable)) {
+            if (!analysisStarted) {
+                analysisStarted = true;
                 analysisHandler.postDelayed(analysisRunnable, ANALYSIS_INTERVAL_MS);
             }
 
@@ -195,7 +221,6 @@ public class ImuStreamService extends Service {
 
         String deviceId = device.getMacAddress();
         try {
-            // Stop sensors
             device.getBoard().getModule(Gyro.class).angularVelocity().stop();
             device.getBoard().getModule(Gyro.class).stop();
             Log.i(TAG, "Stopped streaming for " + device.getModel());
@@ -203,7 +228,6 @@ public class ImuStreamService extends Service {
             Log.e(TAG, "Error stopping: " + e.getMessage());
         }
 
-        // Export to CSV
         exportToCSV(deviceId, sessionBuffers.get(deviceId));
         sessionBuffers.remove(deviceId);
         pausedMap.remove(deviceId);
@@ -228,8 +252,16 @@ public class ImuStreamService extends Service {
     }
 
     private void asymmetryAlert(int prediction) {
-        if (prediction == 1 && vibrator != null && vibrator.hasVibrator()) {
+        if (prediction != 1 || vibrator == null || !vibrator.hasVibrator()) return;
+
+        long now = System.currentTimeMillis();
+        if (now - lastBuzzTs < BUZZ_COOLDOWN_MS) return;
+
+        lastBuzzTs = now;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             vibrator.vibrate(VibrationEffect.createOneShot(300, VibrationEffect.DEFAULT_AMPLITUDE));
+        } else {
+            vibrator.vibrate(300);
         }
     }
 }

@@ -35,6 +35,7 @@ import java.util.Set;
 public class ImuScanActivity extends AppCompatActivity {
 
     private static final String TAG = "DeviceScanActivity";
+    private boolean scanning = false;
     private BtleService.LocalBinder serviceBinder;
     private BluetoothLeScanner bluetoothScanner;
     private DeviceAdapter adapter;
@@ -125,6 +126,7 @@ public class ImuScanActivity extends AppCompatActivity {
             } else {
                 Intent intent = new Intent(ImuScanActivity.this, ImuStreamActivity.class);
                 intent.putParcelableArrayListExtra("selected_devices", new ArrayList<>(selectedDevices));
+                stopScan();
                 startActivity(intent);
             }
         });
@@ -140,9 +142,22 @@ public class ImuScanActivity extends AppCompatActivity {
 
     @RequiresPermission(Manifest.permission.BLUETOOTH_SCAN)
     private void startScan() {
+        if (bluetoothScanner == null || scanning) return;
         discoveredDevices.clear();
         seenAddresses.clear();
+        scanning = true;
         bluetoothScanner.startScan(metaWearScanCallback);
+        Log.d(TAG, "BLE scan started");
+    }
+
+    @RequiresPermission(Manifest.permission.BLUETOOTH_SCAN)
+    private void stopScan() {
+        if (bluetoothScanner == null || !scanning) return;
+        try {
+            bluetoothScanner.stopScan(metaWearScanCallback);
+        } catch (Exception ignored) {}
+        scanning = false;
+        Log.d(TAG, "BLE scan stopped");
     }
 
     private void handleValidImuDevice(ImuDevice imu) {
