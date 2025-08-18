@@ -6,6 +6,7 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.ServiceConnection;
 import android.os.Bundle;
+import android.os.Handler;
 import android.os.IBinder;
 import android.util.Log;
 import android.widget.Button;
@@ -19,7 +20,9 @@ import com.mbientlab.metawear.MetaWearBoard;
 import com.mbientlab.metawear.android.BtleService;
 import java.util.List;
 
+
 public class ImuStreamActivity extends AppCompatActivity {
+    private static final String TAG = "ImuStreamActivity";
     private boolean isPaused = false;
     private boolean btleReady = false;
     private boolean streamReady = false;
@@ -29,31 +32,26 @@ public class ImuStreamActivity extends AppCompatActivity {
 
     private BtleService.LocalBinder btleBinder;
     private ImuStreamService streamService;
+    private final Handler handler = new Handler();
 
     private final ServiceConnection btleConnection = new ServiceConnection() {
-        @Override
-        public void onServiceConnected(ComponentName name, IBinder service) {
+        @Override public void onServiceConnected(ComponentName name, IBinder service) {
             btleBinder = (BtleService.LocalBinder) service;
             btleReady = true;
             checkAndStartStreaming();
         }
-
-        @Override
-        public void onServiceDisconnected(ComponentName name) {
+        @Override public void onServiceDisconnected(ComponentName name) {
             btleBinder = null;
         }
     };
 
     private final ServiceConnection streamConnection = new ServiceConnection() {
-        @Override
-        public void onServiceConnected(ComponentName name, IBinder service) {
+        @Override public void onServiceConnected(ComponentName name, IBinder service) {
             streamService = ((ImuStreamService.LocalBinder) service).getService();
             streamReady = true;
             checkAndStartStreaming();
         }
-
-        @Override
-        public void onServiceDisconnected(ComponentName name) {
+        @Override public void onServiceDisconnected(ComponentName name) {
             streamService = null;
         }
     };
@@ -62,13 +60,13 @@ public class ImuStreamActivity extends AppCompatActivity {
     protected void onCreate(@Nullable Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_imu_stream);
+
         device1Name = findViewById(R.id.device1Name);
         device1GyroZ = findViewById(R.id.device1GyroZ);
         device2Name = findViewById(R.id.device2Name);
         device2GyroZ = findViewById(R.id.device2GyroZ);
 
         selectedDevices = getIntent().getParcelableArrayListExtra("selected_devices");
-
         if (selectedDevices == null || selectedDevices.isEmpty()) finish();
 
         if (selectedDevices.size() == 1) {
@@ -77,20 +75,15 @@ public class ImuStreamActivity extends AppCompatActivity {
         }
 
         Button pauseResumeButton = findViewById(R.id.pauseResumeButton);
-
         pauseResumeButton.setOnClickListener(v -> {
             if (streamService == null || selectedDevices == null) return;
 
             if (isPaused) {
-                for (ImuDevice device : selectedDevices) {
-                    streamService.resumeStreaming(device);
-                }
+                for (ImuDevice device : selectedDevices) streamService.resumeStreaming(device);
                 isPaused = false;
                 pauseResumeButton.setText("Pause Streaming");
             } else {
-                for (ImuDevice device : selectedDevices) {
-                    streamService.pauseStreaming(device);
-                }
+                for (ImuDevice device : selectedDevices) streamService.pauseStreaming(device);
                 isPaused = true;
                 pauseResumeButton.setText("Resume Streaming");
             }
@@ -117,6 +110,12 @@ public class ImuStreamActivity extends AppCompatActivity {
         ImuDevice device = selectedDevices.get(index);
         String side = (index == 0) ? "left" : "right";
 
+        connectWithRetry(device, side, /*retries=*/2, /*delayMs=*/400, () -> {
+            handler.postDelayed(() -> connectDeviceSequentially(index + 1), 300);
+        });
+    }
+
+    private void connectWithRetry(ImuDevice device, String side, int retries, long delayMs, Runnable onDone) {
         MetaWearBoard board = btleBinder.getMetaWearBoard(device.getBluetoothDevice());
         device.setBoard(board);
 
@@ -124,17 +123,23 @@ public class ImuStreamActivity extends AppCompatActivity {
             if (!task.isFaulted()) {
                 device.setConnected(true);
                 runOnUiThread(() -> startStreamingForDevice(device, side));
-                connectDeviceSequentially(index + 1);
+                if (onDone != null) onDone.run();
             } else {
-                Log.e("IMU", "Connection failed: " + device.getName() + " | ");
+                Log.w(TAG, "Connect failed (" + device.getMacAddress() + "), retries left=" + retries, task.getError());
+                board.disconnectAsync(); // cleanup just in case
+                if (retries > 0) {
+                    handler.postDelayed(() -> connectWithRetry(device, side, retries - 1, delayMs, onDone), delayMs);
+                } else {
+                    if (onDone != null) onDone.run();
+                }
             }
             return null;
         });
     }
 
+    @SuppressLint("SetTextI18n")
     private void startStreamingForDevice(ImuDevice device, String side) {
         String deviceName = device.getName() != null ? device.getName() : device.getMacAddress();
-
         if (streamService == null || device.getBoard() == null) return;
 
         streamService.startStreaming(
@@ -142,11 +147,11 @@ public class ImuStreamActivity extends AppCompatActivity {
                 side,
                 gyroZ -> runOnUiThread(() -> {
                     if (side.equals("left")) {
-                        device1Name.setText(deviceName);
-                        device1GyroZ.setText(new StringBuilder().append("Gyro Z: ").append(gyroZ).toString());
+                        device1Name.setText(deviceName + " (Left)");
+                        device1GyroZ.setText("Gyro Z: " + gyroZ);
                     } else {
-                        device2Name.setText(deviceName);
-                        device2GyroZ.setText(new StringBuilder().append("Gyro Z: ").append(gyroZ).toString());
+                        device2Name.setText(deviceName + " (Right)");
+                        device2GyroZ.setText("Gyro Z: " + gyroZ);
                     }
                 })
         );
@@ -158,13 +163,15 @@ public class ImuStreamActivity extends AppCompatActivity {
 
         if (selectedDevices != null) {
             for (ImuDevice device : selectedDevices) {
-                if (device.getBoard() != null && device.getBoard().isConnected()) {
-                    device.getBoard().disconnectAsync();
-                }
+                try {
+                    if (device.getBoard() != null && device.getBoard().isConnected()) {
+                        device.getBoard().disconnectAsync();
+                    }
+                } catch (Exception ignored) {}
             }
         }
 
-        unbindService(btleConnection);
-        unbindService(streamConnection);
+        try { unbindService(btleConnection); } catch (Exception ignored) {}
+        try { unbindService(streamConnection); } catch (Exception ignored) {}
     }
 }

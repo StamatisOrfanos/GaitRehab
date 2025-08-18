@@ -9,14 +9,13 @@ import java.util.List;
 public class GaitFeatureExtractorService {
 
     public static GaitWindowResult featureExtraction(List<DataPoint> leftZ, List<DataPoint> rightZ) {
-        GaitWindowResult result = new GaitWindowResult();
         List<GaitCycle> leftPhases = detectStanceSwing(leftZ);
         List<GaitCycle> rightPhases = detectStanceSwing(rightZ);
-        result.leftStance = meanStance(leftPhases);
-        result.leftSwing = meanSwing(leftPhases);
-        result.rightStance = meanStance(rightPhases);
-        result.rightSwing = meanSwing(rightPhases);
-
+        GaitWindowResult result = new GaitWindowResult();
+        result.setLeftStance((float) meanStance(leftPhases));
+        result.setLeftSwing((float) meanSwing(leftPhases));
+        result.setRightStance((float) meanStance(rightPhases));
+        result.setRightSwing((float) meanSwing(rightPhases));
         return result;
     }
 

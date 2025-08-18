@@ -38,7 +38,6 @@ public class ImuStreamService extends Service {
     private static final int ANALYSIS_INTERVAL_MS = WINDOW_MS;
     private static final long INFERENCE_COOLDOWN_MS = WINDOW_MS;
     private static final long BUZZ_COOLDOWN_MS = WINDOW_MS;
-
     private static final int BUFFER_CAPACITY = WINDOW_SAMPLES;
     private long lastInferenceTs = 0L;
     private long lastBuzzTs = 0L;
@@ -130,33 +129,9 @@ public class ImuStreamService extends Service {
             }
             lastInferenceTs = now;
 
-            // Extract features
+            // Extract features and make model prediction
             GaitWindowResult result = featureExtraction(leftZ, rightZ);
-
-            Log.d(TAG, "==== Gait Values ====");
-            Log.d(TAG, "Left Stance:  " + result.leftStance + "s");
-            Log.d(TAG, "Left Swing :  " + result.leftSwing + "s");
-            Log.d(TAG, "Right Stance: " + result.rightStance + "s");
-            Log.d(TAG, "Right Swing : " + result.rightSwing + "s");
-
-            float[] features = new float[] {
-                    (float) result.leftStance, (float) result.leftSwing,
-                    (float) result.rightStance, (float) result.rightSwing
-            };
-
-            try {
-                if (predictor != null) {
-                    int prediction = predictor.predict(features);
-                    asymmetryAlert(prediction);
-                    Log.d(TAG, "Predicted gait status: " + prediction);
-                } else {
-                    Log.w(TAG, "Predictor not initialized, skipping prediction");
-                }
-            } catch (Exception e) {
-                Log.e(TAG, "Prediction failed: " + e.getMessage());
-            }
-
-            Log.d(TAG, "========================");
+            model_prediction(result);
 
             analysisHandler.postDelayed(this, ANALYSIS_INTERVAL_MS);
         }
@@ -251,6 +226,34 @@ public class ImuStreamService extends Service {
         }
     }
 
+    private void model_prediction(GaitWindowResult features) {
+        Log.d(TAG, "==== Gait Values ====");
+        Log.d(TAG, "Left Stance:  " + features.getLeftStance() + "s");
+        Log.d(TAG, "Left Swing :  " + features.getLeftSwing() + "s");
+        Log.d(TAG, "Right Stance: " + features.getRightStance() + "s");
+        Log.d(TAG, "Right Swing : " + features.getRightSwing() + "s");
+
+        // The correct order for the data input for the model are:
+        // RightStanceTime, LeftStanceTime, RightSwingTime, LeftSwingTime
+        float[] model_input = new float[] {
+                features.getRightStance(), features.getLeftStance(),
+                features.getRightSwing(), features.getLeftSwing()
+        };
+
+        try {
+            if (predictor != null) {
+                int prediction = predictor.predict(model_input);
+                asymmetryAlert(prediction);
+                Log.d(TAG, "Predicted gait status: " + prediction);
+            } else {
+                Log.w(TAG, "Predictor not initialized, skipping prediction");
+            }
+        } catch (Exception e) {
+            Log.e(TAG, "Prediction failed: " + e.getMessage());
+        }
+
+        Log.d(TAG, "========================");
+    }
     private void asymmetryAlert(int prediction) {
         if (prediction != 1 || vibrator == null || !vibrator.hasVibrator()) return;
 
@@ -258,10 +261,6 @@ public class ImuStreamService extends Service {
         if (now - lastBuzzTs < BUZZ_COOLDOWN_MS) return;
 
         lastBuzzTs = now;
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            vibrator.vibrate(VibrationEffect.createOneShot(300, VibrationEffect.DEFAULT_AMPLITUDE));
-        } else {
-            vibrator.vibrate(300);
-        }
+        vibrator.vibrate(VibrationEffect.createOneShot(100, VibrationEffect.DEFAULT_AMPLITUDE));
     }
 }

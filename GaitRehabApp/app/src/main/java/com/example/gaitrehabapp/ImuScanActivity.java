@@ -23,7 +23,6 @@ import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 import com.example.gaitrehabapp.adapters.DeviceAdapter;
 import com.example.gaitrehabapp.models.ImuDevice;
-import com.mbientlab.metawear.MetaWearBoard;
 import com.mbientlab.metawear.android.BtleService;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -33,11 +32,10 @@ import java.util.Map;
 import java.util.Set;
 
 public class ImuScanActivity extends AppCompatActivity {
-
     private static final String TAG = "DeviceScanActivity";
     private boolean scanning = false;
-    private BtleService.LocalBinder serviceBinder;
     private BluetoothLeScanner bluetoothScanner;
+    private BtleService.LocalBinder serviceBinder;
     private DeviceAdapter adapter;
     private final Map<String, ImuDevice> discoveredDevices = new HashMap<>();
     private final Set<String> seenAddresses = new HashSet<>();
@@ -50,7 +48,6 @@ public class ImuScanActivity extends AppCompatActivity {
             serviceBinder = (BtleService.LocalBinder) service;
             setupScanner();
         }
-
         @Override
         public void onServiceDisconnected(ComponentName name) {
             serviceBinder = null;
@@ -58,34 +55,24 @@ public class ImuScanActivity extends AppCompatActivity {
     };
 
     private final ScanCallback metaWearScanCallback = new ScanCallback() {
-        @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
+        @RequiresPermission(allOf = {Manifest.permission.BLUETOOTH_SCAN, Manifest.permission.BLUETOOTH_CONNECT})
         @Override
         public void onScanResult(int callbackType, ScanResult result) {
-            BluetoothDevice device = result.getDevice();
+            if (!scanning) return; // ignore late callbacks after stopScan()
 
-            if (device.getAddress() == null || seenAddresses.contains(device.getAddress())) return;
+            BluetoothDevice device = result.getDevice();
+            if (device == null || device.getAddress() == null) return;
+            if (seenAddresses.contains(device.getAddress())) return;
+
+            String name = device.getName() != null ? device.getName() : "";
+            boolean looksLikeMbient = name.contains("MetaWear") || name.contains("MetaMotion");
+            if (!looksLikeMbient) return;
+
             seenAddresses.add(device.getAddress());
 
-            MetaWearBoard board = serviceBinder.getMetaWearBoard(device);
-
-            board.connectAsync().continueWith(task -> {
-                if (!task.isFaulted()) {
-                    String name = board.getModelString().toString();
-                    Log.d(TAG, "Model name for " + device.getAddress() + ": " + name);
-
-                    if (name.contains("MetaMotion")) {
-                        ImuDevice imu = new ImuDevice(device);
-                        imu.setBoard(board);
-                        imu.setModel(name);
-                        runOnUiThread(() -> handleValidImuDevice(imu));
-                    } else { board.disconnectAsync(); }
-                }
-                else {
-                    Exception e = task.getError();
-                    Log.e(TAG, "Connection failed for " + device.getAddress(), e);
-                }
-                return null;
-            });
+            ImuDevice imu = new ImuDevice(device);
+            imu.setModel(name);
+            runOnUiThread(() -> handleValidImuDevice(imu));
         }
     };
 
@@ -97,25 +84,26 @@ public class ImuScanActivity extends AppCompatActivity {
 
         Log.d(TAG, "DeviceScanActivity onCreate");
 
-        // Bind the BtleService
+        // Bind BLE service (used later in ImuStreamActivity)
         bindService(new Intent(this, BtleService.class), btleConnection, Context.BIND_AUTO_CREATE);
 
-        // RecyclerView setup
+        // RecyclerView
         RecyclerView deviceList = findViewById(R.id.deviceList);
         deviceList.setLayoutManager(new LinearLayoutManager(this));
         adapter = new DeviceAdapter();
         deviceList.setAdapter(adapter);
 
-        // Rescan Button
+        // Rescan
         Button rescanButton = findViewById(R.id.rescanButton);
         rescanButton.setOnClickListener(v -> {
             if (bluetoothScanner != null) {
+                stopScan();
                 startScan();
                 Toast.makeText(this, "Rescanning for devices...", Toast.LENGTH_SHORT).show();
             }
         });
 
-        // Select Devices Button
+        // Select
         Button selectButton = findViewById(R.id.selectButton);
         selectButton.setOnClickListener(v -> {
             List<ImuDevice> selectedDevices = adapter.getSelectedDevices();
@@ -124,9 +112,9 @@ public class ImuScanActivity extends AppCompatActivity {
             } else if (selectedDevices.size() > 2) {
                 Toast.makeText(this, "You can only select up to 2 devices.", Toast.LENGTH_SHORT).show();
             } else {
+                stopScan(); // stop scanning before navigating
                 Intent intent = new Intent(ImuScanActivity.this, ImuStreamActivity.class);
                 intent.putParcelableArrayListExtra("selected_devices", new ArrayList<>(selectedDevices));
-                stopScan();
                 startActivity(intent);
             }
         });
@@ -165,17 +153,23 @@ public class ImuScanActivity extends AppCompatActivity {
         if (!discoveredDevices.containsKey(address)) {
             discoveredDevices.put(address, imu);
             adapter.updateDevices(new ArrayList<>(discoveredDevices.values()));
-            Toast.makeText(this, "Discovered: " + imu.getModel(), Toast.LENGTH_SHORT).show();
+            // keep toasts minimal during scans to avoid noise
+            // Toast.makeText(this, "Discovered: " + imu.getModel(), Toast.LENGTH_SHORT).show();
         }
+    }
+
+    @RequiresPermission(Manifest.permission.BLUETOOTH_SCAN)
+    @Override
+    protected void onPause() {
+        super.onPause();
+        stopScan();
     }
 
     @RequiresPermission(Manifest.permission.BLUETOOTH_SCAN)
     @Override
     protected void onDestroy() {
         super.onDestroy();
-        if (bluetoothScanner != null) {
-            bluetoothScanner.stopScan(metaWearScanCallback);
-        }
-        unbindService(btleConnection);
+        stopScan();
+        try { unbindService(btleConnection); } catch (Exception ignored) {}
     }
 }
