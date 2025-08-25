@@ -1,44 +1,47 @@
+// com/example/gaitrehabapp/models/CircularBuffer.java
 package com.example.gaitrehabapp.models;
-
-import java.util.LinkedList;
 
 public class CircularBuffer {
     private final int capacity;
-    private final LinkedList<Float> zValues;
-    private final LinkedList<Long> timestamps;
+    private final float[] zRing;
+    private final long[] tRing;
+    private int head = 0;        // next write index
+    private int size = 0;        // number of valid samples (<= capacity)
 
     public CircularBuffer(int capacity) {
-        this.capacity = capacity;
-        this.zValues = new LinkedList<>();
-        this.timestamps = new LinkedList<>();
+        this.capacity = Math.max(1, capacity);
+        this.zRing = new float[this.capacity];
+        this.tRing = new long[this.capacity];
     }
 
-    public void add(float z, long timestamp) {
-        if (zValues.size() >= capacity) {
-            zValues.removeFirst();
-            timestamps.removeFirst();
+    public synchronized void add(float z, long ts) {
+        zRing[head] = z;
+        tRing[head] = ts;
+        head = (head + 1) % capacity;
+        if (size < capacity) size++;
+    }
+
+    public synchronized int size() { return size; }
+
+    public synchronized Snapshot snapshot() {
+        float[] zOut = new float[size];
+        long[]  tOut = new long[size];
+        int start = (head - size + capacity) % capacity;
+        for (int i = 0; i < size; i++) {
+            int idx = (start + i) % capacity;
+            zOut[i] = zRing[idx];
+            tOut[i] = tRing[idx];
         }
-        zValues.add(z);
-        timestamps.add(timestamp);
+        return new Snapshot(zOut, tOut);
     }
 
-    public float[] getZArray() {
-        float[] array = new float[zValues.size()];
-        for (int i = 0; i < zValues.size(); i++) {
-            array[i] = zValues.get(i);
-        }
-        return array;
+    public synchronized float[] getZArray() {
+        return snapshot().z;
+    }
+    public synchronized long[] getTimestampArray() {
+        return snapshot().t;
     }
 
-    public long[] getTimestampArray() {
-        long[] array = new long[timestamps.size()];
-        for (int i = 0; i < timestamps.size(); i++) {
-            array[i] = timestamps.get(i);
-        }
-        return array;
-    }
-
-    public int size() {
-        return zValues.size();
+    public record Snapshot(float[] z, long[] t) {
     }
 }

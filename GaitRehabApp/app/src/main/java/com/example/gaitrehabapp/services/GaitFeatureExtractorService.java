@@ -7,134 +7,164 @@ import com.example.gaitrehabapp.models.GaitWindowResult;
 import java.util.ArrayList;
 import java.util.List;
 
-/**
- * Real-time gait feature extraction matching the training pipeline:
- *  - Butterworth low-pass (fc=6Hz, order=2) with forward-backward (zero-phase)
- *  - Detrend the window (remove DC) before zero-crossings
- *  - Zero-crossings on filtered Z with small deadband
- *  - Motion / duration sanity checks to drop bad windows
- *  - Mean stance/swing across valid cycles in the window
- */
 public class GaitFeatureExtractorService {
-    private static final float FS_HZ = 100f;           // sample rate
-    private static final float FC_HZ = 6f;             // low-pass cutoff
-    private static final float DEADBAND = 2f;          // deg/s, ignore very small near-zero wiggles
-    private static final float MIN_SEG_SEC = 0.08f;    // reject ultra-short stance/swing (<80 ms)
-    private static final float MAX_SEG_SEC = 1.20f;    // reject overlong stance/swing (>1.2 s)
-    private static final float MIN_P2P = 15f;          // deg/s, minimum peak-to-peak motion to accept a window
-    private static final float MIN_CYCLE_SEC = 0.60f;  // min stride (stance+swing)
-    private static final float MAX_CYCLE_SEC = 2.20f;  // max stride window
+
+    private static final float FS_HZ = 100f;
+    private static final float FC_HZ = 6f;
+    private static final float BASE_DEADBAND_HI = 2f;   // deg/s
+    private static final float RMS_TO_HI = 0.25f;       // hi ~= 0.35 * RMS
+    private static final float HI_TO_LO = 0.5f;         // lo = 0.5 * hi
+    private static final float MIN_P2P = 8f;           // deg/s (min peak-to-peak to consider window)
+    private static final float MIN_SEG_SEC = 0.08f;     // 80 ms
+    private static final float MAX_SEG_SEC = 1.20f;
+    private static final float MIN_CYCLE_SEC = 0.60f;
+    private static final float MAX_CYCLE_SEC = 2.20f;
 
     public static GaitWindowResult featureExtraction(List<DataPoint> leftZ, List<DataPoint> rightZ) {
-        // 1) Filter (zero-phase) both legs
-        List<DataPoint> leftF  = butterworthFwdBack(leftZ, FC_HZ, FS_HZ);
-        List<DataPoint> rightF = butterworthFwdBack(rightZ, FC_HZ, FS_HZ);
+        List<DataPoint> lf = detrendMean(butterworthFwdBack(leftZ,  FC_HZ, FS_HZ));
+        List<DataPoint> rf = detrendMean(butterworthFwdBack(rightZ, FC_HZ, FS_HZ));
 
-        // 2) Detrend by removing per-window mean to restore sign crossings if there's DC offset
-        leftF  = detrendMean(leftF);
-        rightF = detrendMean(rightF);
-
-        // 3) Quick motion sanity check to avoid NaNs spam at rest
-        if (!hasEnoughMotion(leftF) || !hasEnoughMotion(rightF)) {
+        if (!hasEnoughMotion(lf) || !hasEnoughMotion(rf)) {
             return new GaitWindowResult(Float.NaN, Float.NaN, Float.NaN, Float.NaN);
         }
 
-        // 4) Detect cycles (zero-crossings with deadband + duration sanity)
-        List<GaitCycle> leftCycles  = detectStanceSwing(leftF);
-        List<GaitCycle> rightCycles = detectStanceSwing(rightF);
+        // Try normal + flipped; pick the one with more valid cycles
+        List<GaitCycle> lNorm = detectStanceSwing(lf);
+        List<GaitCycle> lFlip = detectStanceSwing(flip(lf));
+        List<GaitCycle> rNorm = detectStanceSwing(rf);
+        List<GaitCycle> rFlip = detectStanceSwing(flip(rf));
 
-        float leftStance  = (float) meanStance(leftCycles);
-        float leftSwing   = (float) meanSwing(leftCycles);
-        float rightStance = (float) meanStance(rightCycles);
-        float rightSwing  = (float) meanSwing(rightCycles);
+        List<GaitCycle> lBest = (lFlip.size() > lNorm.size()) ? lFlip : lNorm;
+        List<GaitCycle> rBest = (rFlip.size() > rNorm.size()) ? rFlip : rNorm;
 
-        return new GaitWindowResult(leftStance, leftSwing, rightStance, rightSwing);
+        float lStance = (float) meanStance(lBest);
+        float lSwing  = (float) meanSwing(lBest);
+        float rStance = (float) meanStance(rBest);
+        float rSwing  = (float) meanSwing(rBest);
+
+        return new GaitWindowResult(lStance, lSwing, rStance, rSwing);
     }
 
-    // ----------------- Cycle detection -----------------
-    private static List<GaitCycle> detectStanceSwing(List<DataPoint> data) {
-        List<GaitCycle> cycles = new ArrayList<>();
-        if (data == null || data.size() < 3) return cycles;
+    private static List<DataPoint> flip(List<DataPoint> in) {
+        List<DataPoint> out = new ArrayList<>(in.size());
+        for (DataPoint d : in) out.add(new DataPoint(-d.z, d.timestamp));
+        return out;
+    }
 
-        // Zero-crossings with deadband
-        List<Integer> zc = new ArrayList<>();
-        for (int i = 1; i < data.size(); i++) {
-            float p = data.get(i - 1).z, c = data.get(i).z;
-            boolean pOn = Math.abs(p) >= DEADBAND;
-            boolean cOn = Math.abs(c) >= DEADBAND;
-            if (pOn && cOn && ((p > 0 && c < 0) || (p < 0 && c > 0))) {
-                zc.add(i);
-            }
-        }
-        if (zc.size() < 2) return cycles;
+    private static List<GaitCycle> detectStanceSwing(List<DataPoint> w) {
+        List<GaitCycle> out = new ArrayList<>();
+        if (w == null || w.size() < 3) return out;
 
-        // Between consecutive zero-crossings, stance ends at the valley (min Z)
+        // Adaptive hysteresis thresholds from window RMS
+        float rms = rms(w);
+        float hi  = Math.max(BASE_DEADBAND_HI, RMS_TO_HI * rms);
+        float lo  = hi * HI_TO_LO;
+
+        List<Integer> zc = schmittZeroCrossings(w, hi, lo);
+        if (zc.size() < 2) return out;
+
+        // Between consecutive ZCs: stance = start->min, swing = min->end
         for (int i = 0; i < zc.size() - 1; i++) {
             int start = zc.get(i);
             int end   = zc.get(i + 1);
-            if (end - start <= 1) continue;
+            if (end - start <= 2) continue; // ultra-short
 
-            // Find local minimum in [start, end)
-            int minIdx = start;
-            float minVal = data.get(start).z;
+            // Find min strictly inside (avoid edges)
+            int minIdx = -1;
+            float minVal = Float.MAX_VALUE;
             for (int j = start + 1; j < end; j++) {
-                if (data.get(j).z < minVal) {
-                    minVal = data.get(j).z;
-                    minIdx = j;
-                }
+                float v = w.get(j).z;
+                if (v < minVal) { minVal = v; minIdx = j; }
             }
+            if (minIdx <= start || minIdx >= end) continue;
 
-            long tStart = data.get(start).timestamp;
-            long tMin   = data.get(minIdx).timestamp;
-            long tEnd   = data.get(end).timestamp;
+            long tStart = w.get(start).timestamp;
+            long tMin   = w.get(minIdx).timestamp;
+            long tEnd   = w.get(end).timestamp;
 
             float stance = (tMin - tStart) / 1000f;
             float swing  = (tEnd - tMin) / 1000f;
             float cycle  = stance + swing;
 
-            // Segment sanity checks
             if (stance < MIN_SEG_SEC || stance > MAX_SEG_SEC) continue;
             if (swing  < MIN_SEG_SEC || swing  > MAX_SEG_SEC) continue;
             if (cycle  < MIN_CYCLE_SEC || cycle > MAX_CYCLE_SEC) continue;
 
-            cycles.add(new GaitCycle(stance, swing));
+            out.add(new GaitCycle(stance, swing));
         }
-
-        return cycles;
+        return out;
     }
 
-    private static double meanStance(List<GaitCycle> cycles) {
-        if (cycles == null || cycles.isEmpty()) return Float.NaN;
-        double s = 0;
-        for (GaitCycle c : cycles) s += c.stanceTime;
-        return s / cycles.size();
-    }
+    /**
+     * Schmitt-trigger zero-crossings with hysteresis.
+     * We only register a crossing when we were confidently on one side (>|hi|),
+     * then the signal passes through the low band (<=|lo|) and emerges on the other side (>|hi|).
+     */
+    private static List<Integer> schmittZeroCrossings(List<DataPoint> w, float hi, float lo) {
+        List<Integer> idx = new ArrayList<>();
+        if (w.size() < 2) return idx;
 
-    private static double meanSwing(List<GaitCycle> cycles) {
-        if (cycles == null || cycles.isEmpty()) return Float.NaN;
-        double s = 0;
-        for (GaitCycle c : cycles) s += c.swingTime;
-        return s / cycles.size();
+        final int STATE_UNKNOWN = 0, STATE_POS = 1, STATE_NEG = -1;
+        int state = STATE_UNKNOWN;
+
+        for (int i = 1; i < w.size(); i++) {
+            float prev = w.get(i - 1).z;
+            float curr = w.get(i).z;
+
+            // Update state with hysteresis bands
+            if (state == STATE_UNKNOWN) {
+                if (curr > hi)       state = STATE_POS;
+                else if (curr < -hi) state = STATE_NEG;
+            } else if (state == STATE_POS) {
+                if (curr < lo && curr > -lo) {
+                    // inside the neutral zone, keep waiting for a true cross
+                } else if (curr < -hi) {
+                    // crossed to negative side with certainty -> mark zero-crossing index
+                    idx.add(i);
+                    state = STATE_NEG;
+                }
+            } else {
+                if (curr < lo && curr > -lo) {
+                    // inside the neutral zone
+                } else if (curr > hi) {
+                    idx.add(i);
+                    state = STATE_POS;
+                }
+            }
+        }
+        return idx;
     }
 
     private static boolean hasEnoughMotion(List<DataPoint> w) {
-        if (w == null || w.size() < 3) return false;
+        if (w == null || w.size() < 3) return true;
         float min = Float.MAX_VALUE, max = -Float.MAX_VALUE;
         for (DataPoint d : w) { float v = d.z; if (v < min) min = v; if (v > max) max = v; }
-        return (max - min) >= MIN_P2P;
+        return !((max - min) >= MIN_P2P);
+    }
+
+    private static float rms(List<DataPoint> w) {
+        double s2 = 0.0;
+        for (DataPoint d : w) s2 += d.z * d.z;
+        return (float) Math.sqrt(s2 / Math.max(1, w.size()));
     }
 
     private static List<DataPoint> detrendMean(List<DataPoint> in) {
         if (in == null || in.isEmpty()) return in;
-        float mean = 0f;
-        for (DataPoint d : in) mean += d.z;
-        mean /= in.size();
+        float mean = 0f; for (DataPoint d : in) mean += d.z; mean /= in.size();
         List<DataPoint> out = new ArrayList<>(in.size());
         for (DataPoint d : in) out.add(new DataPoint(d.z - mean, d.timestamp));
         return out;
     }
 
-    // ----------------- Filtering (Butterworth 2nd order, zero-phase via forward-backward) -----------------
+    private static double meanStance(List<GaitCycle> cs) {
+        if (cs == null || cs.isEmpty()) return Double.NaN;
+        double s = 0; for (GaitCycle c : cs) s += c.stanceTime; return s / cs.size();
+    }
+    private static double meanSwing(List<GaitCycle> cs) {
+        if (cs == null || cs.isEmpty()) return Double.NaN;
+        double s = 0; for (GaitCycle c : cs) s += c.swingTime; return s / cs.size();
+    }
+
     private static class Biquad {
         final float b0, b1, b2, a1, a2;
         Biquad(float b0, float b1, float b2, float a1, float a2) {
@@ -155,7 +185,6 @@ public class GaitFeatureExtractorService {
     }
 
     private static Biquad designButterLP(float fs, float fc) {
-        // RBJ cookbook coefficients for 2nd-order low-pass
         double w0 = 2.0 * Math.PI * fc / fs;
         double cosw0 = Math.cos(w0), sinw0 = Math.sin(w0);
         double Q = Math.sqrt(0.5); // Butterworth
@@ -168,32 +197,25 @@ public class GaitFeatureExtractorService {
         double a1 = -2 * cosw0;
         double a2 = 1 - alpha;
 
-        float nb0 = (float) (b0 / a0);
-        float nb1 = (float) (b1 / a0);
-        float nb2 = (float) (b2 / a0);
-        float na1 = (float) (a1 / a0);
-        float na2 = (float) (a2 / a0);
-        return new Biquad(nb0, nb1, nb2, na1, na2);
+        return new Biquad((float)(b0/a0), (float)(b1/a0), (float)(b2/a0),
+                (float)(a1/a0), (float)(a2/a0));
     }
 
     private static List<DataPoint> butterworthFwdBack(List<DataPoint> in, float fc, float fs) {
         if (in == null || in.size() < 3) return in;
 
-        // Extract arrays and (optionally) remove duplicate/unsorted timestamps
         int n = in.size();
         float[] x = new float[n];
-        long[] t = new long[n];
+        long[]  t = new long[n];
         for (int i = 0; i < n; i++) { x[i] = in.get(i).z; t[i] = in.get(i).timestamp; }
 
-        // Forward filter
         Biquad lp = designButterLP(fs, fc);
+
         float[] y = lp.filter(x);
-        // Backward filter (zero phase)
         reverseInPlace(y);
         y = lp.filter(y);
         reverseInPlace(y);
 
-        // Pack back
         List<DataPoint> out = new ArrayList<>(n);
         for (int i = 0; i < n; i++) out.add(new DataPoint(y[i], t[i]));
         return out;

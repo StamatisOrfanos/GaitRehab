@@ -83,7 +83,13 @@ public class ImuStreamService extends Service {
         }
     }
 
-    // ===== Streaming =====
+    @Override
+    public void onDestroy() {
+        super.onDestroy();
+        analysisHandler.removeCallbacksAndMessages(null);
+    }
+
+
     public void startStreaming(ImuDevice device, String side, GyroZCallback zCallback) {
         if (device == null || device.getBoard() == null) {
             Log.e(TAG, "Cannot stream: null device or board");
@@ -101,13 +107,13 @@ public class ImuStreamService extends Service {
                 source.stream((data, env) -> {
                     if (Boolean.TRUE.equals(pausedMap.get(deviceId))) return;
 
-                    AngularVelocity g = data.value(AngularVelocity.class);
-                    float z = g.z();
-                    long ts = System.currentTimeMillis(); // epoch millis for slicing
+                    AngularVelocity gyroscope = data.value(AngularVelocity.class);
+                    float z = gyroscope.z();
+                    long timestamp = data.timestamp().getTimeInMillis();
 
                     CircularBuffer cb = bufferMap.computeIfAbsent(deviceId,
                             id -> new CircularBuffer(BUFFER_CAPACITY));
-                    cb.add(z, ts);
+                    cb.add(z, timestamp);
 
                     if (zCallback != null) zCallback.onGyroZ(z);
                 })
@@ -119,8 +125,19 @@ public class ImuStreamService extends Service {
             if (!analysisStarted
                     && deviceToSideMap.containsValue("left")
                     && deviceToSideMap.containsValue("right")) {
-                analysisStarted = true;
-                analysisHandler.postDelayed(analysisRunnable, ANALYSIS_INTERVAL_MS);
+
+                // only start when both sides have enough data (allow 20% slack)
+                boolean leftReady  = bufferMap.entrySet().stream()
+                        .anyMatch(e -> "left".equals(deviceToSideMap.get(e.getKey()))
+                                && e.getValue().size() >= (int)(WINDOW_SAMPLES * 0.8f));
+                boolean rightReady = bufferMap.entrySet().stream()
+                        .anyMatch(e -> "right".equals(deviceToSideMap.get(e.getKey()))
+                                && e.getValue().size() >= (int)(WINDOW_SAMPLES * 0.8f));
+
+                if (leftReady && rightReady) {
+                    analysisStarted = true;
+                    analysisHandler.postDelayed(analysisRunnable, ANALYSIS_INTERVAL_MS);
+                }
             }
             return null;
         });
@@ -158,29 +175,31 @@ public class ImuStreamService extends Service {
         pausedMap.remove(deviceId);
     }
 
-    // ===== Analysis loop (timestamp-aligned window, 1s hop) =====
     private final Runnable analysisRunnable = new Runnable() {
         @Override
         public void run() {
             leftZ.clear();
             rightZ.clear();
 
-            // Collect all points for each side
+            // Collect all points for each side using a CONSISTENT snapshot per buffer
             List<DataPoint> allLeft = new ArrayList<>();
             List<DataPoint> allRight = new ArrayList<>();
 
             for (Map.Entry<String, CircularBuffer> entry : bufferMap.entrySet()) {
-                String deviceId = entry.getKey();
-                CircularBuffer buffer = entry.getValue();
-                String side = deviceToSideMap.get(deviceId);
+                final String deviceId = entry.getKey();
+                final CircularBuffer buffer = entry.getValue();
+                final String side = deviceToSideMap.get(deviceId);
 
-                float[] zVals = buffer.getZArray();
-                long[] tVals = buffer.getTimestampArray();
+                CircularBuffer.Snapshot snap = buffer.snapshot();
+                float[] zVals = snap.z();
+                long[]  tVals = snap.t();
                 int len = zVals.length;
                 if (len == 0) continue;
 
                 List<DataPoint> points = new ArrayList<>(len);
-                for (int i = 0; i < len; i++) points.add(new DataPoint(zVals[i], tVals[i]));
+                for (int i = 0; i < len; i++) {
+                    points.add(new DataPoint(zVals[i], tVals[i]));
+                }
 
                 if ("left".equals(side))  allLeft.addAll(points);
                 if ("right".equals(side)) allRight.addAll(points);
@@ -191,7 +210,7 @@ public class ImuStreamService extends Service {
                 return;
             }
 
-            // Align both legs to same endTs
+            // Align both legs to the same window [endTs - WINDOW_MS, endTs]
             long latestLeftTs  = allLeft.get(allLeft.size() - 1).timestamp;
             long latestRightTs = allRight.get(allRight.size() - 1).timestamp;
             long endTs = Math.min(latestLeftTs, latestRightTs);
@@ -208,7 +227,7 @@ public class ImuStreamService extends Service {
             for (DataPoint p : allRight) if (p.timestamp >= startTs && p.timestamp <= endTs) rightZ.add(p);
 
             // Require most of the expected samples (allow some jitter)
-            if (leftZ.size() < WINDOW_SAMPLES * 0.8 || rightZ.size() < WINDOW_SAMPLES * 0.8) {
+            if (leftZ.size() < WINDOW_SAMPLES * 0.8f || rightZ.size() < WINDOW_SAMPLES * 0.8f) {
                 analysisHandler.postDelayed(this, ANALYSIS_INTERVAL_MS);
                 return;
             }
@@ -220,6 +239,8 @@ public class ImuStreamService extends Service {
             }
             lastInferenceTs = now;
             lastProcessedEndTs = endTs;
+
+            // Get the features from the data and get the model prediction
             GaitWindowResult result = featureExtraction(leftZ, rightZ);
             modelPrediction(result);
 
@@ -227,20 +248,16 @@ public class ImuStreamService extends Service {
         }
     };
 
-    // ===== Prediction & haptics =====
-    private void modelPrediction(GaitWindowResult f) {
+
+    private void modelPrediction(GaitWindowResult gaitWindowResult) {
         Log.d(TAG, "==== Gait Values ====");
-        Log.d(TAG, "Left Stance:  " + f.getLeftStance()  + "s");
-        Log.d(TAG, "Left Swing :  " + f.getLeftSwing()   + "s");
-        Log.d(TAG, "Right Stance: " + f.getRightStance() + "s");
-        Log.d(TAG, "Right Swing : " + f.getRightSwing()  + "s");
+        Log.d(TAG, "Left Stance:  " + gaitWindowResult.getLeftStance()  + "s");
+        Log.d(TAG, "Left Swing :  " + gaitWindowResult.getLeftSwing()   + "s");
+        Log.d(TAG, "Right Stance: " + gaitWindowResult.getRightStance() + "s");
+        Log.d(TAG, "Right Swing : " + gaitWindowResult.getRightSwing()  + "s");
 
-        // Validate window (avoid NaNs)
-        boolean valid =
-                !Float.isNaN(f.getLeftStance())  && !Float.isNaN(f.getLeftSwing()) &&
-                        !Float.isNaN(f.getRightStance()) && !Float.isNaN(f.getRightSwing());
 
-        if (!valid || predictor == null) {
+        if (!gaitWindowResult.gaitWindowValid() || predictor == null) {
             Log.w(TAG, "Predictor not initialized or invalid window, skipping prediction");
             Log.d(TAG, "========================");
             return;
@@ -248,14 +265,14 @@ public class ImuStreamService extends Service {
 
         // Model expects: RightStance, LeftStance, RightSwing, LeftSwing
         float[] modelInput = new float[] {
-                f.getRightStance(), f.getLeftStance(),
-                f.getRightSwing(),  f.getLeftSwing()
+                gaitWindowResult.getRightStance(), gaitWindowResult.getLeftStance(),
+                gaitWindowResult.getRightSwing(),  gaitWindowResult.getLeftSwing()
         };
 
         try {
-            int pred = predictor.predict(modelInput);
-            Log.d(TAG, "Predicted gait status: " + pred);
-            if (pred == 1) buzzOnce();
+            int prediction = predictor.predict(modelInput);
+            Log.d(TAG, "Predicted gait status: " + prediction);
+            if (prediction == 1 && windowIsFresh(lastProcessedEndTs)) buzzOnce();
         } catch (Exception e) {
             Log.e(TAG, "Prediction failed: " + e.getMessage());
         }
@@ -274,9 +291,16 @@ public class ImuStreamService extends Service {
         vibrator.vibrate(VibrationEffect.createOneShot(120, VibrationEffect.DEFAULT_AMPLITUDE));
     }
 
+    private boolean windowIsFresh(long endTs) {
+        return (lastProcessedEndTs == endTs)
+                && (leftZ.size() >= WINDOW_SAMPLES * 0.8f)
+                && (rightZ.size() >= WINDOW_SAMPLES * 0.8f);
+    }
+
+
     @RequiresApi(api = Build.VERSION_CODES.VANILLA_ICE_CREAM)
     private void exportToCSV(String deviceId, StringBuilder buffer) {
-        if (buffer == null || buffer.length() == 0) return;
+        if (buffer == null || buffer.isEmpty()) return;
 
         File dir = new File(getExternalFilesDir(Environment.DIRECTORY_DOCUMENTS), "IMU_Logs");
         if (!dir.exists()) dir.mkdirs();
@@ -290,4 +314,5 @@ public class ImuStreamService extends Service {
             Log.e(TAG, "CSV export failed: " + e.getMessage());
         }
     }
+
 }
