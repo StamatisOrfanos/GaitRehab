@@ -57,7 +57,7 @@ public class GaitWindowResult {
                 '}';
     }
 
-    public boolean GaitWindowValid() {
-        return Float.isNaN(leftStance) && Float.isNaN(leftSwing) && Float.isNaN(rightStance) && Float.isNaN(rightSwing);
+    public boolean gaitWindowValid() {
+        return !(Float.isNaN(leftStance) || Float.isNaN(leftSwing) || Float.isNaN(rightStance) || Float.isNaN(rightSwing));
     }
 }

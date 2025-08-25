@@ -8,6 +8,7 @@ import android.os.Build;
 import android.os.Environment;
 import android.os.Handler;
 import android.os.IBinder;
+import android.os.SystemClock;
 import android.os.VibrationEffect;
 import android.os.Vibrator;
 import android.os.VibratorManager;
@@ -114,15 +115,13 @@ public class ImuStreamService extends Service {
                 }
             }
 
-            long now = System.currentTimeMillis();
-
             // Require a full window on both sides
             if (leftZ.size() < WINDOW_SAMPLES || rightZ.size() < WINDOW_SAMPLES) {
                 analysisHandler.postDelayed(this, ANALYSIS_INTERVAL_MS);
                 return;
             }
 
-            // Throttle inferences to once per 2 seconds
+            long now = SystemClock.elapsedRealtime();
             if (now - lastInferenceTs < INFERENCE_COOLDOWN_MS) {
                 analysisHandler.postDelayed(this, ANALYSIS_INTERVAL_MS);
                 return;
@@ -167,7 +166,7 @@ public class ImuStreamService extends Service {
             gyro.angularVelocity().start();
             gyro.start();
 
-            if (!analysisStarted) {
+            if (!analysisStarted && deviceToSideMap.containsValue("left")  && deviceToSideMap.containsValue("right")) {
                 analysisStarted = true;
                 analysisHandler.postDelayed(analysisRunnable, ANALYSIS_INTERVAL_MS);
             }
@@ -241,7 +240,7 @@ public class ImuStreamService extends Service {
         };
 
         try {
-            if (predictor != null) {
+            if (predictor != null && features.gaitWindowValid()) {
                 int prediction = predictor.predict(model_input);
                 asymmetryAlert(prediction);
                 Log.d(TAG, "Predicted gait status: " + prediction);
@@ -254,13 +253,16 @@ public class ImuStreamService extends Service {
 
         Log.d(TAG, "========================");
     }
+
+
     private void asymmetryAlert(int prediction) {
         if (prediction != 1 || vibrator == null || !vibrator.hasVibrator()) return;
 
-        long now = System.currentTimeMillis();
+        long now = SystemClock.elapsedRealtime();
         if (now - lastBuzzTs < BUZZ_COOLDOWN_MS) return;
 
         lastBuzzTs = now;
         vibrator.vibrate(VibrationEffect.createOneShot(100, VibrationEffect.DEFAULT_AMPLITUDE));
     }
+
 }
