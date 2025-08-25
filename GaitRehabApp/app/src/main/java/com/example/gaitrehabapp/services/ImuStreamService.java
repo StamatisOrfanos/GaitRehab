@@ -109,7 +109,7 @@ public class ImuStreamService extends Service {
 
                     AngularVelocity gyroscope = data.value(AngularVelocity.class);
                     float z = gyroscope.z();
-                    long timestamp = data.timestamp().getTimeInMillis();
+                    long timestamp = System.currentTimeMillis();
 
                     CircularBuffer cb = bufferMap.computeIfAbsent(deviceId,
                             id -> new CircularBuffer(BUFFER_CAPACITY));
@@ -121,24 +121,12 @@ public class ImuStreamService extends Service {
             gyro.angularVelocity().start();
             gyro.start();
 
-            // Start analysis once we have both sides present
-            if (!analysisStarted
-                    && deviceToSideMap.containsValue("left")
-                    && deviceToSideMap.containsValue("right")) {
-
-                // only start when both sides have enough data (allow 20% slack)
-                boolean leftReady  = bufferMap.entrySet().stream()
-                        .anyMatch(e -> "left".equals(deviceToSideMap.get(e.getKey()))
-                                && e.getValue().size() >= (int)(WINDOW_SAMPLES * 0.8f));
-                boolean rightReady = bufferMap.entrySet().stream()
-                        .anyMatch(e -> "right".equals(deviceToSideMap.get(e.getKey()))
-                                && e.getValue().size() >= (int)(WINDOW_SAMPLES * 0.8f));
-
-                if (leftReady && rightReady) {
-                    analysisStarted = true;
-                    analysisHandler.postDelayed(analysisRunnable, ANALYSIS_INTERVAL_MS);
-                }
+            if (!analysisStarted) {
+                analysisStarted = true;
+                Log.d(TAG, "Starting analysis loop");
+                analysisHandler.postDelayed(analysisRunnable, ANALYSIS_INTERVAL_MS);
             }
+
             return null;
         });
     }
