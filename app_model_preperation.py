@@ -10,8 +10,9 @@ pipeline = joblib.load("models/detection/xgboost_moderate_conf.pkl")
 scaler = pipeline.named_steps['standardscaler']
 model = pipeline.named_steps['xgbclassifier']
 
-np.save("scaler_mean.npy", scaler.mean_)
-np.save("scaler_scale.npy", scaler.scale_)
+# Explicitly save as float32 to match the Android app's expectation
+np.save("scaler_mean.npy", scaler.mean_.astype(np.float32))
+np.save("scaler_scale.npy", scaler.scale_.astype(np.float32))
 
 # Convert XGBoost model to ONNX
 initial_type = [('float_input', FloatTensorType([None, model.n_features_in_]))]
