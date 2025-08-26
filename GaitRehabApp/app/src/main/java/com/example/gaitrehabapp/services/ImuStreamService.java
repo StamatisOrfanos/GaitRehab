@@ -32,7 +32,7 @@ import java.util.Map;
 
 
 public class ImuStreamService extends Service {
-    private static final String TAG = "IMU_STREAM";
+    private static final String TAG = "IMU_STREAM_SERVICE";
     private static final int FS_HZ = 100;
     private static final int WINDOW_MS = 2000;
     private static final int HOP_MS = 1000;
@@ -53,7 +53,6 @@ public class ImuStreamService extends Service {
     private long lastInferenceTs = 0L;
     private long lastBuzzTs = 0L;
     private long lastProcessedEndTs = 0L;
-
     private ModelPredictor predictor;
     private Vibrator vibrator;
     public interface GyroZCallback { void onGyroZ(float z); }
@@ -69,13 +68,14 @@ public class ImuStreamService extends Service {
     public void onCreate() {
         super.onCreate();
         try {
+            Log.d(TAG, "Initializing ModelPredictor…");
             predictor = new ModelPredictor(getApplicationContext());
-            Log.i(TAG, "ModelPredictor initialized successfully");
-        } catch (Exception e) {
-            Log.e(TAG, "Failed to initialize ModelPredictor: " + e.getMessage());
+            Log.d(TAG, "ModelPredictor initialized successfully");
+        } catch (Throwable t) {
+            Log.e(TAG, "Failed to initialize ModelPredictor", t);
         }
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             VibratorManager vm = (VibratorManager) getSystemService(VIBRATOR_MANAGER_SERVICE);
             vibrator = (vm != null) ? vm.getDefaultVibrator() : null;
         } else {

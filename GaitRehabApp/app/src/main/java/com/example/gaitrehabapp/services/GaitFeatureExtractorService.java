@@ -1,32 +1,12 @@
 package com.example.gaitrehabapp.services;
 
-import android.util.Log;
-
 import com.example.gaitrehabapp.models.DataPoint;
 import com.example.gaitrehabapp.models.GaitCycle;
 import com.example.gaitrehabapp.models.GaitWindowResult;
-
 import java.util.ArrayList;
 import java.util.List;
 
-/**
- * Feature extraction that matches the Python flow:
- *  - 2nd-order Butterworth LP @ 6 Hz, fs=100 Hz (zero-phase)
- *  - Zero-crossings on filtered Z
- *  - For each crossing-to-crossing cycle: stance = start->min, swing = min->end
- *  - Remove ultra-short / implausible cycles
- *  - Return mean stance/swing per leg (seconds)
- */
 public class GaitFeatureExtractorService {
-
-    private static final String TAG = "IMU_STREAM";
-
-    // Design parameters (documented intent)
-    private static final float FS_HZ = 100f;  // sampling rate
-    private static final float LP_HZ = 6f;    // low-pass cutoff
-
-    // Precomputed biquad (Butterworth 2nd-order, fs=100Hz, fc=6Hz)
-    // H(z) = (b0 + b1 z^-1 + b2 z^-2) / (1 + a1 z^-1 + a2 z^-2)
     private static final float b0 = 0.39133577f;
     private static final float b1 = 0.78267153f;
     private static final float b2 = 0.39133577f;
@@ -34,9 +14,9 @@ public class GaitFeatureExtractorService {
     private static final float a2 = 0.19581571f;
 
     // Cycle sanity limits (seconds)
-    private static final float MIN_SEGMENT_S = 0.05f;   // reject crazy-short stance/swing
-    private static final float MIN_CYCLE_S   = 0.30f;   // reject whole cycle too short
-    private static final float MAX_CYCLE_S   = 2.50f;   // reject whole cycle too long
+    private static final float MIN_SEGMENT_S = 0.05f;
+    private static final float MIN_CYCLE_S   = 0.30f;
+    private static final float MAX_CYCLE_S   = 2.50f;
 
     public static GaitWindowResult featureExtraction(List<DataPoint> leftZ, List<DataPoint> rightZ) {
         float leftStance = Float.NaN, leftSwing = Float.NaN;
@@ -55,15 +35,7 @@ public class GaitFeatureExtractorService {
             rightStance = meanStance(rcycles);
             rightSwing  = meanSwing(rcycles);
         }
-
-        GaitWindowResult out = new GaitWindowResult(leftStance, leftSwing, rightStance, rightSwing);
-
-        if (BuildConfigDebug()) {
-            Log.d(TAG, String.format(
-                    "FEA: L(stance=%.3fs, swing=%.3fs) | R(stance=%.3fs, swing=%.3fs)",
-                    out.getLeftStance(), out.getLeftSwing(), out.getRightStance(), out.getRightSwing()));
-        }
-        return out;
+        return new GaitWindowResult(leftStance, leftSwing, rightStance, rightSwing);
     }
 
     // ---- Core steps ---------------------------------------------------------
@@ -103,7 +75,6 @@ public class GaitFeatureExtractorService {
         }
     }
 
-    /** Zero-crossings on filtered z; returns indices i where sign change occurs between i and i+1. */
     private static int[] zeroCrossings(float[] zf) {
         List<Integer> idx = new ArrayList<>();
         for (int i = 1; i < zf.length; i++) {
@@ -116,12 +87,6 @@ public class GaitFeatureExtractorService {
         return out;
     }
 
-    /**
-     * For each crossing-to-crossing window:
-     *  - find index of minimum z (most negative) within [start, end)
-     *  - stance = t[min] - t[start]; swing = t[end] - t[min]
-     *  - reject implausible cycles/segments
-     */
     private static List<GaitCycle> detectStanceSwing(float[] zFiltered, List<DataPoint> series) {
         List<GaitCycle> out = new ArrayList<>();
         if (zFiltered.length != series.size() || zFiltered.length < 3) return out;
@@ -175,8 +140,4 @@ public class GaitFeatureExtractorService {
         return s / cycles.size();
     }
 
-    private static boolean BuildConfigDebug() {
-        // flip to true if you want the internal feature log above
-        return false;
-    }
 }
