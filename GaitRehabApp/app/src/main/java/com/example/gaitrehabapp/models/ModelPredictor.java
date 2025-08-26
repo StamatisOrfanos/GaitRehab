@@ -155,9 +155,10 @@ public class ModelPredictor {
         dis.readFully(header);
         String hdr = new String(header, java.nio.charset.StandardCharsets.US_ASCII).trim();
 
-        // Only little-endian supported here
-        boolean little = hdr.contains("'<'") || hdr.contains("\"<\"");
-        if (!little) throw new IOException("Only little-endian NPY supported; header=" + hdr);
+        boolean little = hdr.contains("'<f4'") || hdr.contains("\"<f4\"") || hdr.contains("'<f8'") || hdr.contains("\"<f8\"");
+        if (!little) {
+            throw new IOException("Only little-endian NPY supported; header=" + hdr);
+        }
 
         boolean f4 = hdr.contains("'descr': '<f4'") || hdr.contains("\"descr\": \"<f4\"");
         boolean f8 = hdr.contains("'descr': '<f8'") || hdr.contains("\"descr\": \"<f8\"");
