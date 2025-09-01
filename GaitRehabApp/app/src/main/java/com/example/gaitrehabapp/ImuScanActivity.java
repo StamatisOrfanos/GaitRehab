@@ -65,7 +65,7 @@ public class ImuScanActivity extends AppCompatActivity {
             if (seenAddresses.contains(device.getAddress())) return;
 
             String name = device.getName() != null ? device.getName() : "";
-            boolean looksLikeMbient = name.contains("MetaWear") || name.contains("MetaMotion");
+            boolean looksLikeMbient = name.contains("MetaWear") || name.contains("MetaMotion") || name.contains("WT901BLE");
             if (!looksLikeMbient) return;
 
             seenAddresses.add(device.getAddress());
@@ -153,8 +153,6 @@ public class ImuScanActivity extends AppCompatActivity {
         if (!discoveredDevices.containsKey(address)) {
             discoveredDevices.put(address, imu);
             adapter.updateDevices(new ArrayList<>(discoveredDevices.values()));
-            // keep toasts minimal during scans to avoid noise
-            // Toast.makeText(this, "Discovered: " + imu.getModel(), Toast.LENGTH_SHORT).show();
         }
     }
 

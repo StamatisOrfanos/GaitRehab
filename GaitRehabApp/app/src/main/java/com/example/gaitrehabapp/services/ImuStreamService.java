@@ -1,20 +1,27 @@
 package com.example.gaitrehabapp.services;
 
 import static com.example.gaitrehabapp.services.GaitFeatureExtractorService.featureExtraction;
+
+import android.app.Notification;
+import android.app.NotificationChannel;
+import android.app.NotificationManager;
 import android.app.Service;
 import android.content.Intent;
+import android.media.AudioAttributes;
+import android.media.Ringtone;
+import android.media.RingtoneManager;
+import android.net.Uri;
 import android.os.Binder;
 import android.os.Build;
 import android.os.Environment;
 import android.os.Handler;
 import android.os.IBinder;
 import android.os.SystemClock;
-import android.os.VibrationEffect;
-import android.os.Vibrator;
-import android.os.VibratorManager;
 import android.util.Log;
 import androidx.annotation.Nullable;
 import androidx.annotation.RequiresApi;
+import androidx.core.app.NotificationCompat;
+
 import com.example.gaitrehabapp.models.CircularBuffer;
 import com.example.gaitrehabapp.models.DataPoint;
 import com.example.gaitrehabapp.models.GaitWindowResult;
@@ -40,7 +47,9 @@ public class ImuStreamService extends Service {
     private static final int ANALYSIS_INTERVAL_MS = HOP_MS;
     private static final int BUFFER_CAPACITY = WINDOW_SAMPLES * 3;
     private static final long INFERENCE_COOLDOWN_MS = HOP_MS;
-    private static final long BUZZ_COOLDOWN_MS = 2000L;
+    private static final long BUZZ_COOLDOWN_MS = 1000L;
+    private static final String ALERT_CHANNEL_ID = "gait_alert_channel";
+    private static final long ALERT_DURATION_MS = 300L;
     private final IBinder binder = new LocalBinder();
     private final Map<String, CircularBuffer> bufferMap = new HashMap<>();
     private final Map<String, Boolean> pausedMap = new HashMap<>();
@@ -54,7 +63,10 @@ public class ImuStreamService extends Service {
     private long lastBuzzTs = 0L;
     private long lastProcessedEndTs = 0L;
     private ModelPredictor predictor;
-    private Vibrator vibrator;
+    private NotificationManager notificationManager;
+    private Ringtone alarmRingtone;
+
+
     public interface GyroZCallback { void onGyroZ(float z); }
     public class LocalBinder extends Binder {
         public ImuStreamService getService() { return ImuStreamService.this; }
@@ -64,6 +76,7 @@ public class ImuStreamService extends Service {
     @Override
     public IBinder onBind(Intent intent) { return binder; }
 
+    @RequiresApi(api = Build.VERSION_CODES.TIRAMISU)
     @Override
     public void onCreate() {
         super.onCreate();
@@ -75,18 +88,24 @@ public class ImuStreamService extends Service {
             Log.e(TAG, "Failed to initialize ModelPredictor", t);
         }
 
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            VibratorManager vm = (VibratorManager) getSystemService(VIBRATOR_MANAGER_SERVICE);
-            vibrator = (vm != null) ? vm.getDefaultVibrator() : null;
-        } else {
-            vibrator = (Vibrator) getSystemService(VIBRATOR_SERVICE);
-        }
+        notificationManager = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
+
+        AudioAttributes attrs = new AudioAttributes.Builder()
+                .setUsage(AudioAttributes.USAGE_ALARM)
+                .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                .build();
+
+        NotificationChannel channel = new NotificationChannel(ALERT_CHANNEL_ID, "Gait Alerts", NotificationManager.IMPORTANCE_HIGH);
+        channel.setDescription("Alerts when abnormal gait is detected");
+        channel.setSound(null, null);
+        notificationManager.createNotificationChannel(channel);
     }
 
     @Override
     public void onDestroy() {
         super.onDestroy();
         analysisHandler.removeCallbacksAndMessages(null);
+        stopAlarmTone();
     }
 
 
@@ -260,7 +279,13 @@ public class ImuStreamService extends Service {
         try {
             int prediction = predictor.predict(modelInput);
             Log.d(TAG, "Predicted gait status: " + prediction);
-            if (prediction == 1 && windowIsFresh(lastProcessedEndTs)) buzzOnce();
+            if (prediction == 1){
+                long now = SystemClock.elapsedRealtime();
+                if (now - lastBuzzTs >= BUZZ_COOLDOWN_MS) {
+                    lastBuzzTs = now;
+                    showAlarmAlert("Gait Alert", "Abnormal gait detected — please adjust.");
+                }
+            }
         } catch (Exception e) {
             Log.e(TAG, "Prediction failed: " + e.getMessage());
         }
@@ -268,21 +293,51 @@ public class ImuStreamService extends Service {
         Log.d(TAG, "========================");
     }
 
-    private void buzzOnce() {
-        if (vibrator == null || !vibrator.hasVibrator()) return;
+    private void showAlarmAlert(String title, String message) {
+        Notification notification = new NotificationCompat.Builder(this, ALERT_CHANNEL_ID)
+                .setSmallIcon(android.R.drawable.ic_dialog_alert)
+                .setContentTitle(title)
+                .setContentText(message)
+                .setPriority(NotificationCompat.PRIORITY_HIGH)
+                .setCategory(NotificationCompat.CATEGORY_ALARM)
+                .setAutoCancel(true)
+                .build();
 
-        long now = SystemClock.elapsedRealtime();
-        if (now - lastBuzzTs < BUZZ_COOLDOWN_MS) return;
-
-        lastBuzzTs = now;
-        try { vibrator.cancel(); } catch (Throwable ignored) {}
-        vibrator.vibrate(VibrationEffect.createOneShot(120, VibrationEffect.DEFAULT_AMPLITUDE));
+        int id = (int) System.currentTimeMillis();
+        notificationManager.notify(id, notification);
+        startAlarmTone();
+        analysisHandler.postDelayed(this::stopAlarmTone, ALERT_DURATION_MS);
     }
 
-    private boolean windowIsFresh(long endTs) {
-        return (lastProcessedEndTs == endTs)
-                && (leftZ.size() >= WINDOW_SAMPLES * 0.8f)
-                && (rightZ.size() >= WINDOW_SAMPLES * 0.8f);
+
+    private void startAlarmTone() {
+        try {
+            if (alarmRingtone != null && alarmRingtone.isPlaying()) return;
+            Uri uri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM);
+            if (uri == null) {
+                uri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION);
+            }
+            alarmRingtone = RingtoneManager.getRingtone(getApplicationContext(), uri);
+            if (alarmRingtone != null) {
+                alarmRingtone.setAudioAttributes(
+                        new AudioAttributes.Builder()
+                                .setUsage(AudioAttributes.USAGE_ALARM)
+                                .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                                .build()
+                );
+                alarmRingtone.play();
+            }
+        } catch (Throwable t) {
+            Log.w(TAG, "Failed to play alarm tone", t);
+        }
+    }
+
+    private void stopAlarmTone() {
+        try {
+            if (alarmRingtone != null && alarmRingtone.isPlaying()) {
+                alarmRingtone.stop();
+            }
+        } catch (Throwable ignored) { }
     }
 
 
