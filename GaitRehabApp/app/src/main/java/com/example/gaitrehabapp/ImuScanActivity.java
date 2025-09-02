@@ -22,6 +22,7 @@ import androidx.appcompat.app.AppCompatActivity;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 import com.example.gaitrehabapp.adapters.DeviceAdapter;
+import com.example.gaitrehabapp.models.DeviceType;
 import com.example.gaitrehabapp.models.ImuDevice;
 import com.mbientlab.metawear.android.BtleService;
 import java.util.ArrayList;
@@ -54,24 +55,28 @@ public class ImuScanActivity extends AppCompatActivity {
         }
     };
 
-    private final ScanCallback metaWearScanCallback = new ScanCallback() {
+    private final ScanCallback scanCallback = new ScanCallback() {
         @RequiresPermission(allOf = {Manifest.permission.BLUETOOTH_SCAN, Manifest.permission.BLUETOOTH_CONNECT})
         @Override
         public void onScanResult(int callbackType, ScanResult result) {
-            if (!scanning) return; // ignore late callbacks after stopScan()
+            if (!scanning) return;
 
             BluetoothDevice device = result.getDevice();
             if (device == null || device.getAddress() == null) return;
             if (seenAddresses.contains(device.getAddress())) return;
 
             String name = device.getName() != null ? device.getName() : "";
-            boolean looksLikeMbient = name.contains("MetaWear") || name.contains("MetaMotion") || name.contains("WT901BLE");
-            if (!looksLikeMbient) return;
+            boolean looksLikeImu = name.contains("MetaWear") || name.contains("MetaMotion") ||
+                            name.contains("WT901BLE") || name.contains("BWT901BLE");
+            if (!looksLikeImu) return;
 
             seenAddresses.add(device.getAddress());
-
             ImuDevice imu = new ImuDevice(device);
-            imu.setModel(name);
+            imu.setModel(name + " (" + imu.getDeviceType().name() + ")");
+            if (imu.getDeviceType() == DeviceType.UNKNOWN) {
+                Log.d(TAG, "Skipping unsupported device: " + name);
+                return;
+            }
             runOnUiThread(() -> handleValidImuDevice(imu));
         }
     };
@@ -81,10 +86,9 @@ public class ImuScanActivity extends AppCompatActivity {
     protected void onCreate(@Nullable Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_device_scan);
-
         Log.d(TAG, "DeviceScanActivity onCreate");
 
-        // Bind BLE service (used later in ImuStreamActivity)
+        // Bind BLE service used in stream activity
         bindService(new Intent(this, BtleService.class), btleConnection, Context.BIND_AUTO_CREATE);
 
         // RecyclerView
@@ -93,7 +97,7 @@ public class ImuScanActivity extends AppCompatActivity {
         adapter = new DeviceAdapter();
         deviceList.setAdapter(adapter);
 
-        // Rescan
+        // Rescan button and functionality
         Button rescanButton = findViewById(R.id.rescanButton);
         rescanButton.setOnClickListener(v -> {
             if (bluetoothScanner != null) {
@@ -103,7 +107,7 @@ public class ImuScanActivity extends AppCompatActivity {
             }
         });
 
-        // Select
+        // Select the two devices and get to stream page
         Button selectButton = findViewById(R.id.selectButton);
         selectButton.setOnClickListener(v -> {
             List<ImuDevice> selectedDevices = adapter.getSelectedDevices();
@@ -112,7 +116,7 @@ public class ImuScanActivity extends AppCompatActivity {
             } else if (selectedDevices.size() > 2) {
                 Toast.makeText(this, "You can only select up to 2 devices.", Toast.LENGTH_SHORT).show();
             } else {
-                stopScan(); // stop scanning before navigating
+                stopScan();
                 Intent intent = new Intent(ImuScanActivity.this, ImuStreamActivity.class);
                 intent.putParcelableArrayListExtra("selected_devices", new ArrayList<>(selectedDevices));
                 startActivity(intent);
@@ -134,7 +138,7 @@ public class ImuScanActivity extends AppCompatActivity {
         discoveredDevices.clear();
         seenAddresses.clear();
         scanning = true;
-        bluetoothScanner.startScan(metaWearScanCallback);
+        bluetoothScanner.startScan(scanCallback);
         Log.d(TAG, "BLE scan started");
     }
 
@@ -142,7 +146,7 @@ public class ImuScanActivity extends AppCompatActivity {
     private void stopScan() {
         if (bluetoothScanner == null || !scanning) return;
         try {
-            bluetoothScanner.stopScan(metaWearScanCallback);
+            bluetoothScanner.stopScan(scanCallback);
         } catch (Exception ignored) {}
         scanning = false;
         Log.d(TAG, "BLE scan stopped");
