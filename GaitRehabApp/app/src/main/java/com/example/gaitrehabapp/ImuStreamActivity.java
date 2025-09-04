@@ -1,5 +1,6 @@
 package com.example.gaitrehabapp;
 
+import android.Manifest;
 import android.annotation.SuppressLint;
 import android.content.ComponentName;
 import android.content.Context;
@@ -13,7 +14,10 @@ import android.widget.Button;
 import android.widget.TextView;
 import android.widget.Toast;
 import androidx.annotation.Nullable;
+import androidx.annotation.RequiresPermission;
 import androidx.appcompat.app.AppCompatActivity;
+
+import com.example.gaitrehabapp.models.DeviceType;
 import com.example.gaitrehabapp.models.ImuDevice;
 import com.example.gaitrehabapp.services.ImuStreamService;
 import com.mbientlab.metawear.MetaWearBoard;
@@ -100,7 +104,6 @@ public class ImuStreamActivity extends AppCompatActivity {
             Toast.makeText(this, "Two IMU devices required for gait symmetry analysis.", Toast.LENGTH_LONG).show();
             return;
         }
-
         connectDeviceSequentially(0);
     }
 
@@ -110,12 +113,17 @@ public class ImuStreamActivity extends AppCompatActivity {
         ImuDevice device = selectedDevices.get(index);
         String side = (index == 0) ? "left" : "right";
 
-        connectWithRetry(device, side, /*retries=*/2, /*delayMs=*/400, () -> {
+        if (device.getDeviceType() == DeviceType.METAWEAR) {
+            connectMetaWearWithRetry(device, side, 2, 400, () ->
+                    handler.postDelayed(() -> connectDeviceSequentially(index + 1), 300)
+            );
+        } else {
+            startStreamingForDevice(device, side);
             handler.postDelayed(() -> connectDeviceSequentially(index + 1), 300);
-        });
+        }
     }
 
-    private void connectWithRetry(ImuDevice device, String side, int retries, long delayMs, Runnable onDone) {
+    private void connectMetaWearWithRetry(ImuDevice device, String side, int retries, long delayMs, Runnable onDone) {
         MetaWearBoard board = btleBinder.getMetaWearBoard(device.getBluetoothDevice());
         device.setBoard(board);
 
@@ -125,10 +133,10 @@ public class ImuStreamActivity extends AppCompatActivity {
                 runOnUiThread(() -> startStreamingForDevice(device, side));
                 if (onDone != null) onDone.run();
             } else {
-                Log.w(TAG, "Connect failed (" + device.getMacAddress() + "), retries left=" + retries, task.getError());
+                Log.w(TAG, "MetaWear connect failed (" + device.getMacAddress() + "), retries left=" + retries, task.getError());
                 board.disconnectAsync(); // cleanup just in case
                 if (retries > 0) {
-                    handler.postDelayed(() -> connectWithRetry(device, side, retries - 1, delayMs, onDone), delayMs);
+                    handler.postDelayed(() -> connectMetaWearWithRetry(device, side, retries - 1, delayMs, onDone), delayMs);
                 } else {
                     if (onDone != null) onDone.run();
                 }
@@ -137,16 +145,18 @@ public class ImuStreamActivity extends AppCompatActivity {
         });
     }
 
+    @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
     @SuppressLint("SetTextI18n")
     private void startStreamingForDevice(ImuDevice device, String side) {
-        String deviceName = device.getName() != null ? device.getName() : device.getMacAddress();
-        if (streamService == null || device.getBoard() == null) return;
+        if (streamService == null) return;
+
+        final String deviceName = (device.getName() != null) ? device.getName() : device.getMacAddress();
 
         streamService.startStreaming(
                 device,
                 side,
                 gyroZ -> runOnUiThread(() -> {
-                    if (side.equals("left")) {
+                    if ("left".equals(side)) {
                         device1Name.setText(deviceName + " (Left)");
                         device1GyroZ.setText("Gyro Z: " + gyroZ);
                     } else {
@@ -156,6 +166,7 @@ public class ImuStreamActivity extends AppCompatActivity {
                 })
         );
     }
+
 
     @Override
     protected void onDestroy() {
