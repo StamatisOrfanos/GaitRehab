@@ -78,14 +78,6 @@ activation patterns during walking. Foot switches for detecting precise gait eve
 
 ### Possible Applications
 
-#### Gait Event Detection
-
-| **Goal** | **Tools** |
-| ---------------------------------- | ------------------------------------------------------- |
-| Detect heel strikes / toe-offs     | FootSwitch1, FootSwitch2, vertical GRF (Fz), IMU z-axis |
-| Compute gait phases (stance/swing) | From timing of events |
-| Calculate stride/step/cadence      | Time between events or peaks in IMU/Vicon |
-
 #### Spatiotemporal Gait Metrics
 
 - **Stride time** = time between heel strikes of the same foot.
