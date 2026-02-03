@@ -7,7 +7,9 @@ shank kinematics of stroke patients to healthy individuals. Ethical approval for
 The original experiment included sixteen stroke patients and sixteen healthy individuals, all of whom walked on a flat 10-meter indoor walkway while wearing IMU sensors 
 (MBIENTLAB Inc., USA) placed bilaterally on their shanks as seen on Figure \ref{fig:sensor_placement}. Data acquisition protocols, participant criteria, and ethical 
 approvals were thoroughly detailed in the original publication~\cite{ref35}. The recorded data consisted of tri-axial gyroscope signals sampled at 100 Hz, with angular 
-velocities measured along the sagittal (x), frontal (y), and transverse (z) planes.
+velocities measured along the sagittal (x), frontal (y), and transverse (z) planes. Detailed demographic and clinical assessment information (e.g., age distribution, 
+stroke severity scores such as Fugl–Meyer or NIHSS) was not available in the dataset used for the present analysis and is fully documented in the original data 
+collection study by Sanghan et al.~\cite{ref35}. The present work focuses on signal-level gait classification using the available kinematic data.
 
 
 \subsection{Feature Extraction}
@@ -72,6 +74,13 @@ high-frequency noise and ensure that the features reflect the gait patterns accu
     \end{tabular}
 \end{table*}
 
+Although inertial measurement units provide both accelerometer and gyroscope signals, this study intentionally focuses on gyroscope-derived features. Prior work
+has demonstrated that shank angular velocity, particularly along the z-axis, is highly informative for gait phase characterization and asymmetry detection
+\cite{ref36,ref38}. Limiting the feature space to gyroscopic features reduces sensitivity to sensor misalignment, gravitational artifacts, and placement
+variability, while also minimizing computational overhead. A comparative analysis between gyroscope-only and combined gyroscope–accelerometer configurations is
+planned as part of an extended study.
+
+
 \subsection{Feature Selection}
 The feature selection process was conducted to identify the most relevant features for the classification task. The classification task in this case is a binary 
 classification problem that enables us to use methods like Point Bi-serial Feature Selection (BFS) and Recursive Feature Elimination (RFE) to select the most
@@ -86,7 +95,7 @@ The results of the BFS analysis are shown below in Table~\ref{tab:bfs_results}.
         \hline
         \textbf{\#} & \textbf{Feature} & \textbf{Correlation} & \textbf{p-value} \\
         \hline
-        1 & left-z-axis-(deg/s)-min   & 0.835 & 1.56   \\
+        1 & left-z-axis-(deg/s)-min   & 0.835 & 0.56   \\
         2 & right-z-axis-(deg/s)-min  & 0.769 & 0.0001  \\
         3 & z\_corr\_mean             & -0.53 & 0.02    \\
         4 & left-z-axis-(deg/s)-mad   & -0.55 & 0.01     \\
@@ -95,6 +104,9 @@ The results of the BFS analysis are shown below in Table~\ref{tab:bfs_results}.
     \end{tabularx}
     \label{tab:bfs_results}
 \end{table}
+
+It should be noted that BFS was used as a feature ranking mechanism rather than a strict statistical significance filter. Given the subject-level aggregation 
+and limited sample size (N=32), p-values were interpreted cautiously and used in combination with RFE and clinical interpretability criteria.
 
 \newpage
 Following the BFS analysis, we applied RFE with the use of Random Forest Classifier to refine the feature set further. In this process we 
@@ -137,10 +149,34 @@ To evaluate classification performance, we tested a diverse set of algorithms: L
 basis function (RBF), and polynomial kernels, Extreme Gradient Boosting (XGBoost), and K-Nearest Neighbors (KNN). These models offer a mix of linear and non-linear 
 decision boundaries, ensemble learning, and instance-based reasoning, enabling a comprehensive comparison across different learning paradigms.
 
+
+All models were evaluated using fixed hyperparameters selected to balance bias–variance trade-offs in small-sample clinical datasets; the complete parameter 
+settings are reported in Table~\ref{tab:hyperparameters} for reproducibility.
+\begin{table}[H]
+\centering
+\caption{Model hyperparameter settings}
+\footnotesize
+\begin{tabularx}{\columnwidth}{l p{0.68\columnwidth}}
+\hline
+\textbf{Model} & \textbf{Key Parameters} \\
+\hline
+Logistic Regression & L2 penalty; solver: liblinear; C = 1.0 \\
+Random Forest & Number of trees: 100; maximum depth: none; random state: 42 \\
+SVM (Linear) & C = 1.0; linear kernel \\
+SVM (RBF) & C = 1.0; RBF kernel; gamma = scale \\
+SVM (Polynomial) & C = 1.0; polynomial kernel; degree = 3 \\
+XGBoost & Number of estimators: 100; learning rate: 0.1; maximum depth: 3 \\
+KNN & Number of neighbors: 5; distance metric: Euclidean \\
+\hline
+\end{tabularx}
+\label{tab:hyperparameters}
+\end{table}
+
+
 \subsection{Evaluation Strategy}
-In order to create an unbiased evaluation of model performance, we adopted a stratified k-fold cross-validation strategy. Specifically, the dataset was 
-partitioned into $k=5$ folds, where each fold preserved the proportion of class labels, ensuring that both classes were adequately represented during training 
-and validation. In cases like this where we have limited data, an approach like this mitigates the risk of overfitting to a particular class and provides a more 
-robust estimate of generalization performance. The use of stratification is particularly important in clinical applications, where class imbalance is common 
-and maintaining representative distributions during training is essential for fairness and sensitivity. All randomization procedures, including data splits and 
-model seeds, were fixed using a consistent random state to ensure reproducibility of the results across different runs.
+Given the limited size and the subject-level nature of the dataset, leave-one-out and stratified cross-validation were selected to maximize generalization across 
+individuals while avoiding data leakage. External validation on independent cohorts remains an important next step and will be addressed in future work as additional 
+datasets become available through ongoing clinical studies. All hyperparameter configurations were kept constant across cross-validation folds, as specified in 
+Table~\ref{tab:hyperparameters}.
+
+
