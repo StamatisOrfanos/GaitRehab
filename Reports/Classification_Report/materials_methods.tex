@@ -96,10 +96,10 @@ The results of the BFS analysis are shown below in Table~\ref{tab:bfs_results}.
         \textbf{\#} & \textbf{Feature} & \textbf{Correlation} & \textbf{p-value} \\
         \hline
         1 & left-z-axis-(deg/s)-min   & 0.835 & 0.56   \\
-        2 & right-z-axis-(deg/s)-min  & 0.769 & 0.0001  \\
+        2 & right-z-axis-(deg/s)-min  & 0.769 & 0.11  \\
         3 & z\_corr\_mean             & -0.53 & 0.02    \\
         4 & left-z-axis-(deg/s)-mad   & -0.55 & 0.01     \\
-        5 & left-z-axis-(deg/s)-mean  & -0.61 & 0.0007    \\ 
+        5 & left-z-axis-(deg/s)-mean  & -0.61 & 0.07    \\ 
         \hline
     \end{tabularx}
     \label{tab:bfs_results}
@@ -108,7 +108,6 @@ The results of the BFS analysis are shown below in Table~\ref{tab:bfs_results}.
 It should be noted that BFS was used as a feature ranking mechanism rather than a strict statistical significance filter. Given the subject-level aggregation 
 and limited sample size (N=32), p-values were interpreted cautiously and used in combination with RFE and clinical interpretability criteria.
 
-\newpage
 Following the BFS analysis, we applied RFE with the use of Random Forest Classifier to refine the feature set further. In this process we 
 iteratively removed the least important features based on the contribution to the accuracy of the model, until we got the optimal subset of features.
 \begin{table}[H]
@@ -135,10 +134,6 @@ iteratively removed the least important features based on the contribution to th
 \end{table}
 
 
-Having all the information from the feature selection algorithm we now have a subset of features, that we can use for the classification task. At this stage we
-had to take into consideration the medical significance of the features, since the goal is to create a clinically applicable model that can be used in real-world 
-scenarios. Based on that context we decided to focus on features that are not only statistically significant but also medically meaningful and actionable, 
-like the minimum and maximum values of the z-axis angular velocity, which are directly related to the gait cycle and can be easily interpreted by clinicians. 
 
 \subsection{Classification Models}
 Although the total number of participants is 32, providing a relatively big dataset for a clinical study, it is still considered to be a small sample size. The small 
