@@ -6,13 +6,44 @@ This study proposed a lightweight machine learning framework to distinguish heal
 
 1. The feature selection process combines BFS and RFE, but the rationale for retaining only the z-axis angular velocity extrema (min/max) is not fully justified. Please clarify why other highly ranked features (e.g., mad, std, rms) were excluded and whether this minimal set maintains stability across different walking speeds or sensor placements.
 
+**[NEW ADDITION]:** Chapter 2, Section 2.3, right after Table 3 and after RFE paragraph.  
+Although multiple features were ranked highly by BFS and retained during RFE, the final feature subset was intentionally reduced to extremal z-axis values
+(minimum and maximum) based on three criteria: redundancy, stability, and clinical interpretability. Many statistical descriptors such as standard
+deviation, mean absolute deviation (MAD), and root mean square (RMS) capture overlapping information related to signal dispersion, leading to feature
+redundancy in low-dimensional settings. In contrast, extremal angular velocity values directly reflect biomechanical limits of limb rotation during the gait
+cycle and remain more stable under variations in walking speed and minor sensor placement differences. This reduction enables a more robust and interpretable
+model while minimizing overfitting risk in small-sample datasets.
+
 2. The study uses LOOCV and 5-fold stratified cross-validation simultaneously without clear justification. Please explain which protocol was primary for final performance reporting and how the two validation strategies complement each other to avoid overestimation of generalization ability.
+
+**[NEW ADDITION]:** Chapter 2, section 2.5, replace the current paragraph with the following:
+2.5. Evaluation strategy
+
+Given the limited number of subjects, a leave-one-out cross-validation (LOOCV) strategy was adopted as the primary evaluation protocol for reporting model
+performance. LOOCV enables maximal utilization of the available data while preserving subject-level independence between training and testing sets, making
+it particularly suitable for small clinical datasets.
+
+In addition, a stratified k-fold cross-validation approach (k = 5) was employed as a complementary validation strategy. In this setting, the dataset was partitioned
+into five folds while preserving the proportion of class labels in each fold, ensuring balanced representation during training and validation. This secondary evaluation
+was used to verify the consistency and stability of model performance across different data partitions and to reduce the likelihood of optimistic bias associated
+with a single validation scheme.
+
+All randomization procedures, including data splits and model initialization, were controlled using a fixed random state to ensure reproducibility of results.
+
+**[NEW ADDITION]:**
+In this study, leave-one-out cross-validation (LOOCV) was used as the primary evaluation protocol for reporting final performance metrics, due to its ability
+to maximize training data utilization in small-sample, subject-level datasets. The stratified 5-fold cross-validation was employed as a complementary validation
+strategy to verify the consistency of model performance across different data partitions and to reduce the likelihood of optimistic bias associated with a
+single validation scheme.
+
 
 3. In "Introduction" section Related Works, I feel the current coverage of the state of the art is not satisfactory as the related work section does not cover many contributions that likely provide the building blocks of the proposed approach. For example, a. Adaptive human-robot interaction torque estimation with high accuracy and strong tracking ability for a lower limb rehabilitation robot, IEEE/ASME Transactions on Mechatronics. b. Trajectory Planning Method for Fracture Reduction of Parallel Robots Based on DMP and APF. IEEE Transactions on Automation Science and Engineering, 2026, 23, 4130-4141. c. Coordinated energy-efficient walking assistance for paraplegic patients by using the exoskeleton-walker system. Intell. Robot.
 
 4. While the SVM (RBF kernel) achieved AUC = 1.00, its low recall indicates threshold bias. Please discuss how you determined the classification threshold and whether adaptive thresholding could improve clinical sensitivity without sacrificing specificity in real-world deployment.
 
-5、The dataset includes only 16 stroke patients and 16 healthy controls, which is relatively small. Please address the potential risk of overfitting, especially for ensemble models.
+5. The dataset includes only 16 stroke patients and 16 healthy controls, which is relatively small. Please address the potential risk of overfitting, especially for ensemble models.
+
+---
 
 ## Reviewer 2
 
