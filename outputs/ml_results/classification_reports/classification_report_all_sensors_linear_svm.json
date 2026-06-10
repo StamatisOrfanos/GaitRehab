@@ -1,0 +1,33 @@
+{
+    "Healthy leg": {
+        "precision": 0.5517241379310345,
+        "recall": 0.5333333333333333,
+        "f1-score": 0.5423728813559322,
+        "support": 30.0
+    },
+    "Affected side": {
+        "precision": 0.125,
+        "recall": 0.13333333333333333,
+        "f1-score": 0.12903225806451613,
+        "support": 15.0
+    },
+    "Non-affected side": {
+        "precision": 0.26666666666666666,
+        "recall": 0.26666666666666666,
+        "f1-score": 0.26666666666666666,
+        "support": 15.0
+    },
+    "accuracy": 0.36666666666666664,
+    "macro avg": {
+        "precision": 0.314463601532567,
+        "recall": 0.3111111111111111,
+        "f1-score": 0.3126906020290383,
+        "support": 60.0
+    },
+    "weighted avg": {
+        "precision": 0.37377873563218394,
+        "recall": 0.36666666666666664,
+        "f1-score": 0.3701111718607618,
+        "support": 60.0
+    }
+}
