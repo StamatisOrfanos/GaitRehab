@@ -1,0 +1,10 @@
+MGinter_cvVal
+gyroz_maxVal
+BFinter_cvVal
+GMinter_psdAsymmetry
+gyroz_varVal
+gyroz_domAmp
+gyroy_minVal
+gyrox_domFreq
+accz_meanVal
+gyrox_cvVal

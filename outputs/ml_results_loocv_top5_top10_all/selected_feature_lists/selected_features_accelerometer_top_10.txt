@@ -1,0 +1,10 @@
+accz_meanVal
+accx_minVal
+accz_rmsVal
+accx_harmonicRatio
+accx_peakToPeak
+accx_psdMean
+accx_meanVal
+accx_mavVal
+accx_varVal
+accx_maxVal

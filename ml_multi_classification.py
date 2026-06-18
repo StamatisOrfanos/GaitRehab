@@ -9,19 +9,32 @@ Classes:
 Input:
     data.csv
 
+Optional input from feature-selection step:
+    outputs/eda_plots/feature_selection/selected_features_for_classification.csv
+
+This script evaluates each sensor combination in three modes:
+    1. All features
+    2. Top 5 selected features from RFE
+    3. Top 10 selected features from RFE
+
+Validation:
+    - Leave-One-Subject-Out if subject groups can be inferred from ID
+    - Otherwise row-level Leave-One-Out, with warning
+
 Outputs:
-    outputs/ml_results/
+    outputs/ml_results_loocv_top5_top10_all/
         final_model_comparison.csv
-        best_model_per_sensor_combination.csv
-        per_fold_results.csv
+        best_model_per_sensor_combination_and_feature_set.csv
+        loo_predictions.csv
         classification_reports/
         confusion_matrices/
         plots/
+        selected_feature_lists/
 
 Sensor combinations:
-    1. Only gyroscope
-    2. Only accelerometer
-    3. Only EMG
+    1. Gyroscope
+    2. Accelerometer
+    3. EMG
     4. Gyroscope + Accelerometer
     5. Gyroscope + EMG
     6. Accelerometer + EMG
@@ -44,7 +57,7 @@ from sklearn.base import clone
 from sklearn.impute import SimpleImputer
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
-from sklearn.model_selection import StratifiedKFold, StratifiedGroupKFold
+from sklearn.model_selection import LeaveOneOut, LeaveOneGroupOut
 from sklearn.metrics import (
     accuracy_score,
     balanced_accuracy_score,
@@ -72,13 +85,19 @@ from sklearn.naive_bayes import GaussianNB
 # =============================================================================
 
 DATA_PATH = Path("data.csv")
-OUTPUT_DIR = Path("outputs/ml_results")
+
+SELECTED_FEATURES_PATH = Path(
+    "outputs/eda_plots/feature_selection/selected_features_for_classification.csv"
+)
+
+OUTPUT_DIR = Path("outputs/ml_results_loocv_top5_top10_all")
 
 ID_COLUMN = "ID"
 LABEL_COLUMN = "Label"
 
 RANDOM_STATE = 42
-N_SPLITS = 5
+
+SELECTED_FEATURE_COUNTS = [5, 10]
 
 CLASS_NAMES = {
     0: "Healthy leg",
@@ -111,6 +130,12 @@ SOURCE_ORDER = [
     "Gyroscope + EMG",
     "Accelerometer + EMG",
     "All sensors",
+]
+
+FEATURE_SET_ORDER = [
+    "All features",
+    "Top 5 selected features",
+    "Top 10 selected features",
 ]
 
 
@@ -149,6 +174,7 @@ def ensure_directories() -> None:
         OUTPUT_DIR / "plots",
         OUTPUT_DIR / "confusion_matrices",
         OUTPUT_DIR / "classification_reports",
+        OUTPUT_DIR / "selected_feature_lists",
     ]
 
     for directory in directories:
@@ -169,7 +195,6 @@ def read_dataset(path: Path) -> pd.DataFrame:
             f"or change DATA_PATH."
         )
 
-    # sep=None makes the script robust to comma, semicolon, or tab-separated files.
     df = pd.read_csv(path, sep=None, engine="python")
 
     # Remove fully empty columns and Excel-export blank columns.
@@ -187,7 +212,7 @@ def read_dataset(path: Path) -> pd.DataFrame:
     if ID_COLUMN not in df.columns:
         warnings.warn(
             f"Expected ID column '{ID_COLUMN}' was not found. "
-            f"Subject-aware validation will not be possible."
+            f"Leave-One-Subject-Out will not be possible."
         )
 
     # Make labels numeric.
@@ -199,6 +224,7 @@ def read_dataset(path: Path) -> pd.DataFrame:
 
     # Convert feature columns to numeric.
     metadata_columns = {ID_COLUMN, LABEL_COLUMN}
+
     for col in df.columns:
         if col not in metadata_columns:
             df[col] = pd.to_numeric(df[col], errors="coerce")
@@ -228,17 +254,48 @@ def get_sensor_columns(df: pd.DataFrame) -> Dict[str, List[str]]:
     }
 
 
+def clean_feature_matrix(
+    df: pd.DataFrame,
+    feature_columns: List[str],
+) -> Tuple[pd.DataFrame, pd.Series]:
+    existing_features = [col for col in feature_columns if col in df.columns]
+
+    if len(existing_features) == 0:
+        return pd.DataFrame(index=df.index), df[LABEL_COLUMN].copy()
+
+    X = df[existing_features].copy()
+    y = df[LABEL_COLUMN].copy()
+
+    X = X.replace([np.inf, -np.inf], np.nan)
+
+    # Drop features that are entirely missing.
+    X = X.dropna(axis=1, how="all")
+
+    # Drop constant columns.
+    nunique = X.nunique(dropna=False)
+    X = X.loc[:, nunique > 1]
+
+    return X, y
+
+
+# =============================================================================
+# Subject grouping
+# =============================================================================
+
 def infer_subject_group_from_id(raw_id: object) -> str:
     """
     Attempts to infer subject-level grouping from sample ID.
 
-    Examples that this handles reasonably:
-        H01_left       -> H01
-        H01_right      -> H01
-        HT01_L         -> HT01
-        PT03_affected  -> PT03
+    This is important because left/right legs from the same subject should not
+    be split across train and test.
+
+    Examples handled:
+        H01_left        -> H01
+        H01_right       -> H01
+        HT01_L          -> HT01
+        PT03_affected   -> PT03
         P12_nonaffected -> P12
-        Stroke_05_A    -> Stroke_05
+        Stroke_05_A     -> STROKE05
 
     If your ID format is different, modify this function.
     """
@@ -257,14 +314,15 @@ def infer_subject_group_from_id(raw_id: object) -> str:
 
     # Prefer a leading text prefix plus subject number.
     match = re.search(r"(?i)([a-z]+)[_\- ]*0*([0-9]+)", text)
+
     if match:
         prefix = match.group(1).upper()
         number = int(match.group(2))
         return f"{prefix}{number:02d}"
 
     # If only a number exists, return the number.
-    # This may not be enough for subject grouping if rows are simple 1..60 sample IDs.
     match = re.search(r"([0-9]+)", text)
+
     if match:
         return f"S{int(match.group(1)):02d}"
 
@@ -288,10 +346,10 @@ def infer_groups(df: pd.DataFrame) -> Optional[np.ndarray]:
     print(f"Inferred groups: {n_groups}")
 
     group_counts = pd.Series(groups).value_counts().sort_index()
+
     print("Group size distribution:")
     print(group_counts.value_counts().sort_index().to_string())
 
-    # If every row has a unique group, subject grouping is probably not useful.
     if n_groups == n_samples:
         print()
         print("[WARNING]")
@@ -300,32 +358,154 @@ def infer_groups(df: pd.DataFrame) -> Optional[np.ndarray]:
             "This usually means the ID column is a sample ID, not a subject ID."
         )
         print(
-            "The script will fall back to StratifiedKFold unless you modify "
-            "infer_subject_group_from_id()."
+            "The script will fall back to row-level Leave-One-Out. "
+            "For paired-leg gait data, this is weaker than Leave-One-Subject-Out."
         )
         return None
 
     return groups # type: ignore
 
 
-def clean_feature_matrix(
-    df: pd.DataFrame,
-    feature_columns: List[str],
-) -> Tuple[pd.DataFrame, pd.Series]:
-    X = df[feature_columns].copy()
-    y = df[LABEL_COLUMN].copy()
+# =============================================================================
+# Selected feature loading
+# =============================================================================
 
-    # Replace infinite values.
-    X = X.replace([np.inf, -np.inf], np.nan)
+def load_selected_features(path: Path) -> pd.DataFrame:
+    if not path.exists():
+        print()
+        print("[WARNING]")
+        print(f"Selected-features file was not found: {path}")
+        print("The script will evaluate only the all-features mode.")
+        return pd.DataFrame(columns=["source", "n_features", "feature"])
 
-    # Drop features that are entirely missing.
-    X = X.dropna(axis=1, how="all")
+    selected_df = pd.read_csv(path)
 
-    # Drop constant columns.
-    nunique = X.nunique(dropna=False)
-    X = X.loc[:, nunique > 1]
+    required_columns = {"source", "n_features", "feature"}
+    missing = required_columns - set(selected_df.columns)
 
-    return X, y
+    if missing:
+        raise ValueError(
+            f"Selected-features file is missing columns: {missing}. "
+            f"Expected columns: {required_columns}"
+        )
+
+    selected_df["source"] = selected_df["source"].astype(str)
+    selected_df["feature"] = selected_df["feature"].astype(str)
+    selected_df["n_features"] = pd.to_numeric(
+        selected_df["n_features"],
+        errors="coerce",
+    ).astype("Int64")
+
+    return selected_df
+
+
+def get_top_selected_features_for_source(
+    selected_df: pd.DataFrame,
+    source_name: str,
+    available_features: List[str],
+    top_n: int,
+) -> List[str]:
+    """
+    Reads the selected features for one sensor source.
+
+    Preferred:
+        source == source_name and n_features == top_n
+
+    Fallback:
+        if exact top_n is missing, use the smallest available n_features > top_n.
+        if that is missing, use the largest available n_features < top_n.
+    """
+
+    if selected_df.empty:
+        return []
+
+    source_df = selected_df[selected_df["source"] == source_name].copy()
+
+    if source_df.empty:
+        return []
+
+    available_feature_set = set(available_features)
+
+    exact = source_df[source_df["n_features"] == top_n].copy()
+
+    if not exact.empty:
+        selected_features = exact["feature"].tolist()
+    else:
+        available_counts = sorted(
+            [
+                int(value)
+                for value in source_df["n_features"].dropna().unique().tolist()
+            ]
+        )
+
+        larger_or_equal = [value for value in available_counts if value >= top_n]
+        smaller = [value for value in available_counts if value < top_n]
+
+        if larger_or_equal:
+            chosen_count = larger_or_equal[0]
+        elif smaller:
+            chosen_count = smaller[-1]
+        else:
+            return []
+
+        print(
+            f"[WARNING] No exact top-{top_n} selected feature set for {source_name}. "
+            f"Using n_features={chosen_count} and taking the first {top_n} features."
+        )
+
+        selected_features = source_df[
+            source_df["n_features"] == chosen_count
+        ]["feature"].tolist()
+
+    selected_features = [
+        feature for feature in selected_features
+        if feature in available_feature_set
+    ]
+
+    selected_features = selected_features[:top_n]
+
+    return selected_features
+
+
+def build_feature_sets_for_source(
+    source_name: str,
+    all_features: List[str],
+    selected_df: pd.DataFrame,
+) -> Dict[str, List[str]]:
+    feature_sets = {
+        "All features": all_features,
+    }
+
+    for selected_count in SELECTED_FEATURE_COUNTS:
+        feature_set_name = f"Top {selected_count} selected features"
+
+        selected_features = get_top_selected_features_for_source(
+            selected_df=selected_df,
+            source_name=source_name,
+            available_features=all_features,
+            top_n=selected_count,
+        )
+
+        if selected_features:
+            feature_sets[feature_set_name] = selected_features
+
+            output_path = (
+                OUTPUT_DIR /
+                "selected_feature_lists" /
+                f"selected_features_{safe_filename(source_name)}_top_{selected_count}.txt"
+            )
+
+            with open(output_path, "w", encoding="utf-8") as file:
+                for feature in selected_features:
+                    file.write(f"{feature}\n")
+
+        else:
+            print(
+                f"[WARNING] No selected top-{selected_count} features found "
+                f"for {source_name}. Skipping {feature_set_name}."
+            )
+
+    return feature_sets
 
 
 # =============================================================================
@@ -336,8 +516,9 @@ def build_models() -> Dict[str, Pipeline]:
     """
     Common ML models for tabular classification.
 
-    Scaling is included for all models for simplicity and consistency.
-    Tree-based models do not require scaling, but scaling does not harm their logic.
+    Scaling is included for all models for consistency.
+    Tree-based models do not require scaling, but keeping one uniform pipeline
+    makes the code simpler.
     """
 
     models = {
@@ -454,8 +635,6 @@ def build_models() -> Dict[str, Pipeline]:
         ),
     }
 
-    # Optional XGBoost support.
-    # If xgboost is not installed, the script continues normally.
     try:
         from xgboost import XGBClassifier
 
@@ -479,6 +658,7 @@ def build_models() -> Dict[str, Pipeline]:
                 ),
             ]
         )
+
         print("[INFO] XGBoost found and included.")
 
     except ImportError:
@@ -488,39 +668,22 @@ def build_models() -> Dict[str, Pipeline]:
 
 
 # =============================================================================
-# Cross-validation
+# Leave-one-out evaluation
 # =============================================================================
 
-def make_cv_splitter(
-    y: pd.Series,
-    groups: Optional[np.ndarray],
-):
-    if groups is not None:
-        print("[INFO] Using StratifiedGroupKFold.")
-        return StratifiedGroupKFold(
-            n_splits=N_SPLITS,
-            shuffle=True,
-            random_state=RANDOM_STATE,
-        )
-
-    print("[INFO] Using StratifiedKFold.")
-    return StratifiedKFold(
-        n_splits=N_SPLITS,
-        shuffle=True,
-        random_state=RANDOM_STATE,
-    )
-
-
-def get_cv_splits(
-    splitter,
+def make_loo_splits(
     X: pd.DataFrame,
     y: pd.Series,
     groups: Optional[np.ndarray],
 ):
     if groups is not None:
-        return splitter.split(X, y, groups=groups)
+        print("[INFO] Using Leave-One-Subject-Out validation.")
+        splitter = LeaveOneGroupOut()
+        return splitter.split(X, y, groups=groups), "Leave-One-Subject-Out"
 
-    return splitter.split(X, y)
+    print("[INFO] Using row-level Leave-One-Out validation.")
+    splitter = LeaveOneOut()
+    return splitter.split(X, y), "Leave-One-Out"
 
 
 def evaluate_predictions(
@@ -558,22 +721,19 @@ def evaluate_predictions(
     } # type: ignore
 
 
-def evaluate_model_with_cv(
+def evaluate_model_with_loo(
     model: Pipeline,
     X: pd.DataFrame,
     y: pd.Series,
     groups: Optional[np.ndarray],
-) -> Tuple[Dict[str, float], pd.DataFrame, np.ndarray]:
-    splitter = make_cv_splitter(y, groups)
+) -> Tuple[Dict[str, float], pd.DataFrame, np.ndarray, str]:
+    split_iterator, validation_method = make_loo_splits(X, y, groups)
 
+    prediction_rows = []
     all_true = []
     all_pred = []
-    per_fold_rows = []
 
-    for fold_idx, (train_idx, test_idx) in enumerate(
-        get_cv_splits(splitter, X, y, groups),
-        start=1,
-    ):
+    for fold_idx, (train_idx, test_idx) in enumerate(split_iterator, start=1):
         X_train = X.iloc[train_idx]
         X_test = X.iloc[test_idx]
         y_train = y.iloc[train_idx]
@@ -584,15 +744,27 @@ def evaluate_model_with_cv(
 
         y_pred = fold_model.predict(X_test)
 
-        fold_metrics = evaluate_predictions(y_test.values, y_pred)
+        for local_idx, sample_index in enumerate(test_idx):
+            true_label = int(y_test.iloc[local_idx])
+            predicted_label = int(y_pred[local_idx])
 
-        fold_row = {
-            "fold": fold_idx,
-            "n_train": len(train_idx),
-            "n_test": len(test_idx),
-            **fold_metrics,
-        }
-        per_fold_rows.append(fold_row)
+            group_value = None
+
+            if groups is not None:
+                group_value = str(groups[sample_index])
+
+            prediction_rows.append(
+                {
+                    "fold": fold_idx,
+                    "sample_index": int(sample_index),
+                    "group": group_value,
+                    "true_label": true_label,
+                    "true_class": CLASS_NAMES.get(true_label, str(true_label)),
+                    "predicted_label": predicted_label,
+                    "predicted_class": CLASS_NAMES.get(predicted_label, str(predicted_label)),
+                    "correct": int(true_label == predicted_label),
+                }
+            )
 
         all_true.extend(y_test.values)
         all_pred.extend(y_pred)
@@ -601,9 +773,9 @@ def evaluate_model_with_cv(
     all_pred = np.array(all_pred)
 
     overall_metrics = evaluate_predictions(all_true, all_pred)
-    per_fold_df = pd.DataFrame(per_fold_rows)
+    predictions_df = pd.DataFrame(prediction_rows)
 
-    return overall_metrics, per_fold_df, all_pred
+    return overall_metrics, predictions_df, all_pred, validation_method
 
 
 # =============================================================================
@@ -614,6 +786,7 @@ def save_confusion_matrix_plot(
     y_true: np.ndarray,
     y_pred: np.ndarray,
     source_name: str,
+    feature_set_name: str,
     model_name: str,
 ) -> None:
     cm = confusion_matrix(y_true, y_pred, labels=CLASS_LABELS)
@@ -622,7 +795,10 @@ def save_confusion_matrix_plot(
 
     image = ax.imshow(cm, cmap="Blues")
 
-    ax.set_title(f"Confusion matrix\n{source_name} — {model_name}")
+    ax.set_title(
+        f"Confusion matrix\n"
+        f"{source_name} — {feature_set_name} — {model_name}"
+    )
     ax.set_xlabel("Predicted class")
     ax.set_ylabel("True class")
 
@@ -637,6 +813,7 @@ def save_confusion_matrix_plot(
         for j in range(cm.shape[1]):
             value = cm[i, j]
             text_color = "white" if value > max_value / 2 else "black"
+
             ax.text(
                 j,
                 i,
@@ -655,8 +832,10 @@ def save_confusion_matrix_plot(
 
     filename = (
         f"confusion_matrix_{safe_filename(source_name)}_"
+        f"{safe_filename(feature_set_name)}_"
         f"{safe_filename(model_name)}.png"
     )
+
     output_path = OUTPUT_DIR / "confusion_matrices" / filename
 
     plt.tight_layout()
@@ -667,10 +846,16 @@ def save_confusion_matrix_plot(
 def save_metric_heatmap(
     results_df: pd.DataFrame,
     metric: str,
+    feature_set_name: str,
     filename: str,
     title: str,
 ) -> None:
-    pivot = results_df.pivot(
+    subset = results_df[results_df["feature_set"] == feature_set_name].copy()
+
+    if subset.empty:
+        return
+
+    pivot = subset.pivot(
         index="sensor_combination",
         columns="model",
         values=metric,
@@ -729,12 +914,13 @@ def save_best_model_barplot(
     metric: str = "macro_f1",
 ) -> None:
     plot_df = best_df.copy()
+    plot_df["label"] = plot_df["sensor_combination"] + " | " + plot_df["feature_set"]
     plot_df = plot_df.sort_values(metric, ascending=True)
 
-    fig, ax = plt.subplots(figsize=(12, 7))
+    fig, ax = plt.subplots(figsize=(13, 11))
 
     bars = ax.barh(
-        plot_df["sensor_combination"],
+        plot_df["label"],
         plot_df[metric],
         edgecolor="black",
         linewidth=0.8,
@@ -750,18 +936,18 @@ def save_best_model_barplot(
             bar.get_y() + bar.get_height() / 2,
             f"{value:.3f} | {model_name}",
             va="center",
-            fontsize=10,
+            fontsize=9,
             fontweight="bold",
         )
 
-    ax.set_title("Best model per sensor combination")
+    ax.set_title("Best model per sensor combination and feature set")
     ax.set_xlabel(metric.replace("_", " ").title())
-    ax.set_ylabel("Sensor combination")
+    ax.set_ylabel("Sensor combination | Feature set")
     ax.set_xlim(0, 1.05)
     ax.grid(axis="x", alpha=0.25)
     ax.grid(axis="y", visible=False)
 
-    output_path = OUTPUT_DIR / "plots" / f"best_model_per_combination_{metric}.png"
+    output_path = OUTPUT_DIR / "plots" / f"best_model_per_combination_and_feature_set_{metric}.png"
 
     plt.tight_layout()
     plt.savefig(output_path, bbox_inches="tight")
@@ -798,7 +984,7 @@ def save_model_ranking_barplot(
             fontweight="bold",
         )
 
-    ax.set_title("Average model performance across all sensor combinations")
+    ax.set_title("Average model performance across all experiments")
     ax.set_xlabel(f"Mean {metric.replace('_', ' ').title()}")
     ax.set_ylabel("Model")
     ax.set_xlim(0, 1.05)
@@ -812,45 +998,122 @@ def save_model_ranking_barplot(
     plt.close()
 
 
-def save_sensor_ranking_barplot(
+def save_feature_set_comparison_barplot(
     results_df: pd.DataFrame,
     metric: str = "macro_f1",
 ) -> None:
-    sensor_ranking = (
-        results_df.groupby("sensor_combination")[metric]
-        .mean()
-        .reindex(SOURCE_ORDER)
-        .sort_values(ascending=True)
-        .reset_index()
+    best_per_sensor_feature_set = (
+        results_df.sort_values(
+            by=["macro_f1", "accuracy", "balanced_accuracy"],
+            ascending=False,
+        )
+        .groupby(["sensor_combination", "feature_set"], as_index=False)
+        .first()
     )
 
-    fig, ax = plt.subplots(figsize=(12, 7))
+    best_per_sensor_feature_set["label"] = (
+        best_per_sensor_feature_set["sensor_combination"]
+        + " | "
+        + best_per_sensor_feature_set["feature_set"]
+    )
+
+    plot_df = best_per_sensor_feature_set.sort_values(metric, ascending=True)
+
+    fig, ax = plt.subplots(figsize=(13, 11))
 
     bars = ax.barh(
-        sensor_ranking["sensor_combination"],
-        sensor_ranking[metric],
+        plot_df["label"],
+        plot_df[metric],
         edgecolor="black",
         linewidth=0.8,
     )
 
-    for bar, value in zip(bars, sensor_ranking[metric]):
+    for bar, model_name, value in zip(
+        bars,
+        plot_df["model"],
+        plot_df[metric],
+    ):
         ax.text(
             value + 0.01,
             bar.get_y() + bar.get_height() / 2,
-            f"{value:.3f}",
+            f"{value:.3f} | {model_name}",
             va="center",
-            fontsize=10,
+            fontsize=9,
             fontweight="bold",
         )
 
-    ax.set_title("Average sensor-combination performance across all models")
-    ax.set_xlabel(f"Mean {metric.replace('_', ' ').title()}")
-    ax.set_ylabel("Sensor combination")
+    ax.set_title("Best performance: all features vs top 5 vs top 10")
+    ax.set_xlabel(metric.replace("_", " ").title())
+    ax.set_ylabel("Experiment")
     ax.set_xlim(0, 1.05)
     ax.grid(axis="x", alpha=0.25)
     ax.grid(axis="y", visible=False)
 
-    output_path = OUTPUT_DIR / "plots" / f"average_sensor_ranking_{metric}.png"
+    output_path = OUTPUT_DIR / "plots" / f"all_vs_top5_vs_top10_best_{metric}.png"
+
+    plt.tight_layout()
+    plt.savefig(output_path, bbox_inches="tight")
+    plt.close()
+
+
+def save_sensor_feature_set_matrix_plot(
+    best_df: pd.DataFrame,
+    metric: str = "macro_f1",
+) -> None:
+    """
+    Shows the best model score for each sensor combination and feature-set mode.
+    """
+
+    pivot = best_df.pivot(
+        index="sensor_combination",
+        columns="feature_set",
+        values=metric,
+    )
+
+    pivot = pivot.reindex(SOURCE_ORDER)
+    existing_columns = [col for col in FEATURE_SET_ORDER if col in pivot.columns]
+    pivot = pivot[existing_columns]
+
+    fig, ax = plt.subplots(figsize=(10, 7))
+
+    image = ax.imshow(pivot.values, cmap="viridis", vmin=0, vmax=1, aspect="auto")
+
+    ax.set_title(f"Best {metric.replace('_', ' ').title()} by sensor and feature set")
+    ax.set_xlabel("Feature set")
+    ax.set_ylabel("Sensor combination")
+
+    ax.set_xticks(np.arange(len(pivot.columns)))
+    ax.set_yticks(np.arange(len(pivot.index)))
+
+    ax.set_xticklabels(pivot.columns, rotation=25, ha="right")
+    ax.set_yticklabels(pivot.index)
+
+    for i in range(pivot.shape[0]):
+        for j in range(pivot.shape[1]):
+            value = pivot.values[i, j]
+
+            if pd.isna(value):
+                label = "NA"
+            else:
+                label = f"{value:.3f}"
+
+            ax.text(
+                j,
+                i,
+                label,
+                ha="center",
+                va="center",
+                color="white" if not pd.isna(value) and value < 0.65 else "black",
+                fontsize=10,
+                fontweight="bold",
+            )
+
+    cbar = fig.colorbar(image, ax=ax)
+    cbar.set_label(metric.replace("_", " ").title())
+
+    ax.grid(False)
+
+    output_path = OUTPUT_DIR / "plots" / f"best_{metric}_sensor_by_feature_set_matrix.png"
 
     plt.tight_layout()
     plt.savefig(output_path, bbox_inches="tight")
@@ -865,6 +1128,7 @@ def save_classification_report(
     y_true: np.ndarray,
     y_pred: np.ndarray,
     source_name: str,
+    feature_set_name: str,
     model_name: str,
 ) -> None:
     report_dict = classification_report(
@@ -886,6 +1150,7 @@ def save_classification_report(
 
     base_filename = (
         f"classification_report_{safe_filename(source_name)}_"
+        f"{safe_filename(feature_set_name)}_"
         f"{safe_filename(model_name)}"
     )
 
@@ -921,6 +1186,7 @@ def main() -> None:
     print("=" * 80)
 
     label_counts = df[LABEL_COLUMN].value_counts().sort_index()
+
     for label, count in label_counts.items():
         print(f"{label} - {CLASS_NAMES.get(int(label), 'Unknown')}: {count}") # type: ignore
 
@@ -936,6 +1202,8 @@ def main() -> None:
     for source in SOURCE_ORDER:
         print(f"{source}: {len(sensor_columns[source])} features")
 
+    selected_df = load_selected_features(SELECTED_FEATURES_PATH)
+
     print()
     print("=" * 80)
     print("Building models")
@@ -944,9 +1212,8 @@ def main() -> None:
     models = build_models()
 
     all_result_rows = []
-    all_fold_rows = []
+    all_prediction_tables = []
 
-    # Store predictions so we can create confusion matrices for the best models.
     prediction_store = {}
 
     for source_name in SOURCE_ORDER:
@@ -955,71 +1222,95 @@ def main() -> None:
         print(f"Evaluating sensor combination: {source_name}")
         print("=" * 80)
 
-        feature_columns = sensor_columns[source_name]
+        all_features_for_source = sensor_columns[source_name]
 
-        if len(feature_columns) == 0:
+        if len(all_features_for_source) == 0:
             print(f"[SKIP] No features found for {source_name}")
             continue
 
-        X, y = clean_feature_matrix(df, feature_columns)
+        feature_sets = build_feature_sets_for_source(
+            source_name=source_name,
+            all_features=all_features_for_source,
+            selected_df=selected_df,
+        )
 
-        print(f"Usable samples: {X.shape[0]}")
-        print(f"Usable features: {X.shape[1]}")
+        for feature_set_name, feature_columns in feature_sets.items():
+            print()
+            print("-" * 80)
+            print(f"Feature set: {feature_set_name}")
+            print("-" * 80)
 
-        for model_name, model in models.items():
-            print(f"  - Model: {model_name}")
+            X, y = clean_feature_matrix(df, feature_columns)
 
-            try:
-                metrics, per_fold_df, y_pred = evaluate_model_with_cv(
-                    model=model,
-                    X=X,
-                    y=y,
-                    groups=groups,
-                )
+            if X.shape[1] == 0:
+                print(f"[SKIP] No usable features for {source_name} | {feature_set_name}")
+                continue
 
-                result_row = {
-                    "sensor_combination": source_name,
-                    "model": model_name,
-                    "n_samples": X.shape[0],
-                    "n_features": X.shape[1],
-                    **metrics,
-                }
+            print(f"Usable samples: {X.shape[0]}")
+            print(f"Usable features: {X.shape[1]}")
 
-                all_result_rows.append(result_row)
+            for model_name, model in models.items():
+                print(f"  - Model: {model_name}")
 
-                per_fold_df.insert(0, "sensor_combination", source_name)
-                per_fold_df.insert(1, "model", model_name)
-                all_fold_rows.append(per_fold_df)
+                try:
+                    metrics, predictions_df, y_pred, validation_method = evaluate_model_with_loo(
+                        model=model,
+                        X=X,
+                        y=y,
+                        groups=groups,
+                    )
 
-                prediction_store[(source_name, model_name)] = {
-                    "y_true": y.values,
-                    "y_pred": y_pred,
-                }
+                    result_row = {
+                        "sensor_combination": source_name,
+                        "feature_set": feature_set_name,
+                        "model": model_name,
+                        "validation_method": validation_method,
+                        "n_samples": X.shape[0],
+                        "n_features": X.shape[1],
+                        **metrics,
+                    }
 
-                save_classification_report(
-                    y_true=y.values, # type: ignore
-                    y_pred=y_pred,
-                    source_name=source_name,
-                    model_name=model_name,
-                )
+                    all_result_rows.append(result_row)
 
-                print(
-                    f"    accuracy={metrics['accuracy']:.3f}, "
-                    f"macro_f1={metrics['macro_f1']:.3f}, "
-                    f"balanced_accuracy={metrics['balanced_accuracy']:.3f}"
-                )
+                    predictions_df.insert(0, "sensor_combination", source_name)
+                    predictions_df.insert(1, "feature_set", feature_set_name)
+                    predictions_df.insert(2, "model", model_name)
+                    predictions_df.insert(3, "validation_method", validation_method)
 
-            except Exception as exc:
-                print(f"    [ERROR] {source_name} | {model_name}: {exc}")
+                    all_prediction_tables.append(predictions_df)
+
+                    prediction_store[(source_name, feature_set_name, model_name)] = {
+                        "y_true": y.values,
+                        "y_pred": y_pred,
+                    }
+
+                    save_classification_report(
+                        y_true=y.values, # type: ignore
+                        y_pred=y_pred,
+                        source_name=source_name,
+                        feature_set_name=feature_set_name,
+                        model_name=model_name,
+                    )
+
+                    print(
+                        f"    accuracy={metrics['accuracy']:.3f}, "
+                        f"macro_f1={metrics['macro_f1']:.3f}, "
+                        f"balanced_accuracy={metrics['balanced_accuracy']:.3f}"
+                    )
+
+                except Exception as exc:
+                    print(
+                        f"    [ERROR] {source_name} | {feature_set_name} | "
+                        f"{model_name}: {exc}"
+                    )
 
     results_df = pd.DataFrame(all_result_rows)
 
     if results_df.empty:
         raise RuntimeError("No model results were generated. Check feature columns and labels.")
 
-    fold_results_df = pd.concat(all_fold_rows, ignore_index=True)
+    predictions_all_df = pd.concat(all_prediction_tables, ignore_index=True)
 
-    # Sort final table by macro F1 and accuracy.
     results_df = results_df.sort_values(
         by=["macro_f1", "accuracy", "balanced_accuracy"],
         ascending=False,
@@ -1028,22 +1319,19 @@ def main() -> None:
     final_results_path = OUTPUT_DIR / "final_model_comparison.csv"
     results_df.to_csv(final_results_path, index=False)
 
-    per_fold_path = OUTPUT_DIR / "per_fold_results.csv"
-    fold_results_df.to_csv(per_fold_path, index=False)
+    predictions_path = OUTPUT_DIR / "loo_predictions.csv"
+    predictions_all_df.to_csv(predictions_path, index=False)
 
     print()
     print("=" * 80)
-    print("Selecting best model per sensor combination")
+    print("Selecting best model per sensor combination and feature set")
     print("=" * 80)
 
     best_rows = []
 
-    for source_name in SOURCE_ORDER:
-        subset = results_df[results_df["sensor_combination"] == source_name]
+    grouped = results_df.groupby(["sensor_combination", "feature_set"], sort=False)
 
-        if subset.empty:
-            continue
-
+    for (source_name, feature_set_name), subset in grouped:
         best_row = subset.sort_values(
             by=["macro_f1", "accuracy", "balanced_accuracy"],
             ascending=False,
@@ -1051,7 +1339,12 @@ def main() -> None:
 
         best_rows.append(best_row)
 
-        key = (best_row["sensor_combination"], best_row["model"])
+        key = (
+            best_row["sensor_combination"],
+            best_row["feature_set"],
+            best_row["model"],
+        )
+
         y_true = prediction_store[key]["y_true"]
         y_pred = prediction_store[key]["y_pred"]
 
@@ -1059,11 +1352,12 @@ def main() -> None:
             y_true=y_true,
             y_pred=y_pred,
             source_name=best_row["sensor_combination"],
+            feature_set_name=best_row["feature_set"],
             model_name=best_row["model"],
         )
 
         print(
-            f"{best_row['sensor_combination']}: "
+            f"{best_row['sensor_combination']} | {best_row['feature_set']}: "
             f"{best_row['model']} | "
             f"accuracy={best_row['accuracy']:.3f}, "
             f"macro_f1={best_row['macro_f1']:.3f}"
@@ -1075,7 +1369,7 @@ def main() -> None:
         ascending=False,
     )
 
-    best_path = OUTPUT_DIR / "best_model_per_sensor_combination.csv"
+    best_path = OUTPUT_DIR / "best_model_per_sensor_combination_and_feature_set.csv"
     best_df.to_csv(best_path, index=False)
 
     print()
@@ -1083,26 +1377,35 @@ def main() -> None:
     print("Creating summary plots")
     print("=" * 80)
 
-    save_metric_heatmap(
-        results_df=results_df,
-        metric="accuracy",
-        filename="heatmap_accuracy_by_model_and_sensor.png",
-        title="Accuracy by model and sensor combination",
-    )
+    for feature_set_name in FEATURE_SET_ORDER:
+        if feature_set_name not in results_df["feature_set"].unique():
+            continue
 
-    save_metric_heatmap(
-        results_df=results_df,
-        metric="macro_f1",
-        filename="heatmap_macro_f1_by_model_and_sensor.png",
-        title="Macro F1-score by model and sensor combination",
-    )
+        safe_feature_set = safe_filename(feature_set_name)
 
-    save_metric_heatmap(
-        results_df=results_df,
-        metric="balanced_accuracy",
-        filename="heatmap_balanced_accuracy_by_model_and_sensor.png",
-        title="Balanced accuracy by model and sensor combination",
-    )
+        save_metric_heatmap(
+            results_df=results_df,
+            metric="accuracy",
+            feature_set_name=feature_set_name,
+            filename=f"heatmap_accuracy_{safe_feature_set}.png",
+            title=f"Accuracy by model and sensor combination — {feature_set_name}",
+        )
+
+        save_metric_heatmap(
+            results_df=results_df,
+            metric="macro_f1",
+            feature_set_name=feature_set_name,
+            filename=f"heatmap_macro_f1_{safe_feature_set}.png",
+            title=f"Macro F1-score by model and sensor combination — {feature_set_name}",
+        )
+
+        save_metric_heatmap(
+            results_df=results_df,
+            metric="balanced_accuracy",
+            feature_set_name=feature_set_name,
+            filename=f"heatmap_balanced_accuracy_{safe_feature_set}.png",
+            title=f"Balanced accuracy by model and sensor combination — {feature_set_name}",
+        )
 
     save_best_model_barplot(
         best_df=best_df,
@@ -1114,8 +1417,13 @@ def main() -> None:
         metric="macro_f1",
     )
 
-    save_sensor_ranking_barplot(
+    save_feature_set_comparison_barplot(
         results_df=results_df,
+        metric="macro_f1",
+    )
+
+    save_sensor_feature_set_matrix_plot(
+        best_df=best_df,
         metric="macro_f1",
     )
 
@@ -1125,10 +1433,11 @@ def main() -> None:
     print("=" * 80)
     print(f"[SAVED] Final results: {final_results_path}")
     print(f"[SAVED] Best models: {best_path}")
-    print(f"[SAVED] Per-fold results: {per_fold_path}")
+    print(f"[SAVED] Leave-one-out predictions: {predictions_path}")
     print(f"[SAVED] Plots: {OUTPUT_DIR / 'plots'}")
     print(f"[SAVED] Confusion matrices: {OUTPUT_DIR / 'confusion_matrices'}")
     print(f"[SAVED] Classification reports: {OUTPUT_DIR / 'classification_reports'}")
+    print(f"[SAVED] Selected feature lists: {OUTPUT_DIR / 'selected_feature_lists'}")
 
 
 if __name__ == "__main__":

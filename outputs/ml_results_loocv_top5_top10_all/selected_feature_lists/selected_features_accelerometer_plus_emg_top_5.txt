@@ -1,0 +1,5 @@
+accx_sdVal
+accx_rmsVal
+BFinter_waveformLength
+TAinter_harmonicRatio
+BFinter_cvVal

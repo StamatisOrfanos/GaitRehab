@@ -1,0 +1,9 @@
+                   precision    recall  f1-score   support
+
+      Healthy leg       0.56      0.63      0.59        30
+    Affected side       0.17      0.20      0.18        15
+Non-affected side       0.00      0.00      0.00        15
+
+         accuracy                           0.37        60
+        macro avg       0.24      0.28      0.26        60
+     weighted avg       0.32      0.37      0.34        60
