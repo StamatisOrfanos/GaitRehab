@@ -1,5 +1,0 @@
-gyroz_maxVal
-gyroz_varVal
-BFinter_cvVal
-gyroz_domAmp
-MGinter_cvVal

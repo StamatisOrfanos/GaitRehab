@@ -1,5 +1,0 @@
-RFinter_peakToPeak
-MGinter_cvVal
-BFinter_cvVal
-GMinter_psdAsymmetry
-TAinter_harmonicRatio

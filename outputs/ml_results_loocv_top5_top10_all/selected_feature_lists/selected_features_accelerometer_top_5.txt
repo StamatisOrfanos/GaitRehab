@@ -1,5 +1,0 @@
-accx_harmonicRatio
-accx_psdMean
-accx_meanVal
-accx_minVal
-accx_peakToPeak

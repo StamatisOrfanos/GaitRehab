@@ -12,17 +12,18 @@ Input:
 Optional input from feature-selection step:
     outputs/eda_plots/feature_selection/selected_features_for_classification.csv
 
-This script evaluates each sensor combination in three modes:
+This script evaluates each sensor combination in four modes:
     1. All features
     2. Top 5 selected features from RFE
     3. Top 10 selected features from RFE
+    4. Top 15 selected features from RFE
 
 Validation:
     - Leave-One-Subject-Out if subject groups can be inferred from ID
     - Otherwise row-level Leave-One-Out, with warning
 
 Outputs:
-    outputs/ml_results_loocv_top5_top10_all/
+    outputs/ml_results_loocv_top5_top10_top15_all/
         final_model_comparison.csv
         best_model_per_sensor_combination_and_feature_set.csv
         loo_predictions.csv
@@ -90,14 +91,14 @@ SELECTED_FEATURES_PATH = Path(
     "outputs/eda_plots/feature_selection/selected_features_for_classification.csv"
 )
 
-OUTPUT_DIR = Path("outputs/ml_results_loocv_top5_top10_all")
+OUTPUT_DIR = Path("outputs/ml_results_loocv_top5_top10_top15_all")
 
 ID_COLUMN = "ID"
 LABEL_COLUMN = "Label"
 
 RANDOM_STATE = 42
 
-SELECTED_FEATURE_COUNTS = [5, 10]
+SELECTED_FEATURE_COUNTS = [5, 10, 15]
 
 CLASS_NAMES = {
     0: "Healthy leg",
@@ -136,6 +137,7 @@ FEATURE_SET_ORDER = [
     "All features",
     "Top 5 selected features",
     "Top 10 selected features",
+    "Top 15 selected features",
 ]
 
 
@@ -917,7 +919,7 @@ def save_best_model_barplot(
     plot_df["label"] = plot_df["sensor_combination"] + " | " + plot_df["feature_set"]
     plot_df = plot_df.sort_values(metric, ascending=True)
 
-    fig, ax = plt.subplots(figsize=(13, 11))
+    fig, ax = plt.subplots(figsize=(13, 12))
 
     bars = ax.barh(
         plot_df["label"],
@@ -1019,7 +1021,7 @@ def save_feature_set_comparison_barplot(
 
     plot_df = best_per_sensor_feature_set.sort_values(metric, ascending=True)
 
-    fig, ax = plt.subplots(figsize=(13, 11))
+    fig, ax = plt.subplots(figsize=(13, 12))
 
     bars = ax.barh(
         plot_df["label"],
@@ -1042,14 +1044,14 @@ def save_feature_set_comparison_barplot(
             fontweight="bold",
         )
 
-    ax.set_title("Best performance: all features vs top 5 vs top 10")
+    ax.set_title("Best performance: all features vs top 5 vs top 10 vs top 15")
     ax.set_xlabel(metric.replace("_", " ").title())
     ax.set_ylabel("Experiment")
     ax.set_xlim(0, 1.05)
     ax.grid(axis="x", alpha=0.25)
     ax.grid(axis="y", visible=False)
 
-    output_path = OUTPUT_DIR / "plots" / f"all_vs_top5_vs_top10_best_{metric}.png"
+    output_path = OUTPUT_DIR / "plots" / f"all_vs_top5_vs_top10_vs_top15_best_{metric}.png"
 
     plt.tight_layout()
     plt.savefig(output_path, bbox_inches="tight")
@@ -1074,7 +1076,7 @@ def save_sensor_feature_set_matrix_plot(
     existing_columns = [col for col in FEATURE_SET_ORDER if col in pivot.columns]
     pivot = pivot[existing_columns]
 
-    fig, ax = plt.subplots(figsize=(10, 7))
+    fig, ax = plt.subplots(figsize=(12, 7))
 
     image = ax.imshow(pivot.values, cmap="viridis", vmin=0, vmax=1, aspect="auto")
 
