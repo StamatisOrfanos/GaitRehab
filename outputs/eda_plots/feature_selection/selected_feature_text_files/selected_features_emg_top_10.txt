@@ -1,0 +1,10 @@
+MGinter_cvVal
+RFinter_peakToPeak
+BFinter_cvVal
+BFinter_waveformLength
+TAinter_harmonicRatio
+GMinter_psdAsymmetry
+RFinter_minVal
+MGinter_psdAsymmetry
+TAinter_cvVal
+BFinter_psdAsymmetry

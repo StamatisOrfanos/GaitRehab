@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 import re
 import warnings
 from pathlib import Path
@@ -12,7 +11,8 @@ import matplotlib.pyplot as plt
 
 from sklearn.preprocessing import StandardScaler
 from sklearn.decomposition import PCA
-from sklearn.feature_selection import f_classif
+from sklearn.feature_selection import f_classif, RFE
+from sklearn.linear_model import LogisticRegression
 
 
 # =============================================================================
@@ -45,7 +45,23 @@ SENSOR_PREFIXES = {
     "All sensors": GYRO_PREFIXES + ACC_PREFIXES + EMG_PREFIXES,
 }
 
-SOURCE_ORDER = ["Gyroscope", "Accelerometer", "EMG", "Gyroscope + Accelerometer", "Gyroscope + EMG", "Accelerometer + EMG", "All sensors"]
+SOURCE_ORDER = [
+    "Gyroscope",
+    "Accelerometer",
+    "EMG",
+    "Gyroscope + Accelerometer",
+    "Gyroscope + EMG",
+    "Accelerometer + EMG",
+    "All sensors",
+]
+
+# Number of features to select with RFE.
+# The script automatically skips values larger than the available number of features.
+RFE_FEATURE_COUNTS = [5, 10, 15, 20, 30, 40, 50]
+
+# Top features to export from ANOVA and combined ranking.
+TOP_N_ANOVA_EXPORT = 50
+TOP_N_COMBINED_EXPORT = 50
 
 
 # =============================================================================
@@ -73,9 +89,9 @@ plt.rcParams.update(
 )
 
 CLASS_COLORS = {
-    0: "#2E7D32",  # green
-    1: "#C62828",  # red
-    2: "#1565C0",  # blue
+    0: "#2E7D32",
+    1: "#C62828",
+    2: "#1565C0",
 }
 
 
@@ -85,6 +101,10 @@ CLASS_COLORS = {
 
 def ensure_output_dir() -> None:
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    (OUTPUT_DIR / "top_features_by_source").mkdir(parents=True, exist_ok=True)
+    (OUTPUT_DIR / "feature_selection").mkdir(parents=True, exist_ok=True)
+    (OUTPUT_DIR / "feature_selection" / "rfe_selected_features").mkdir(parents=True, exist_ok=True)
+    (OUTPUT_DIR / "feature_selection" / "plots").mkdir(parents=True, exist_ok=True)
 
 
 def safe_filename(name: str) -> str:
@@ -101,7 +121,6 @@ def read_dataset(path: Path) -> pd.DataFrame:
             f"or change DATA_PATH."
         )
 
-    # sep=None handles comma, semicolon, and tab-separated CSVs more robustly.
     df = pd.read_csv(path, sep=None, engine="python")
 
     # Remove fully empty columns and common Excel-export blank columns.
@@ -113,7 +132,7 @@ def read_dataset(path: Path) -> pd.DataFrame:
 
     if LABEL_COLUMN not in df.columns:
         raise ValueError(
-            f"Expected label column '{LABEL_COLUMN}', but found columns:\n{df.columns.tolist()}" # type: ignore
+            f"Expected label column '{LABEL_COLUMN}', but found columns:\n{df.columns.tolist()}"
         )
 
     if ID_COLUMN not in df.columns:
@@ -122,11 +141,10 @@ def read_dataset(path: Path) -> pd.DataFrame:
             f"The script will continue without subject/sample ID plots."
         )
 
-    # Make labels numeric.
     df[LABEL_COLUMN] = pd.to_numeric(df[LABEL_COLUMN], errors="coerce").astype("Int64")
 
-    # Convert all non-ID/non-label columns to numeric where possible.
     metadata_columns = {ID_COLUMN, LABEL_COLUMN}
+
     for col in df.columns:
         if col not in metadata_columns:
             df[col] = pd.to_numeric(df[col], errors="coerce")
@@ -142,7 +160,7 @@ def get_feature_columns(df: pd.DataFrame, prefixes: List[str]) -> List[str]:
             continue
 
         for prefix in prefixes:
-            if col.startswith(prefix + "_"):
+            if str(col).startswith(prefix + "_"):
                 feature_columns.append(col)
                 break
 
@@ -167,13 +185,8 @@ def clean_feature_matrix(
 
     X = subset[feature_columns].copy()
 
-    # Replace infinite values.
     X = X.replace([np.inf, -np.inf], np.nan)
-
-    # Drop features that are entirely missing.
     X = X.dropna(axis=1, how="all")
-
-    # Median imputation for remaining missing values.
     X = X.fillna(X.median(numeric_only=True))
 
     # Drop constant columns.
@@ -195,6 +208,13 @@ def save_current_figure(filename: str) -> None:
     plt.close()
 
 
+def save_feature_selection_figure(filename: str) -> None:
+    output_path = OUTPUT_DIR / "feature_selection" / "plots" / filename
+    plt.tight_layout()
+    plt.savefig(output_path, bbox_inches="tight")
+    plt.close()
+
+
 # =============================================================================
 # General EDA plots
 # =============================================================================
@@ -206,7 +226,7 @@ def plot_class_distribution(df: pd.DataFrame) -> None:
     colors = [CLASS_COLORS.get(int(label), "#666666") for label in counts.index]
 
     fig, ax = plt.subplots(figsize=(8, 5))
-    bars = ax.bar(labels, counts.values, color=colors, edgecolor="black", linewidth=0.8) # type: ignore
+    bars = ax.bar(labels, counts.values, color=colors, edgecolor="black", linewidth=0.8)
 
     for bar in bars:
         height = bar.get_height()
@@ -295,7 +315,7 @@ def plot_missing_values_by_source(
 
 
 # =============================================================================
-# Source-specific plots
+# Source-specific EDA plots
 # =============================================================================
 
 def plot_pca_scatter(
@@ -319,7 +339,7 @@ def plot_pca_scatter(
 
     for label_id, class_name in CLASS_NAMES.items():
         mask = y.values == label_id
-        if mask.sum() == 0: # type: ignore
+        if mask.sum() == 0:
             continue
 
         ax.scatter(
@@ -353,7 +373,7 @@ def compute_anova_scores(
     X, y = clean_feature_matrix(df, feature_columns)
 
     if X.shape[1] == 0:
-        return pd.DataFrame(columns=["feature", "anova_f_score"])
+        return pd.DataFrame(columns=["feature", "anova_f_score", "p_value", "anova_rank"])
 
     X_scaled = standardize_matrix(X)
 
@@ -371,7 +391,8 @@ def compute_anova_scores(
 
     ranking = ranking.replace([np.inf, -np.inf], np.nan)
     ranking = ranking.dropna(subset=["anova_f_score"])
-    ranking = ranking.sort_values("anova_f_score", ascending=False)
+    ranking = ranking.sort_values("anova_f_score", ascending=False).reset_index(drop=True)
+    ranking["anova_rank"] = np.arange(1, len(ranking) + 1)
 
     return ranking
 
@@ -544,7 +565,6 @@ def plot_top_feature_boxplots(
         ax.grid(axis="y", alpha=0.25)
         ax.grid(axis="x", visible=False)
 
-    # Remove empty subplots.
     for idx in range(n_features, n_rows * n_cols):
         row = idx // n_cols
         col = idx % n_cols
@@ -562,13 +582,12 @@ def plot_correlation_heatmap(
     feature_columns: List[str],
     max_features: int = 25,
 ) -> None:
-    X, y = clean_feature_matrix(df, feature_columns)
+    X, _ = clean_feature_matrix(df, feature_columns)
 
     if X.shape[1] < 2:
         print(f"[SKIP] Correlation heatmap for {source_name}: fewer than 2 usable features.")
         return
 
-    # Select the highest-variance features to keep the heatmap readable.
     variances = X.var(axis=0).sort_values(ascending=False)
     selected_features = variances.head(max_features).index.tolist()
 
@@ -664,6 +683,420 @@ def plot_block_level_importance(
 
 
 # =============================================================================
+# Feature selection: RFE
+# =============================================================================
+
+def build_rfe_estimator() -> LogisticRegression:
+    """
+    Logistic regression is used here because RFE needs a model with coefficients
+    or feature importances.
+
+    The liblinear solver handles multiclass through one-vs-rest, which is fine
+    for feature ranking in this small tabular dataset.
+    """
+
+    return LogisticRegression(
+        penalty="l2",
+        solver="liblinear",
+        class_weight="balanced",
+        max_iter=5000,
+        random_state=42,
+    )
+
+
+def run_rfe_for_source(
+    df: pd.DataFrame,
+    source_name: str,
+    feature_columns: List[str],
+    n_features_to_select: int,
+) -> pd.DataFrame:
+    X, y = clean_feature_matrix(df, feature_columns)
+
+    if X.shape[1] == 0:
+        return pd.DataFrame()
+
+    n_features_to_select = min(n_features_to_select, X.shape[1])
+
+    X_scaled = standardize_matrix(X)
+
+    estimator = build_rfe_estimator()
+
+    rfe = RFE(
+        estimator=estimator,
+        n_features_to_select=n_features_to_select,
+        step=1,
+    )
+
+    rfe.fit(X_scaled, y)
+
+    selected_mask = rfe.support_
+    rfe_ranking = rfe.ranking_
+
+    # Fit the same estimator on the selected features to get coefficient magnitude.
+    selected_feature_names = X.columns[selected_mask].tolist()
+    selected_X = X_scaled[:, selected_mask]
+
+    selected_estimator = build_rfe_estimator()
+    selected_estimator.fit(selected_X, y)
+
+    coefficients = selected_estimator.coef_
+
+    if coefficients.ndim == 1:
+        importance = np.abs(coefficients)
+    else:
+        importance = np.mean(np.abs(coefficients), axis=0)
+
+    importance_map = {
+        feature: importance_value
+        for feature, importance_value in zip(selected_feature_names, importance)
+    }
+
+    result = pd.DataFrame(
+        {
+            "source": source_name,
+            "feature": X.columns,
+            "rfe_rank": rfe_ranking,
+            "rfe_selected": selected_mask,
+            "n_features_selected_target": n_features_to_select,
+            "selected_model_abs_coefficient_mean": [
+                importance_map.get(feature, np.nan) for feature in X.columns
+            ],
+        }
+    )
+
+    result = result.sort_values(
+        by=["rfe_rank", "selected_model_abs_coefficient_mean"],
+        ascending=[True, False],
+    ).reset_index(drop=True)
+
+    return result
+
+
+def plot_rfe_selected_features(
+    rfe_result: pd.DataFrame,
+    source_name: str,
+    n_features_to_select: int,
+) -> None:
+    selected = rfe_result[rfe_result["rfe_selected"]].copy()
+
+    if selected.empty:
+        return
+
+    selected = selected.sort_values(
+        "selected_model_abs_coefficient_mean",
+        ascending=True,
+    )
+
+    fig, ax = plt.subplots(figsize=(11, max(5, 0.35 * len(selected))))
+
+    bars = ax.barh(
+        selected["feature"],
+        selected["selected_model_abs_coefficient_mean"],
+        edgecolor="black",
+        linewidth=0.7,
+    )
+
+    for bar in bars:
+        width = bar.get_width()
+        ax.text(
+            width + selected["selected_model_abs_coefficient_mean"].max() * 0.01,
+            bar.get_y() + bar.get_height() / 2,
+            f"{width:.3f}",
+            va="center",
+            fontsize=9,
+        )
+
+    ax.set_title(
+        f"RFE-selected features: {source_name}\n"
+        f"Top {n_features_to_select} features"
+    )
+    ax.set_xlabel("Mean absolute logistic-regression coefficient")
+    ax.set_ylabel("Feature")
+    ax.grid(axis="x", alpha=0.25)
+    ax.grid(axis="y", visible=False)
+
+    filename = (
+        f"rfe_selected_features_{safe_filename(source_name)}_"
+        f"top_{n_features_to_select}.png"
+    )
+    save_feature_selection_figure(filename)
+
+
+def create_rfe_feature_selection_outputs(
+    df: pd.DataFrame,
+    sensor_columns: Dict[str, List[str]],
+) -> pd.DataFrame:
+    """
+    Runs RFE for every sensor source and every requested target feature count.
+
+    Exports:
+        - one CSV per source and feature-count
+        - one global long-format RFE table
+    """
+
+    all_rfe_results = []
+
+    output_dir = OUTPUT_DIR / "feature_selection" / "rfe_selected_features"
+
+    print()
+    print("=" * 80)
+    print("Running RFE feature selection")
+    print("=" * 80)
+
+    for source in SOURCE_ORDER:
+        columns = sensor_columns[source]
+
+        if len(columns) == 0:
+            print(f"[SKIP] RFE for {source}: no features found.")
+            continue
+
+        X, _ = clean_feature_matrix(df, columns)
+        usable_feature_count = X.shape[1]
+
+        print(f"{source}: {usable_feature_count} usable features")
+
+        valid_feature_counts = [
+            count for count in RFE_FEATURE_COUNTS
+            if count <= usable_feature_count
+        ]
+
+        if usable_feature_count not in valid_feature_counts:
+            valid_feature_counts.append(usable_feature_count)
+
+        valid_feature_counts = sorted(set(valid_feature_counts))
+
+        for feature_count in valid_feature_counts:
+            print(f"  - RFE selecting top {feature_count} features")
+
+            rfe_result = run_rfe_for_source(
+                df=df,
+                source_name=source,
+                feature_columns=columns,
+                n_features_to_select=feature_count,
+            )
+
+            if rfe_result.empty:
+                continue
+
+            output_path = (
+                output_dir /
+                f"rfe_{safe_filename(source)}_top_{feature_count}.csv"
+            )
+
+            rfe_result.to_csv(output_path, index=False)
+            print(f"    [SAVED] {output_path}")
+
+            plot_rfe_selected_features(
+                rfe_result=rfe_result,
+                source_name=source,
+                n_features_to_select=feature_count,
+            )
+
+            all_rfe_results.append(rfe_result)
+
+    if not all_rfe_results:
+        return pd.DataFrame()
+
+    all_rfe_df = pd.concat(all_rfe_results, ignore_index=True)
+
+    all_rfe_path = OUTPUT_DIR / "feature_selection" / "all_rfe_feature_selection_results.csv"
+    all_rfe_df.to_csv(all_rfe_path, index=False)
+
+    print(f"[SAVED] {all_rfe_path}")
+
+    return all_rfe_df
+
+
+def create_combined_feature_ranking_outputs(
+    df: pd.DataFrame,
+    sensor_columns: Dict[str, List[str]],
+    all_rfe_df: pd.DataFrame,
+) -> None:
+    """
+    Creates combined ANOVA + RFE ranking files.
+
+    The combined score is simple and interpretable:
+        combined_rank_score = anova_rank + rfe_rank
+
+    Lower combined_rank_score is better.
+    """
+
+    output_dir = OUTPUT_DIR / "feature_selection"
+
+    combined_tables = []
+
+    print()
+    print("=" * 80)
+    print("Creating combined ANOVA + RFE rankings")
+    print("=" * 80)
+
+    if all_rfe_df.empty:
+        print("[SKIP] No RFE results available.")
+        return
+
+    for source in SOURCE_ORDER:
+        columns = sensor_columns[source]
+
+        if len(columns) == 0:
+            continue
+
+        anova_df = compute_anova_scores(df, columns)
+
+        if anova_df.empty:
+            continue
+
+        # Use the smallest available RFE count for this source as the strict RFE ranking.
+        source_rfe = all_rfe_df[all_rfe_df["source"] == source].copy()
+
+        if source_rfe.empty:
+            continue
+
+        smallest_target = source_rfe["n_features_selected_target"].min()
+
+        source_rfe = source_rfe[
+            source_rfe["n_features_selected_target"] == smallest_target
+        ].copy()
+
+        combined = anova_df.merge(
+            source_rfe[
+                [
+                    "source",
+                    "feature",
+                    "rfe_rank",
+                    "rfe_selected",
+                    "n_features_selected_target",
+                    "selected_model_abs_coefficient_mean",
+                ]
+            ],
+            on="feature",
+            how="left",
+        )
+
+        combined["source"] = source
+        combined["combined_rank_score"] = combined["anova_rank"] + combined["rfe_rank"]
+        combined["combined_rank"] = combined["combined_rank_score"].rank(
+            method="dense",
+            ascending=True,
+        ).astype(int)
+
+        combined = combined.sort_values(
+            by=[
+                "combined_rank",
+                "anova_rank",
+                "rfe_rank",
+                "anova_f_score",
+            ],
+            ascending=[True, True, True, False],
+        ).reset_index(drop=True)
+
+        combined = combined[
+            [
+                "source",
+                "feature",
+                "combined_rank",
+                "combined_rank_score",
+                "anova_rank",
+                "anova_f_score",
+                "p_value",
+                "rfe_rank",
+                "rfe_selected",
+                "n_features_selected_target",
+                "selected_model_abs_coefficient_mean",
+            ]
+        ]
+
+        source_path = (
+            output_dir /
+            f"combined_feature_ranking_{safe_filename(source)}.csv"
+        )
+
+        combined.to_csv(source_path, index=False)
+        print(f"[SAVED] {source_path}")
+
+        top_path = (
+            output_dir /
+            f"top_{TOP_N_COMBINED_EXPORT}_combined_features_{safe_filename(source)}.csv"
+        )
+
+        combined.head(TOP_N_COMBINED_EXPORT).to_csv(top_path, index=False)
+        print(f"[SAVED] {top_path}")
+
+        combined_tables.append(combined)
+
+    if combined_tables:
+        global_combined = pd.concat(combined_tables, ignore_index=True)
+
+        global_path = output_dir / "all_combined_feature_rankings.csv"
+        global_combined.to_csv(global_path, index=False)
+
+        print(f"[SAVED] {global_path}")
+
+
+def create_final_selected_feature_lists(
+    all_rfe_df: pd.DataFrame,
+) -> None:
+    """
+    Creates small, practical selected-feature-list CSVs for later classification.
+
+    Output format:
+        source
+        n_features
+        feature
+
+    This is easy to read from another classification script.
+    """
+
+    if all_rfe_df.empty:
+        print("[SKIP] No RFE results available for final selected feature lists.")
+        return
+
+    selected = all_rfe_df[all_rfe_df["rfe_selected"]].copy()
+
+    selected = selected.rename(
+        columns={
+            "n_features_selected_target": "n_features",
+        }
+    )
+
+    selected = selected[
+        [
+            "source",
+            "n_features",
+            "feature",
+            "rfe_rank",
+            "selected_model_abs_coefficient_mean",
+        ]
+    ].sort_values(
+        by=[
+            "source",
+            "n_features",
+            "rfe_rank",
+            "selected_model_abs_coefficient_mean",
+        ],
+        ascending=[True, True, True, False],
+    )
+
+    output_path = OUTPUT_DIR / "feature_selection" / "selected_features_for_classification.csv"
+    selected.to_csv(output_path, index=False)
+
+    print(f"[SAVED] {output_path}")
+
+    # Also save one simple text file per source/count.
+    text_dir = OUTPUT_DIR / "feature_selection" / "selected_feature_text_files"
+    text_dir.mkdir(parents=True, exist_ok=True)
+
+    for (source, n_features), group in selected.groupby(["source", "n_features"]):
+        filename = f"selected_features_{safe_filename(source)}_top_{n_features}.txt"
+        output_txt_path = text_dir / filename
+
+        with open(output_txt_path, "w", encoding="utf-8") as file:
+            for feature in group["feature"].tolist():
+                file.write(f"{feature}\n")
+
+        print(f"[SAVED] {output_txt_path}")
+
+
+# =============================================================================
 # Summary tables
 # =============================================================================
 
@@ -703,10 +1136,13 @@ def create_feature_summary_table(
     return pd.DataFrame(rows)
 
 
-def create_top_feature_tables(df: pd.DataFrame, sensor_columns: Dict[str, List[str]], top_n: int = 30) -> None:
+def create_top_feature_tables(
+    df: pd.DataFrame,
+    sensor_columns: Dict[str, List[str]],
+    top_n: int = 30,
+) -> None:
     """
     Saves the top ANOVA-ranked features for each sensor source as separate CSV files.
-    This avoids requiring openpyxl or any Excel-specific dependency.
     """
 
     top_features_dir = OUTPUT_DIR / "top_features_by_source"
@@ -731,6 +1167,7 @@ def create_top_feature_tables(df: pd.DataFrame, sensor_columns: Dict[str, List[s
 
         print(f"[SAVED] {output_path}")
 
+
 # =============================================================================
 # Main pipeline
 # =============================================================================
@@ -753,6 +1190,7 @@ def main() -> None:
     print("=" * 80)
 
     label_counts = df[LABEL_COLUMN].value_counts().sort_index()
+
     for label, count in label_counts.items():
         print(f"{label} - {CLASS_NAMES.get(int(label), 'Unknown')}: {count}") # type: ignore
 
@@ -769,20 +1207,33 @@ def main() -> None:
 
     print()
 
-    # General plots.
+    # -------------------------------------------------------------------------
+    # General EDA plots
+    # -------------------------------------------------------------------------
+
     plot_class_distribution(df)
     plot_feature_counts(sensor_columns)
     plot_missing_values_by_source(df, sensor_columns)
 
-    # Save summary tables.
+    # -------------------------------------------------------------------------
+    # Summary tables
+    # -------------------------------------------------------------------------
+
     feature_summary = create_feature_summary_table(df, sensor_columns)
     feature_summary_path = OUTPUT_DIR / "eda_feature_summary.csv"
     feature_summary.to_csv(feature_summary_path, index=False)
     print(f"[SAVED] {feature_summary_path}")
 
-    create_top_feature_tables(df, sensor_columns, top_n=30)
+    create_top_feature_tables(
+        df=df,
+        sensor_columns=sensor_columns,
+        top_n=TOP_N_ANOVA_EXPORT,
+    )
 
-    # Source-specific plots.
+    # -------------------------------------------------------------------------
+    # Source-specific EDA plots
+    # -------------------------------------------------------------------------
+
     for source in SOURCE_ORDER:
         print("=" * 80)
         print(f"Creating EDA plots for: {source}")
@@ -837,11 +1288,31 @@ def main() -> None:
             prefixes=prefixes,
         )
 
+    # -------------------------------------------------------------------------
+    # Feature selection
+    # -------------------------------------------------------------------------
+
+    all_rfe_df = create_rfe_feature_selection_outputs(
+        df=df,
+        sensor_columns=sensor_columns,
+    )
+
+    create_combined_feature_ranking_outputs(
+        df=df,
+        sensor_columns=sensor_columns,
+        all_rfe_df=all_rfe_df,
+    )
+
+    create_final_selected_feature_lists(
+        all_rfe_df=all_rfe_df,
+    )
+
     print()
     print("=" * 80)
-    print("EDA completed")
+    print("EDA + feature selection completed")
     print("=" * 80)
-    print(f"Plots saved in: {OUTPUT_DIR.resolve()}")
+    print(f"Main output folder: {OUTPUT_DIR.resolve()}")
+    print(f"Feature-selection folder: {(OUTPUT_DIR / 'feature_selection').resolve()}")
 
 
 if __name__ == "__main__":

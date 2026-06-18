@@ -1,0 +1,15 @@
+BFinter_cvVal
+BFinter_waveformLength
+accz_meanVal
+MGinter_cvVal
+RFinter_minVal
+accx_rmsVal
+accx_meanVal
+MGinter_psdAsymmetry
+TAinter_harmonicRatio
+accx_sdVal
+accz_rmsVal
+GMinter_psdAsymmetry
+accx_varVal
+MGinter_minVal
+PLinter_harmonicRatio

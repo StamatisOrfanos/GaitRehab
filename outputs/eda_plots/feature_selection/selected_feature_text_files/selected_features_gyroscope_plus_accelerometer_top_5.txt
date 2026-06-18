@@ -1,0 +1,5 @@
+gyroz_maxVal
+gyroz_varVal
+gyroz_psdMean
+gyroz_cvVal
+gyroz_domAmp

@@ -1,0 +1,15 @@
+MGinter_cvVal
+gyroz_maxVal
+GMinter_psdAsymmetry
+BFinter_logDetector
+gyroz_domAmp
+gyroy_minVal
+MGinter_psdAsymmetry
+gyroz_cvVal
+gyrox_domFreq
+gyrox_cvVal
+BFinter_cvVal
+TAinter_harmonicRatio
+gyroz_varVal
+gyroz_psdMean
+PLinter_cvVal

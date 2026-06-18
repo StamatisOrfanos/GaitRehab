@@ -1,0 +1,15 @@
+gyroz_maxVal
+gyroz_peakToPeak
+accz_meanVal
+gyroz_domAmp
+gyrox_cvVal
+gyrox_specEntropy
+accy_harmonicRatio
+gyroz_varVal
+gyroz_cvVal
+gyroz_psdMean
+accz_rmsVal
+gyroy_minVal
+gyroz_meanFreq
+gyroz_minVal
+accx_minVal
