@@ -1,6 +1,0 @@
-{
-    "ignore": [
-        "feature_extraction.py",
-        "gait_detection.ipynb"
-    ],
-}
