@@ -19,14 +19,18 @@ This script evaluates each sensor combination in four modes:
     4. Top 15 selected features from RFE
 
 Validation:
-    - Leave-One-Subject-Out if subject groups can be inferred from ID
-    - Otherwise row-level Leave-One-Out, with warning
+    - Strict Leave-One-Subject-Out cross-validation.
+    - Each fold leaves out one subject group entirely.
+    - The subject group is inferred from the ID column.
+    - If subject groups cannot be inferred correctly, the script stops with an error.
+    - The script does not fall back to row-level Leave-One-Out, because that could leak
+      information between paired samples from the same subject.
 
 Outputs:
-    outputs/ml_results_loocv_top5_top10_top15_all/
+    outputs/ml_results_loso_top5_top10_top15_all/
         final_model_comparison.csv
         best_model_per_sensor_combination_and_feature_set.csv
-        loo_predictions.csv
+        loso_predictions.csv
         classification_reports/
         confusion_matrices/
         plots/
@@ -91,7 +95,7 @@ SELECTED_FEATURES_PATH = Path(
     "outputs/eda_plots/feature_selection/selected_features_for_classification.csv"
 )
 
-OUTPUT_DIR = Path("outputs/ml_results_loocv_top5_top10_top15_all")
+OUTPUT_DIR = Path("outputs/ml_results_loso_top5_top10_top15_all")
 
 ID_COLUMN = "ID"
 LABEL_COLUMN = "Label"
@@ -1321,7 +1325,7 @@ def main() -> None:
     final_results_path = OUTPUT_DIR / "final_model_comparison.csv"
     results_df.to_csv(final_results_path, index=False)
 
-    predictions_path = OUTPUT_DIR / "loo_predictions.csv"
+    predictions_path = OUTPUT_DIR / "loso_predictions.csv"
     predictions_all_df.to_csv(predictions_path, index=False)
 
     print()
@@ -1435,7 +1439,7 @@ def main() -> None:
     print("=" * 80)
     print(f"[SAVED] Final results: {final_results_path}")
     print(f"[SAVED] Best models: {best_path}")
-    print(f"[SAVED] Leave-one-out predictions: {predictions_path}")
+    print(f"[SAVED] Leave-one-subject-out predictions: {predictions_path}")
     print(f"[SAVED] Plots: {OUTPUT_DIR / 'plots'}")
     print(f"[SAVED] Confusion matrices: {OUTPUT_DIR / 'confusion_matrices'}")
     print(f"[SAVED] Classification reports: {OUTPUT_DIR / 'classification_reports'}")

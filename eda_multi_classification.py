@@ -132,7 +132,7 @@ def read_dataset(path: Path) -> pd.DataFrame:
 
     if LABEL_COLUMN not in df.columns:
         raise ValueError(
-            f"Expected label column '{LABEL_COLUMN}', but found columns:\n{df.columns.tolist()}"
+            f"Expected label column '{LABEL_COLUMN}', but found columns:\n{df.columns.tolist()}" # type: ignore
         )
 
     if ID_COLUMN not in df.columns:
@@ -226,7 +226,7 @@ def plot_class_distribution(df: pd.DataFrame) -> None:
     colors = [CLASS_COLORS.get(int(label), "#666666") for label in counts.index]
 
     fig, ax = plt.subplots(figsize=(8, 5))
-    bars = ax.bar(labels, counts.values, color=colors, edgecolor="black", linewidth=0.8)
+    bars = ax.bar(labels, counts.values, color=colors, edgecolor="black", linewidth=0.8) # type: ignore
 
     for bar in bars:
         height = bar.get_height()
@@ -339,7 +339,7 @@ def plot_pca_scatter(
 
     for label_id, class_name in CLASS_NAMES.items():
         mask = y.values == label_id
-        if mask.sum() == 0:
+        if mask.sum() == 0: # type: ignore
             continue
 
         ax.scatter(

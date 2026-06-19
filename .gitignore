@@ -56,3 +56,5 @@ latexmkrc
 
 # Overleaf project zip exports
 *.zip
+
+/outputs
