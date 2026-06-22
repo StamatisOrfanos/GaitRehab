@@ -1,3 +1,34 @@
+"""
+EDA and feature-selection script for 3-class gait classification.
+
+Classes:
+    0 = Healthy leg
+    1 = Affected side
+    2 = Non-affected side
+
+Input:
+    data.csv
+
+This version is adapted for the updated dataset format:
+    - Semicolon-separated CSV files are supported.
+    - Decimal-comma numeric values are converted correctly.
+    - Known PL muscle typo columns are normalized:
+          PLLinter_* -> PLinter_*
+    - The new ID structure is checked explicitly:
+          IDs 1-15  = healthy subjects
+          IDs 16-30 = stroke subjects
+    - RFE selected-feature files are exported for top 5, 10, and 15 features
+      and additional feature counts configured below.
+
+Outputs:
+    outputs/eda_plots/
+        eda_feature_summary.csv
+        subject_id_summary.csv
+        top_features_by_source/
+        feature_selection/
+        *.png EDA plots
+"""
+
 from __future__ import annotations
 
 import re
@@ -114,6 +145,80 @@ def safe_filename(name: str) -> str:
     return name.strip("_")
 
 
+def parse_numeric_column(series: pd.Series) -> pd.Series:
+    """
+    Converts numeric columns robustly.
+
+    Handles:
+        - Standard decimal point format: 1.234
+        - Decimal comma format: 1,234
+        - Spaces or non-breaking spaces inside values
+    """
+
+    if pd.api.types.is_numeric_dtype(series):
+        return series
+
+    cleaned = series.astype(str).str.strip()
+    cleaned = cleaned.str.replace("\u00a0", "", regex=False)
+    cleaned = cleaned.str.replace(" ", "", regex=False)
+    cleaned = cleaned.str.replace(",", ".", regex=False)
+
+    cleaned = cleaned.replace(
+        {
+            "": np.nan,
+            "nan": np.nan,
+            "None": np.nan,
+            "NaN": np.nan,
+            "<NA>": np.nan,
+        }
+    )
+
+    return pd.to_numeric(cleaned, errors="coerce")
+
+
+def normalize_column_names(columns: List[str]) -> List[str]:
+    """
+    Normalizes known column-name inconsistencies in the updated dataset.
+
+    In the updated file, three PL-muscle columns may appear as PLLinter_* while
+    the rest of the PL muscle features use PLinter_*.
+    """
+
+    normalized_columns = []
+
+    for column in columns:
+        clean_column = str(column).strip()
+        clean_column = clean_column.replace("PLLinter_", "PLinter_")
+        normalized_columns.append(clean_column)
+
+    return normalized_columns
+
+
+def merge_duplicate_columns_after_normalization(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    If normalization creates duplicate column names, merge them safely.
+
+    The first non-null value across duplicate columns is kept. This is mainly a
+    defensive guard in case a future dataset contains both PLLinter_* and
+    PLinter_* versions of the same feature.
+    """
+
+    if not df.columns.duplicated().any():
+        return df
+
+    merged = pd.DataFrame(index=df.index)
+
+    for column in dict.fromkeys(df.columns):
+        duplicated = df.loc[:, df.columns == column]
+
+        if duplicated.shape[1] == 1:
+            merged[column] = duplicated.iloc[:, 0]
+        else:
+            merged[column] = duplicated.bfill(axis=1).iloc[:, 0]
+
+    return merged
+
+
 def read_dataset(path: Path) -> pd.DataFrame:
     if not path.exists():
         raise FileNotFoundError(
@@ -121,36 +226,46 @@ def read_dataset(path: Path) -> pd.DataFrame:
             f"or change DATA_PATH."
         )
 
+    # sep=None handles comma, semicolon, and tab-separated CSVs more robustly.
     df = pd.read_csv(path, sep=None, engine="python")
 
     # Remove fully empty columns and common Excel-export blank columns.
     df = df.dropna(axis=1, how="all")
     df = df.loc[:, ~df.columns.astype(str).str.startswith("Unnamed")]
 
-    # Clean column names.
-    df.columns = [str(col).strip() for col in df.columns]
+    # Clean and normalize column names.
+    df.columns = normalize_column_names(list(df.columns))
+    df = merge_duplicate_columns_after_normalization(df)
 
     if LABEL_COLUMN not in df.columns:
         raise ValueError(
-            f"Expected label column '{LABEL_COLUMN}', but found columns:\n{df.columns.tolist()}" # type: ignore
+            f"Expected label column '{LABEL_COLUMN}', but found columns:\n{df.columns.tolist()}"
         )
 
     if ID_COLUMN not in df.columns:
         warnings.warn(
             f"Expected ID column '{ID_COLUMN}' was not found. "
-            f"The script will continue without subject/sample ID plots."
+            f"The script will continue without subject/sample ID diagnostics."
         )
 
-    df[LABEL_COLUMN] = pd.to_numeric(df[LABEL_COLUMN], errors="coerce").astype("Int64")
+    # Make labels numeric.
+    df[LABEL_COLUMN] = parse_numeric_column(df[LABEL_COLUMN]).astype("Int64")
+
+    # Keep ID numeric when possible, but do not force it to int if future IDs use strings.
+    if ID_COLUMN in df.columns:
+        parsed_id = parse_numeric_column(df[ID_COLUMN])
+        if parsed_id.notna().all():
+            df[ID_COLUMN] = parsed_id.astype(int)
+        else:
+            df[ID_COLUMN] = df[ID_COLUMN].astype(str).str.strip()
 
     metadata_columns = {ID_COLUMN, LABEL_COLUMN}
 
     for col in df.columns:
         if col not in metadata_columns:
-            df[col] = pd.to_numeric(df[col], errors="coerce")
+            df[col] = parse_numeric_column(df[col])
 
     return df
-
 
 def get_feature_columns(df: pd.DataFrame, prefixes: List[str]) -> List[str]:
     feature_columns = []
@@ -1097,6 +1212,105 @@ def create_final_selected_feature_lists(
 
 
 # =============================================================================
+# Subject / ID diagnostics
+# =============================================================================
+
+def create_subject_id_summary_table(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Creates a subject-level summary from the ID column.
+
+    For the updated dataset, the expected structure is:
+        IDs 1-15  -> healthy subjects, two healthy rows each
+        IDs 16-30 -> stroke subjects, one affected and one non-affected row each
+    """
+
+    if ID_COLUMN not in df.columns:
+        return pd.DataFrame()
+
+    rows = []
+
+    for subject_id, group in df.groupby(ID_COLUMN):
+        label_counts = group[LABEL_COLUMN].value_counts().sort_index().to_dict()
+
+        rows.append(
+            {
+                "subject_id": subject_id,
+                "n_rows": len(group),
+                "n_healthy_label_0": int(label_counts.get(0, 0)),
+                "n_affected_label_1": int(label_counts.get(1, 0)),
+                "n_non_affected_label_2": int(label_counts.get(2, 0)),
+                "label_pattern": ",".join(str(int(value)) for value in group[LABEL_COLUMN].tolist()),
+            }
+        )
+
+    subject_summary = pd.DataFrame(rows)
+
+    if not subject_summary.empty:
+        subject_summary = subject_summary.sort_values("subject_id").reset_index(drop=True)
+
+    return subject_summary
+
+
+def validate_updated_id_structure(df: pd.DataFrame) -> None:
+    """
+    Prints warnings if the updated 30-subject ID structure is not present.
+    """
+
+    if ID_COLUMN not in df.columns:
+        print("[WARNING] ID column missing. Cannot validate subject structure.")
+        return
+
+    subject_summary = create_subject_id_summary_table(df)
+
+    if subject_summary.empty:
+        print("[WARNING] Subject summary is empty.")
+        return
+
+    unique_subjects = subject_summary["subject_id"].nunique()
+    print()
+    print("=" * 80)
+    print("Subject / ID diagnostics")
+    print("=" * 80)
+    print(f"Unique subject IDs: {unique_subjects}")
+    print("Rows per subject distribution:")
+    print(subject_summary["n_rows"].value_counts().sort_index().to_string())
+
+    expected_subject_count = 30
+
+    if unique_subjects != expected_subject_count:
+        print()
+        print("[WARNING]")
+        print(
+            f"Expected {expected_subject_count} unique subject IDs for the updated dataset, "
+            f"but found {unique_subjects}."
+        )
+
+    healthy_subjects = subject_summary[
+        (subject_summary["n_healthy_label_0"] == 2)
+        & (subject_summary["n_affected_label_1"] == 0)
+        & (subject_summary["n_non_affected_label_2"] == 0)
+    ]
+
+    stroke_subjects = subject_summary[
+        (subject_summary["n_healthy_label_0"] == 0)
+        & (subject_summary["n_affected_label_1"] == 1)
+        & (subject_summary["n_non_affected_label_2"] == 1)
+    ]
+
+    print(f"Healthy-like subjects with two label-0 rows: {len(healthy_subjects)}")
+    print(f"Stroke-like subjects with one label-1 and one label-2 row: {len(stroke_subjects)}")
+
+    unexpected = subject_summary.drop(
+        index=healthy_subjects.index.union(stroke_subjects.index)
+    )
+
+    if not unexpected.empty:
+        print()
+        print("[WARNING] Unexpected subject label patterns found:")
+        print(unexpected.to_string(index=False))
+
+
+# =============================================================================
 # Summary tables
 # =============================================================================
 
@@ -1195,6 +1409,14 @@ def main() -> None:
         print(f"{label} - {CLASS_NAMES.get(int(label), 'Unknown')}: {count}") # type: ignore
 
     print()
+
+    validate_updated_id_structure(df)
+
+    subject_summary = create_subject_id_summary_table(df)
+    if not subject_summary.empty:
+        subject_summary_path = OUTPUT_DIR / "subject_id_summary.csv"
+        subject_summary.to_csv(subject_summary_path, index=False)
+        print(f"[SAVED] {subject_summary_path}")
 
     sensor_columns = get_all_sensor_columns(df)
 

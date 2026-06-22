@@ -58,3 +58,5 @@ latexmkrc
 *.zip
 
 /outputs
+
+/report

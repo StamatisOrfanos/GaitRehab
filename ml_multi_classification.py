@@ -19,18 +19,14 @@ This script evaluates each sensor combination in four modes:
     4. Top 15 selected features from RFE
 
 Validation:
-    - Strict Leave-One-Subject-Out cross-validation.
-    - Each fold leaves out one subject group entirely.
-    - The subject group is inferred from the ID column.
-    - If subject groups cannot be inferred correctly, the script stops with an error.
-    - The script does not fall back to row-level Leave-One-Out, because that could leak
-      information between paired samples from the same subject.
+    - Leave-One-Subject-Out if subject groups can be inferred from ID
+    - Otherwise row-level Leave-One-Out, with warning
 
 Outputs:
     outputs/ml_results_loso_top5_top10_top15_all/
         final_model_comparison.csv
         best_model_per_sensor_combination_and_feature_set.csv
-        loso_predictions.csv
+        loo_predictions.csv
         classification_reports/
         confusion_matrices/
         plots/
@@ -62,7 +58,7 @@ from sklearn.base import clone
 from sklearn.impute import SimpleImputer
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
-from sklearn.model_selection import LeaveOneOut, LeaveOneGroupOut
+from sklearn.model_selection import LeaveOneGroupOut
 from sklearn.metrics import (
     accuracy_score,
     balanced_accuracy_score,
@@ -194,6 +190,40 @@ def safe_filename(name: str) -> str:
     return name.strip("_")
 
 
+def parse_numeric_column(series: pd.Series) -> pd.Series:
+    """
+    Converts numeric columns robustly.
+
+    Handles:
+        1. Standard decimal point format: 1.234
+        2. Decimal comma format: 1,234
+        3. Spaces or non-breaking spaces inside values
+
+    This is needed because the new dataset is semicolon-separated and uses
+    decimal commas in the feature values.
+    """
+
+    if pd.api.types.is_numeric_dtype(series):
+        return series
+
+    cleaned = series.astype(str).str.strip()
+    cleaned = cleaned.str.replace("\u00a0", "", regex=False)
+    cleaned = cleaned.str.replace(" ", "", regex=False)
+    cleaned = cleaned.str.replace(",", ".", regex=False)
+
+    cleaned = cleaned.replace(
+        {
+            "": np.nan,
+            "nan": np.nan,
+            "None": np.nan,
+            "NaN": np.nan,
+            "<NA>": np.nan,
+        }
+    )
+
+    return pd.to_numeric(cleaned, errors="coerce")
+
+
 def read_dataset(path: Path) -> pd.DataFrame:
     if not path.exists():
         raise FileNotFoundError(
@@ -201,6 +231,8 @@ def read_dataset(path: Path) -> pd.DataFrame:
             f"or change DATA_PATH."
         )
 
+    # sep=None makes the script robust to comma, semicolon, or tab-separated files.
+    # The new dataset is semicolon-separated and uses decimal commas.
     df = pd.read_csv(path, sep=None, engine="python")
 
     # Remove fully empty columns and Excel-export blank columns.
@@ -210,33 +242,46 @@ def read_dataset(path: Path) -> pd.DataFrame:
     # Clean column names.
     df.columns = [str(col).strip() for col in df.columns]
 
+    # Normalize known column-name inconsistency in the new dataset.
+    # Example:
+    #   PLLinter_iEMG -> PLinter_iEMG
+    #   PLLinter_zeroCrossing -> PLinter_zeroCrossing
+    #   PLLinter_slopeSignChange -> PLinter_slopeSignChange
+    df.columns = [
+        col.replace("PLLinter_", "PLinter_")
+        for col in df.columns
+    ]
+
     if LABEL_COLUMN not in df.columns:
         raise ValueError(
-            f"Expected label column '{LABEL_COLUMN}', but found:\n{df.columns.tolist()}" # type: ignore
+            f"Expected label column '{LABEL_COLUMN}', but found:\n{df.columns.tolist()}"
         )
 
     if ID_COLUMN not in df.columns:
-        warnings.warn(
-            f"Expected ID column '{ID_COLUMN}' was not found. "
-            f"Leave-One-Subject-Out will not be possible."
+        raise ValueError(
+            f"Expected ID column '{ID_COLUMN}', but it was not found. "
+            "Strict LOSO validation requires a subject ID column."
         )
 
     # Make labels numeric.
-    df[LABEL_COLUMN] = pd.to_numeric(df[LABEL_COLUMN], errors="coerce")
+    df[LABEL_COLUMN] = parse_numeric_column(df[LABEL_COLUMN])
 
     # Drop rows without labels.
     df = df.dropna(subset=[LABEL_COLUMN])
     df[LABEL_COLUMN] = df[LABEL_COLUMN].astype(int)
+
+    # Keep ID as a clean subject identifier.
+    # Numeric IDs are converted to clean integer-like strings later by infer_subject_group_from_id().
+    df[ID_COLUMN] = df[ID_COLUMN].astype(str).str.strip()
 
     # Convert feature columns to numeric.
     metadata_columns = {ID_COLUMN, LABEL_COLUMN}
 
     for col in df.columns:
         if col not in metadata_columns:
-            df[col] = pd.to_numeric(df[col], errors="coerce")
+            df[col] = parse_numeric_column(df[col])
 
     return df
-
 
 def get_feature_columns(df: pd.DataFrame, prefixes: List[str]) -> List[str]:
     feature_columns = []
@@ -335,41 +380,110 @@ def infer_subject_group_from_id(raw_id: object) -> str:
     return text
 
 
-def infer_groups(df: pd.DataFrame) -> Optional[np.ndarray]:
+def create_subject_id_summary(df: pd.DataFrame, groups: np.ndarray) -> pd.DataFrame:
+    """
+    Creates a subject-level diagnostic table for the new dataset.
+
+    Expected new structure:
+        IDs 1-15  -> healthy subjects, two label-0 rows each
+        IDs 16-30 -> stroke subjects, one label-1 and one label-2 row each
+    """
+
+    summary_rows = []
+
+    for group in sorted(np.unique(groups), key=lambda value: int(re.sub(r"\D", "", value) or 0)):
+        mask = groups == group
+        labels = df.loc[mask, LABEL_COLUMN].astype(int).tolist()
+        label_counts = pd.Series(labels).value_counts().to_dict()
+
+        if label_counts == {0: 2}:
+            inferred_subject_type = "Healthy subject"
+        elif label_counts == {1: 1, 2: 1}:
+            inferred_subject_type = "Stroke subject"
+        else:
+            inferred_subject_type = "Unexpected label pattern"
+
+        summary_rows.append(
+            {
+                "subject_group": group,
+                "n_rows": int(mask.sum()),
+                "labels": ",".join(str(label) for label in labels),
+                "n_healthy_label_0": int(label_counts.get(0, 0)),
+                "n_affected_label_1": int(label_counts.get(1, 0)),
+                "n_non_affected_label_2": int(label_counts.get(2, 0)),
+                "inferred_subject_type": inferred_subject_type,
+            }
+        )
+
+    return pd.DataFrame(summary_rows)
+
+
+def infer_groups(df: pd.DataFrame) -> np.ndarray:
     if ID_COLUMN not in df.columns:
-        return None
+        raise ValueError(
+            f"Strict LOSO validation requires column '{ID_COLUMN}', but it was not found."
+        )
 
     groups = df[ID_COLUMN].apply(infer_subject_group_from_id).astype(str).values
 
     n_samples = len(groups)
-    n_groups = len(np.unique(groups)) # type: ignore
+    n_groups = len(np.unique(groups))
 
     print()
     print("=" * 80)
-    print("Subject/group inference")
+    print("Subject/group inference for strict LOSO")
     print("=" * 80)
     print(f"Samples: {n_samples}")
-    print(f"Inferred groups: {n_groups}")
+    print(f"Inferred subject groups: {n_groups}")
 
     group_counts = pd.Series(groups).value_counts().sort_index()
-
-    print("Group size distribution:")
+    print("Rows per subject distribution:")
     print(group_counts.value_counts().sort_index().to_string())
 
     if n_groups == n_samples:
-        print()
-        print("[WARNING]")
-        print(
-            "Every row appears to have a unique group. "
-            "This usually means the ID column is a sample ID, not a subject ID."
+        raise ValueError(
+            "Every row appears to have a unique subject group. "
+            "This is not valid for strict LOSO on paired-leg data. "
+            "Check the ID column and infer_subject_group_from_id()."
         )
-        print(
-            "The script will fall back to row-level Leave-One-Out. "
-            "For paired-leg gait data, this is weaker than Leave-One-Subject-Out."
-        )
-        return None
 
-    return groups # type: ignore
+    if group_counts.min() < 2:
+        raise ValueError(
+            "At least one inferred subject group has fewer than 2 rows. "
+            "For this paired-leg dataset, each subject should normally have 2 rows. "
+            "Check the ID column and subject-group inference."
+        )
+
+    subject_summary = create_subject_id_summary(df, groups)
+
+    healthy_subjects = (
+        subject_summary["inferred_subject_type"] == "Healthy subject"
+    ).sum()
+
+    stroke_subjects = (
+        subject_summary["inferred_subject_type"] == "Stroke subject"
+    ).sum()
+
+    unexpected_subjects = (
+        subject_summary["inferred_subject_type"] == "Unexpected label pattern"
+    ).sum()
+
+    print(f"Healthy-like subjects: {healthy_subjects}")
+    print(f"Stroke-like subjects: {stroke_subjects}")
+    print(f"Unexpected subject patterns: {unexpected_subjects}")
+
+    subject_summary_path = OUTPUT_DIR / "subject_id_summary.csv"
+    subject_summary.to_csv(subject_summary_path, index=False)
+    print(f"[SAVED] Subject ID summary: {subject_summary_path}")
+
+    if unexpected_subjects > 0:
+        raise ValueError(
+            "Some subject groups have unexpected label patterns. "
+            "Check outputs/ml_results_loso_top5_top10_top15_all/subject_id_summary.csv "
+            "before running classification."
+        )
+
+    return groups
 
 
 # =============================================================================
@@ -674,22 +788,29 @@ def build_models() -> Dict[str, Pipeline]:
 
 
 # =============================================================================
-# Leave-one-out evaluation
+# Leave-One-Subject-Out evaluation
 # =============================================================================
 
-def make_loo_splits(
+def make_loso_splits(
     X: pd.DataFrame,
     y: pd.Series,
-    groups: Optional[np.ndarray],
+    groups: np.ndarray,
 ):
-    if groups is not None:
-        print("[INFO] Using Leave-One-Subject-Out validation.")
-        splitter = LeaveOneGroupOut()
-        return splitter.split(X, y, groups=groups), "Leave-One-Subject-Out"
+    """
+    Strict Leave-One-Subject-Out validation.
 
-    print("[INFO] Using row-level Leave-One-Out validation.")
-    splitter = LeaveOneOut()
-    return splitter.split(X, y), "Leave-One-Out"
+    No row-level Leave-One-Out fallback is allowed because it can leak information
+    between paired samples from the same subject.
+    """
+
+    if groups is None:
+        raise ValueError(
+            "Strict LOSO validation requires subject groups, but groups is None."
+        )
+
+    print("[INFO] Using strict Leave-One-Subject-Out validation.")
+    splitter = LeaveOneGroupOut()
+    return splitter.split(X, y, groups=groups), "Leave-One-Subject-Out"
 
 
 def evaluate_predictions(
@@ -727,13 +848,13 @@ def evaluate_predictions(
     } # type: ignore
 
 
-def evaluate_model_with_loo(
+def evaluate_model_with_loso(
     model: Pipeline,
     X: pd.DataFrame,
     y: pd.Series,
-    groups: Optional[np.ndarray],
+    groups: np.ndarray,
 ) -> Tuple[Dict[str, float], pd.DataFrame, np.ndarray, str]:
-    split_iterator, validation_method = make_loo_splits(X, y, groups)
+    split_iterator, validation_method = make_loso_splits(X, y, groups)
 
     prediction_rows = []
     all_true = []
@@ -756,8 +877,7 @@ def evaluate_model_with_loo(
 
             group_value = None
 
-            if groups is not None:
-                group_value = str(groups[sample_index])
+            group_value = str(groups[sample_index])
 
             prediction_rows.append(
                 {
@@ -1259,7 +1379,7 @@ def main() -> None:
                 print(f"  - Model: {model_name}")
 
                 try:
-                    metrics, predictions_df, y_pred, validation_method = evaluate_model_with_loo(
+                    metrics, predictions_df, y_pred, validation_method = evaluate_model_with_loso(
                         model=model,
                         X=X,
                         y=y,
@@ -1325,7 +1445,7 @@ def main() -> None:
     final_results_path = OUTPUT_DIR / "final_model_comparison.csv"
     results_df.to_csv(final_results_path, index=False)
 
-    predictions_path = OUTPUT_DIR / "loso_predictions.csv"
+    predictions_path = OUTPUT_DIR / "loo_predictions.csv"
     predictions_all_df.to_csv(predictions_path, index=False)
 
     print()
@@ -1439,7 +1559,7 @@ def main() -> None:
     print("=" * 80)
     print(f"[SAVED] Final results: {final_results_path}")
     print(f"[SAVED] Best models: {best_path}")
-    print(f"[SAVED] Leave-one-subject-out predictions: {predictions_path}")
+    print(f"[SAVED] Leave-one-out predictions: {predictions_path}")
     print(f"[SAVED] Plots: {OUTPUT_DIR / 'plots'}")
     print(f"[SAVED] Confusion matrices: {OUTPUT_DIR / 'confusion_matrices'}")
     print(f"[SAVED] Classification reports: {OUTPUT_DIR / 'classification_reports'}")

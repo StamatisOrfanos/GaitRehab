@@ -1,0 +1,196 @@
+GAIT CLASSIFICATION RESULTS - NON-TECHNICAL SUMMARY
+
+Purpose of this note
+This note summarizes the latest gait classification results in simple language. It also explains an important dataset change related to the participant IDs, because that change affects how the model is evaluated.
+
+
+1. What we tested
+
+We tested whether the system can classify gait samples into three groups:
+
+- Healthy leg
+- Affected side
+- Non-affected side
+
+We tested different combinations of sensor data:
+
+- Gyroscope only
+- Accelerometer only
+- EMG only
+- Gyroscope + Accelerometer
+- Gyroscope + EMG
+- Accelerometer + EMG
+- All sensors together
+
+We also compared four feature setups:
+
+- All features
+- Top 5 selected features
+- Top 10 selected features
+- Top 15 selected features
+
+
+[INSERT IMAGE 1 HERE: Best performance - all features vs top 5 vs top 10 vs top 15]
+
+
+2. Main result
+
+The best result was achieved with:
+
+All sensors + Top 10 selected features + Logistic Regression
+
+This setup achieved a Macro F1-score of 0.956.
+
+In simple terms, this means that the model performed very well when it used all available sensor types, but only kept the 10 most useful measurements.
+
+The second-best result was:
+
+All sensors + Top 15 selected features + Logistic Regression
+
+This achieved a Macro F1-score of 0.933.
+
+This confirms that using selected features gives better results than using every available feature.
+
+
+3. Why selected features worked better
+
+Using all features does not always improve the model.
+
+The full dataset contains many measurements. Some of them are useful, but others may be repeated, less informative, or noisy. When we select only the most useful features, the model can focus on the strongest signals.
+
+This is why the selected-feature experiments performed better than the all-feature experiments.
+
+For example:
+
+- All sensors with all features: Macro F1 = 0.760
+- All sensors with top 5 selected features: Macro F1 = 0.843
+- All sensors with top 10 selected features: Macro F1 = 0.956
+- All sensors with top 15 selected features: Macro F1 = 0.933
+
+This shows a clear improvement after feature selection.
+
+
+[INSERT IMAGE 2 HERE: Best Macro F1 by sensor and feature set]
+
+
+4. Which sensor combinations performed best
+
+The strongest results came from sensor combinations that included multiple sources of information.
+
+The best combinations were:
+
+1. All sensors + Top 10 selected features
+2. All sensors + Top 15 selected features
+3. Gyroscope + EMG + Top 15 selected features
+4. Gyroscope + EMG + Top 10 selected features
+5. Accelerometer + EMG + Top 15 selected features
+
+This suggests that combining different sensor types gives the model more useful information.
+
+The gyroscope and EMG combination was especially strong, which suggests that movement patterns and muscle activity together are very informative for this task.
+
+
+5. Accelerometer-only results
+
+The accelerometer alone was the weakest sensor source.
+
+Its best result was lower than the gyroscope, EMG, and combined-sensor setups.
+
+This does not mean the accelerometer is useless. It still helps when combined with other sensors, especially with EMG. However, by itself, it appears to provide less information for this specific three-class classification task.
+
+
+6. Best model overall
+
+The most reliable model overall was Logistic Regression.
+
+Average model performance:
+
+- Logistic Regression: 0.784 Macro F1
+- Linear SVM: 0.771 Macro F1
+- RBF SVM: 0.754 Macro F1
+- k-NN: 0.744 Macro F1
+- Extra Trees: 0.735 Macro F1
+- XGBoost: 0.732 Macro F1
+- Random Forest: 0.724 Macro F1
+- Gradient Boosting: 0.697 Macro F1
+- Gaussian Naive Bayes: 0.671 Macro F1
+
+This is useful because Logistic Regression is simpler and easier to explain than many more complex machine learning models.
+
+
+[INSERT IMAGE 3 HERE: Average model performance across all experiments]
+
+
+7. Important dataset change: participant IDs
+
+There was an important change in the dataset IDs.
+
+In the previous dataset, IDs 1 to 15 were reused across both healthy participants and stroke participants.
+
+That means ID 1 could refer to both:
+
+- one healthy participant
+- one stroke participant
+
+This was not ideal for subject-level validation.
+
+In the updated dataset, the IDs are now structured differently:
+
+- IDs 1 to 15 correspond to healthy participants
+- IDs 16 to 30 correspond to stroke participants
+
+This is a better structure because each ID now represents one real subject.
+
+
+8. Why the ID change matters
+
+We are using Leave-One-Subject-Out validation.
+
+This means the model is tested by leaving out one full subject at a time. The model is trained on the remaining subjects and then tested on the subject that was left out.
+
+This is a stricter and more realistic evaluation method.
+
+However, because the ID structure changed, the validation setup also changed.
+
+The old ID structure and the new ID structure do not create exactly the same evaluation folds. Therefore, results from the previous dataset and the updated dataset should not be compared directly unless this ID change is clearly documented and controlled.
+
+
+9. Important note for future dataset updates
+
+The ID change was important and was not discussed in advance.
+
+For future dataset updates, please clearly document all changes made to the dataset, including:
+
+- Changes to participant IDs
+- Changes to column names
+- Added columns
+- Removed columns
+- Changes to feature values
+- Changes to preprocessing or feature extraction
+- Any corrections to labels or subject grouping
+
+Even small changes in IDs or column names can significantly affect the analysis and the reported performance.
+
+
+10. Final interpretation
+
+The updated results are promising.
+
+The model performs best when using selected features, especially the top 10 or top 15 features. The best overall setup was all sensors with the top 10 selected features using Logistic Regression.
+
+The results also show that Gyroscope + EMG is a strong sensor combination.
+
+However, because the participant ID structure changed, we must clearly report that this is a corrected dataset structure and that the evaluation now uses proper subject-level validation.
+
+The main message is:
+
+The updated dataset allows a more correct Leave-One-Subject-Out evaluation, and the selected-feature models show strong performance. However, all dataset changes, especially the ID changes, must be documented carefully before these results are used in formal reports or publications.
+
+
+11. Suggested short message to the team
+
+The updated analysis shows strong classification performance, especially when using selected features rather than all features. The best result was obtained with all sensors and the top 10 selected features, reaching a Macro F1-score of 0.956.
+
+An important point is that the new dataset changed the participant ID structure. In the previous dataset, IDs 1 to 15 were reused across healthy and stroke participants. In the updated dataset, IDs 1 to 15 represent healthy participants and IDs 16 to 30 represent stroke participants. This is better for Leave-One-Subject-Out validation, but it also changes the evaluation setup.
+
+Because this kind of change can directly affect the results, future dataset updates should clearly document all modifications, including changes to IDs, column names, added or removed features, and any preprocessing changes.
