@@ -1,0 +1,6 @@
+Language as a Bridge: Semantic-Guided Cross-Modal Gait Recognition via Text Prototype and Feature Decoupling -> https://doi.org/10.1109/tifs.2026.3675459
+
+
+
+
+
