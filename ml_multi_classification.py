@@ -208,7 +208,7 @@ def parse_numeric_column(series: pd.Series) -> pd.Series:
     if pd.api.types.is_numeric_dtype(series):
         return series
 
-    cleaned = series.astype(str).str.strip()
+    cleaned = series.astype(str).str.strip() # type: ignore
     cleaned = cleaned.str.replace("\u00a0", "", regex=False)
     cleaned = cleaned.str.replace(" ", "", regex=False)
     cleaned = cleaned.str.replace(",", ".", regex=False)
@@ -256,7 +256,7 @@ def read_dataset(path: Path) -> pd.DataFrame:
 
     if LABEL_COLUMN not in df.columns:
         raise ValueError(
-            f"Expected label column '{LABEL_COLUMN}', but found:\n{df.columns.tolist()}"
+            f"Expected label column '{LABEL_COLUMN}', but found:\n{df.columns.tolist()}" # type: ignore
         )
 
     if ID_COLUMN not in df.columns:
@@ -395,7 +395,7 @@ def create_subject_id_summary(df: pd.DataFrame, groups: np.ndarray) -> pd.DataFr
 
     for group in sorted(np.unique(groups), key=lambda value: int(re.sub(r"\D", "", value) or 0)):
         mask = groups == group
-        labels = df.loc[mask, LABEL_COLUMN].astype(int).tolist()
+        labels = df.loc[mask, LABEL_COLUMN].astype(int).tolist() # type: ignore
         label_counts = pd.Series(labels).value_counts().to_dict()
 
         if label_counts == {0: 2}:
@@ -429,7 +429,7 @@ def infer_groups(df: pd.DataFrame) -> np.ndarray:
     groups = df[ID_COLUMN].apply(infer_subject_group_from_id).astype(str).values
 
     n_samples = len(groups)
-    n_groups = len(np.unique(groups))
+    n_groups = len(np.unique(groups)) # type: ignore
 
     print()
     print("=" * 80)
@@ -456,7 +456,7 @@ def infer_groups(df: pd.DataFrame) -> np.ndarray:
             "Check the ID column and subject-group inference."
         )
 
-    subject_summary = create_subject_id_summary(df, groups)
+    subject_summary = create_subject_id_summary(df, groups) # type: ignore
 
     healthy_subjects = (
         subject_summary["inferred_subject_type"] == "Healthy subject"
@@ -485,7 +485,7 @@ def infer_groups(df: pd.DataFrame) -> np.ndarray:
             "before running classification."
         )
 
-    return groups
+    return groups # type: ignore
 
 
 # =============================================================================
@@ -1493,7 +1493,7 @@ def nested_main() -> None:
         zero_division=0,
     )
     (NESTED_OUTPUT_DIR / "final_classification_report.txt").write_text(
-        report, encoding="utf-8"
+        report, encoding="utf-8" # type: ignore
     )
     print("\nFinal unbiased outer-LOSO performance")
     for name, value in metrics.items():
