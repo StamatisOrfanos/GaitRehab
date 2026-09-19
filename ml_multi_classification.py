@@ -49,6 +49,8 @@ from typing import Dict, List, Tuple, Optional
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
+from matplotlib.colors import ListedColormap
+from matplotlib.lines import Line2D
 
 from sklearn.base import clone
 from sklearn.impute import SimpleImputer
@@ -145,8 +147,10 @@ plt.rcParams.update(
         "figure.figsize": (11, 7),
         "figure.dpi": 130,
         "savefig.dpi": 300,
+        "savefig.facecolor": "white",
         "font.size": 11,
         "axes.titlesize": 15,
+        "axes.titleweight": "semibold",
         "axes.labelsize": 12,
         "xtick.labelsize": 10,
         "ytick.labelsize": 10,
@@ -154,11 +158,44 @@ plt.rcParams.update(
         "axes.spines.top": False,
         "axes.spines.right": False,
         "axes.grid": True,
-        "grid.alpha": 0.25,
+        "axes.axisbelow": True,
+        "grid.color": "#D9E2EC",
+        "grid.alpha": 0.65,
+        "grid.linewidth": 0.8,
         "figure.facecolor": "white",
-        "axes.facecolor": "white",
+        "axes.facecolor": "#FBFCFE",
     }
 )
+
+PLOT_TEXT_COLOUR = "#243447"
+PLOT_MUTED_COLOUR = "#627D98"
+PLOT_ACCENT_COLOUR = "#247BA0"
+MODEL_COLOURS = {
+    "Logistic Regression": "#CC79A7",
+    "Linear SVM": "#56B4E9",
+    "RBF SVM": "#E69F00",
+    "k-NN": "#D55E00",
+    "Gaussian Naive Bayes": "#7DB7D8",
+    "Random Forest": "#009E73",
+    "Extra Trees": "#0072B2",
+    "Gradient Boosting": "#7A5195",
+    "XGBoost": "#222222",
+}
+FEATURE_SET_COLOURS = {
+    "All features": "#264653",
+    "Top 5 RFE features": "#2A9D8F",
+    "Top 10 RFE features": "#E9C46A",
+    "Top 15 RFE features": "#E76F51",
+}
+SENSOR_COLOURS = {
+    "Gyroscope": "#3B528B",
+    "Accelerometer": "#21918C",
+    "EMG": "#5EC962",
+    "Gyroscope + Accelerometer": "#440154",
+    "Gyroscope + EMG": "#31688E",
+    "Accelerometer + EMG": "#35B779",
+    "All sensors": "#FDE725",
+}
 
 
 # =============================================================================
@@ -917,7 +954,7 @@ def save_confusion_matrix_plot(
 
     ax.set_title(
         f"Confusion matrix\n"
-        f"{source_name} — {feature_set_name} — {model_name}"
+        f"{source_name} | {feature_set_name} | {model_name}"
     )
     ax.set_xlabel("Predicted class")
     ax.set_ylabel("True class")
@@ -1449,12 +1486,59 @@ def nested_subject_evaluation(
     )
 
 
-def _finish_nested_plot(fig: plt.Figure, path: Path) -> None: # type: ignore
+def _finish_nested_plot(
+    fig: plt.Figure,
+    path: Path,
+    layout_rect: Optional[Tuple[float, float, float, float]] = None,
+) -> None: # type: ignore
     """Save and close one nested-evaluation figure."""
     path.parent.mkdir(parents=True, exist_ok=True)
-    fig.tight_layout()
+    fig.tight_layout(rect=layout_rect)
     fig.savefig(path, bbox_inches="tight")
     plt.close(fig)
+
+
+def _metric_label(metric: str) -> str:
+    """Return consistent publication-friendly metric labels."""
+    labels = {
+        "accuracy": "Accuracy",
+        "balanced_accuracy": "Balanced accuracy",
+        "macro_f1": "Macro F1",
+        "macro_precision": "Macro precision",
+        "macro_recall": "Macro recall",
+        "weighted_f1": "Weighted F1",
+        "mcc": "MCC",
+    }
+    return labels.get(metric, metric.replace("_", " ").title())
+
+
+def _score_axis_limits(values: pd.Series, padding: float = 0.04) -> Tuple[float, float]:
+    """Choose shared, rounded limits that retain context while showing differences."""
+    numeric = pd.to_numeric(values, errors="coerce").dropna()
+    if numeric.empty:
+        return 0.0, 1.0
+    lower = max(0.0, np.floor((numeric.min() - padding) * 20) / 20)
+    upper = min(1.0, np.ceil((numeric.max() + padding) * 20) / 20)
+    if upper - lower < 0.15:
+        lower = max(0.0, upper - 0.15)
+    return float(lower), float(upper)
+
+
+def _style_nested_axis(ax: plt.Axes, grid_axis: str = "x") -> None: # type: ignore
+    """Apply the shared nested-results visual style to one axis."""
+    ax.set_facecolor("#FBFCFE")
+    ax.tick_params(colors=PLOT_TEXT_COLOUR, length=0)
+    ax.xaxis.label.set_color(PLOT_TEXT_COLOUR)
+    ax.yaxis.label.set_color(PLOT_TEXT_COLOUR)
+    ax.title.set_color(PLOT_TEXT_COLOUR)
+    ax.grid(False)
+    if grid_axis in ("x", "both"):
+        ax.xaxis.grid(True)
+    if grid_axis in ("y", "both"):
+        ax.yaxis.grid(True)
+    for side in ("left", "bottom"):
+        ax.spines[side].set_color("#9FB3C8")
+        ax.spines[side].set_linewidth(0.8)
 
 
 def save_nested_confusion_matrix(
@@ -1463,20 +1547,29 @@ def save_nested_confusion_matrix(
 ) -> None:
     """Plot the final confusion matrix using only outer-LOSO predictions."""
     matrix = confusion_matrix(y_true, y_pred, labels=CLASS_LABELS)
-    fig, ax = plt.subplots(figsize=(8, 7))
-    image = ax.imshow(matrix, cmap="Blues")
-    fig.colorbar(image, ax=ax, fraction=0.046, pad=0.04)
+    fig, ax = plt.subplots(figsize=(8.5, 7.5))
+    image = ax.imshow(matrix, cmap="Blues", aspect="equal")
+    colour_bar = fig.colorbar(image, ax=ax, fraction=0.046, pad=0.04)
+    colour_bar.set_label("Number of predictions", color=PLOT_TEXT_COLOUR)
+    colour_bar.ax.tick_params(colors=PLOT_MUTED_COLOUR, length=0)
     threshold = matrix.max() / 2 if matrix.size else 0
+    row_totals = matrix.sum(axis=1, keepdims=True)
     for row in range(matrix.shape[0]):
         for column in range(matrix.shape[1]):
+            percentage = (
+                100 * matrix[row, column] / row_totals[row, 0]
+                if row_totals[row, 0]
+                else 0
+            )
             ax.text(
                 column,
                 row,
-                str(matrix[row, column]),
+                f"{matrix[row, column]}\n{percentage:.0f}%",
                 ha="center",
                 va="center",
                 color="white" if matrix[row, column] > threshold else "black",
                 fontweight="bold",
+                fontsize=12,
             )
     ax.set(
         xticks=np.arange(len(CLASS_LABEL_NAMES)),
@@ -1485,9 +1578,13 @@ def save_nested_confusion_matrix(
         yticklabels=CLASS_LABEL_NAMES,
         xlabel="Predicted class",
         ylabel="True class",
-        title="Final confusion matrix — unbiased outer LOSO predictions",
+        title=("Final confusion matrix\n"
+               "Unbiased outer-LOSO predictions; row percentages shown"),
     )
     ax.grid(False)
+    ax.tick_params(length=0, colors=PLOT_TEXT_COLOUR)
+    for spine in ax.spines.values():
+        spine.set_visible(False)
     plt.setp(ax.get_xticklabels(), rotation=25, ha="right")
     _finish_nested_plot(
         fig, NESTED_CONFUSION_DIR / "final_outer_loso_confusion_matrix.png"
@@ -1497,32 +1594,49 @@ def save_nested_confusion_matrix(
 def save_final_metric_summary(metrics: Dict[str, float]) -> None:
     """Plot every final metric calculated from pooled outer-LOSO predictions."""
     labels = [
-        "Accuracy", "Balanced\naccuracy", "Macro\nprecision",
-        "Macro\nrecall", "Macro F1", "Weighted F1", "MCC",
+        "Accuracy", "Balanced accuracy", "Macro precision",
+        "Macro recall", "Macro F1", "Weighted F1", "MCC",
     ]
     keys = [
         "accuracy", "balanced_accuracy", "macro_precision", "macro_recall",
         "macro_f1", "weighted_f1", "mcc",
     ]
     values = [float(metrics[key]) for key in keys]
-    fig, ax = plt.subplots(figsize=(11, 7))
-    bars = ax.bar(labels, values, color=plt.cm.Blues(np.linspace(0.45, 0.9, len(keys)))) # type: ignore
+    order = np.argsort(values)
+    ordered_labels = [labels[index] for index in order]
+    ordered_values = [values[index] for index in order]
+    colours = plt.cm.viridis(np.linspace(0.25, 0.8, len(keys))) # type: ignore
+    fig, ax = plt.subplots(figsize=(10.5, 7))
+    bars = ax.barh(
+        ordered_labels,
+        ordered_values,
+        color=colours,
+        height=0.62,
+        edgecolor="white",
+    )
     lower_limit = min(0.0, min(values) - 0.08)
-    ax.set_ylim(lower_limit, 1.05)
-    ax.set_ylabel("Score")
-    ax.set_title("Final performance — unbiased outer LOSO predictions")
-    for bar, value in zip(bars, values):
+    ax.set_xlim(lower_limit, 1.0)
+    ax.set_xlabel("Score")
+    ax.set_title("Final performance\nUnbiased outer-LOSO predictions", pad=14)
+    for bar, value in zip(bars, ordered_values):
         ax.text(
-            bar.get_x() + bar.get_width() / 2,
-            value + (0.02 if value >= 0 else -0.05),
+            value + (0.012 if value >= 0 else -0.012),
+            bar.get_y() + bar.get_height() / 2,
             f"{value:.3f}",
-            ha="center",
-            va="bottom" if value >= 0 else "top",
+            ha="left" if value >= 0 else "right",
+            va="center",
+            fontweight="semibold",
+            color=PLOT_TEXT_COLOUR,
         )
+    _style_nested_axis(ax, grid_axis="x")
     _finish_nested_plot(fig, NESTED_PLOTS_DIR / "final_outer_loso_all_metrics.png")
 
 
-def save_per_class_metrics(y_true: np.ndarray, y_pred: np.ndarray) -> None:
+def save_per_class_metrics(
+    y_true: np.ndarray,
+    y_pred: np.ndarray,
+    save_table: bool = True,
+) -> None:
     """Plot final precision, recall and F1 separately for each class."""
     report = classification_report(
         y_true,
@@ -1544,25 +1658,597 @@ def save_per_class_metrics(y_true: np.ndarray, y_pred: np.ndarray) -> None:
             for class_name in CLASS_LABEL_NAMES
         ]
     )
-    class_table.to_csv(NESTED_OUTPUT_DIR / "final_per_class_metrics.csv", index=False)
+    if save_table:
+        class_table.to_csv(NESTED_OUTPUT_DIR / "final_per_class_metrics.csv", index=False)
     x = np.arange(len(CLASS_LABEL_NAMES))
     width = 0.24
-    fig, ax = plt.subplots(figsize=(10, 7))
-    ax.bar(x - width, class_table["precision"], width, label="Precision", color="#9ecae1")
-    ax.bar(x, class_table["recall"], width, label="Recall", color="#4292c6")
-    ax.bar(x + width, class_table["f1_score"], width, label="F1-score", color="#08519c")
+    fig, ax = plt.subplots(figsize=(10.5, 7))
+    bar_groups = [
+        ax.bar(x - width, class_table["precision"], width, label="Precision", color="#56B4E9"),
+        ax.bar(x, class_table["recall"], width, label="Recall", color="#2A9D8F"),
+        ax.bar(x + width, class_table["f1_score"], width, label="F1-score", color="#7A5195"),
+    ]
     ax.set(
         xticks=x,
         xticklabels=CLASS_LABEL_NAMES,
         ylim=(0, 1.05),
         ylabel="Score",
-        title="Per-class performance — unbiased outer LOSO predictions",
+        title="Per-class performance\nUnbiased outer-LOSO predictions",
     )
-    ax.legend()
+    for bars in bar_groups:
+        for bar in bars:
+            value = bar.get_height()
+            ax.text(
+                bar.get_x() + bar.get_width() / 2,
+                value + 0.018,
+                f"{value:.2f}",
+                ha="center",
+                va="bottom",
+                fontsize=9,
+                color=PLOT_TEXT_COLOUR,
+            )
+    ax.legend(frameon=False, ncol=3, loc="upper center")
+    _style_nested_axis(ax, grid_axis="y")
     _finish_nested_plot(fig, NESTED_PLOTS_DIR / "final_outer_loso_per_class_metrics.png")
 
 
-def aggregate_inner_candidate_scores(inner_scores: pd.DataFrame) -> pd.DataFrame:
+def build_outer_fold_summary(
+    predictions: pd.DataFrame,
+    selections: pd.DataFrame,
+) -> pd.DataFrame:
+    """Combine each outer fold's selected configuration and held-out outcome."""
+    outcomes = (
+        predictions.groupby(["outer_fold", "subject"], as_index=False)
+        .agg(
+            n_predictions=("correct", "size"),
+            n_correct=("correct", "sum"),
+            outer_accuracy=("correct", "mean"),
+        )
+        .rename(columns={"subject": "held_out_subject"})
+    )
+    selection_columns = [
+        "outer_fold", "held_out_subject", "model", "sensor_combination",
+        "feature_set", "inner_macro_f1",
+    ]
+    selected = selections[selection_columns].drop_duplicates("outer_fold")
+    summary = outcomes.merge(
+        selected,
+        on=["outer_fold", "held_out_subject"],
+        how="left",
+        validate="one_to_one",
+    )
+    if summary[selection_columns[2:]].isna().any().any():
+        raise ValueError("Could not match every outer fold to its selected configuration.")
+    return summary.sort_values("outer_fold").reset_index(drop=True)
+
+
+def _outer_accuracy_colour(value: float) -> str:
+    if value >= 0.999:
+        return "#2A9D8F"
+    if value <= 0.001:
+        return "#D1495B"
+    return "#E9C46A"
+
+
+def save_outer_subject_accuracy(summary: pd.DataFrame) -> None:
+    """Show held-out accuracy for every outer subject and selected model."""
+    shown = summary.sort_values("outer_fold", ascending=False)
+    y = np.arange(len(shown))
+    colours = [
+        MODEL_COLOURS.get(str(model), PLOT_MUTED_COLOUR) for model in shown["model"]
+    ]
+    fig, ax = plt.subplots(figsize=(11.5, max(9, 0.37 * len(shown) + 2.5)))
+    ax.hlines(y, 0, shown["outer_accuracy"], color="#D9E2EC", linewidth=2.2)
+    ax.scatter(
+        shown["outer_accuracy"], y, c=colours, s=95,
+        edgecolor="white", linewidth=0.9, zorder=3,
+    )
+    for row, (_, result) in enumerate(shown.iterrows()):
+        ax.text(
+            float(result["outer_accuracy"]) + 0.025,
+            row,
+            f"{int(result['n_correct'])}/{int(result['n_predictions'])}",
+            va="center",
+            fontsize=9,
+            fontweight="semibold",
+            color=PLOT_TEXT_COLOUR,
+        )
+    ax.set(
+        yticks=y,
+        yticklabels=shown["held_out_subject"],
+        xlim=(-0.03, 1.13),
+        xticks=[0, 0.25, 0.5, 0.75, 1.0],
+        xlabel="Outer-fold accuracy",
+        ylabel="Held-out subject",
+        title=("Outer-LOSO accuracy by held-out subject\n"
+               "Point color identifies the model selected inside that fold"),
+    )
+    present_models = [
+        model for model in MODEL_COLOURS if model in set(shown["model"].astype(str))
+    ]
+    handles = [
+        Line2D(
+            [0], [0], marker="o", linestyle="", markersize=7,
+            markerfacecolor=MODEL_COLOURS[model], markeredgecolor="white", label=model,
+        )
+        for model in present_models
+    ]
+    fig.legend(
+        handles=handles, frameon=False, ncol=4, loc="lower center",
+        title="Selected model", bbox_to_anchor=(0.5, 0.01),
+    )
+    _style_nested_axis(ax, grid_axis="x")
+    _finish_nested_plot(
+        fig,
+        NESTED_PLOTS_DIR / "outer_loso_subject_accuracy.png",
+        layout_rect=(0, 0.08, 1, 1),
+    )
+
+
+def save_outer_prediction_outcomes(predictions: pd.DataFrame) -> None:
+    """Show every held-out prediction as a correct or incorrect subject-level tile."""
+    ordered = predictions.sort_values(["outer_fold", "sample_index"]).copy()
+    subject_order = list(dict.fromkeys(ordered["subject"].astype(str)))
+    grouped = {subject: group for subject, group in ordered.groupby("subject", sort=False)}
+    max_observations = max(len(group) for group in grouped.values())
+    outcome_matrix = np.full((len(subject_order), max_observations), np.nan)
+    annotations = np.full((len(subject_order), max_observations), "", dtype=object)
+    class_codes = {
+        "Healthy leg": "Healthy",
+        "Affected side": "Affected",
+        "Non-affected side": "Non-affected",
+    }
+    for row, subject in enumerate(subject_order):
+        group = grouped[subject]
+        for column, (_, prediction) in enumerate(group.iterrows()):
+            outcome_matrix[row, column] = int(prediction["correct"])
+            true_name = class_codes.get(str(prediction["true_class"]), str(prediction["true_class"]))
+            predicted_name = class_codes.get(
+                str(prediction["predicted_class"]), str(prediction["predicted_class"])
+            )
+            annotations[row, column] = f"{true_name} -> {predicted_name}"
+
+    fig, ax = plt.subplots(
+        figsize=(10.5, max(10, 0.43 * len(subject_order) + 2.8))
+    )
+    masked = np.ma.masked_invalid(outcome_matrix)
+    image = ax.imshow(
+        masked,
+        cmap=ListedColormap(["#E76F51", "#2A9D8F"]),
+        vmin=0,
+        vmax=1,
+        aspect="auto",
+    )
+    image.cmap.set_bad("#F0F4F8")
+    for row in range(len(subject_order)):
+        for column in range(max_observations):
+            if annotations[row, column]:
+                ax.text(
+                    column,
+                    row,
+                    annotations[row, column],
+                    ha="center",
+                    va="center",
+                    fontsize=8.5,
+                    fontweight="semibold",
+                    color="white" if outcome_matrix[row, column] == 0 else "#102A43",
+                )
+    ax.set(
+        xticks=np.arange(max_observations),
+        yticks=np.arange(len(subject_order)),
+        xticklabels=[f"Held-out observation {index + 1}" for index in range(max_observations)],
+        yticklabels=subject_order,
+        xlabel="True class -> predicted class",
+        ylabel="Held-out subject",
+        title=("Outer-LOSO prediction outcomes by subject\n"
+               "Green is correct; red is incorrect"),
+    )
+    ax.grid(False)
+    ax.tick_params(length=0, colors=PLOT_TEXT_COLOUR)
+    for spine in ax.spines.values():
+        spine.set_visible(False)
+    _finish_nested_plot(fig, NESTED_PLOTS_DIR / "outer_loso_prediction_outcomes.png")
+
+
+def save_outer_selected_configurations(summary: pd.DataFrame) -> None:
+    """Connect each held-out subject to its selected configuration and outcome."""
+    shown = summary.sort_values("outer_fold", ascending=False).reset_index(drop=True)
+    y = np.arange(len(shown))
+    model_order = [
+        name for name in MODEL_COLOURS if name in set(shown["model"].astype(str))
+    ]
+    sensor_order = [
+        name for name in SOURCE_ORDER if name in set(shown["sensor_combination"].astype(str))
+    ]
+    feature_order = _ordered_values(
+        shown["feature_set"],
+        ["All features", "Top 5 RFE features", "Top 10 RFE features", "Top 15 RFE features"],
+    )
+    fig, axes = plt.subplots(
+        1, 5, figsize=(24, max(10, 0.4 * len(shown) + 3)),
+        sharey=True, gridspec_kw={"width_ratios": [1.5, 1.5, 1.25, 1.0, 1.0]},
+    )
+    categorical = [
+        ("model", model_order, MODEL_COLOURS, "Selected model"),
+        ("sensor_combination", sensor_order, SENSOR_COLOURS, "Selected sensors"),
+        ("feature_set", feature_order, FEATURE_SET_COLOURS, "Selected features"),
+    ]
+    for ax, (column, order, colour_map, title) in zip(axes[:3], categorical):
+        positions = {value: index for index, value in enumerate(order)}
+        x = [positions[str(value)] for value in shown[column]]
+        colours = [colour_map.get(str(value), PLOT_MUTED_COLOUR) for value in shown[column]]
+        ax.scatter(x, y, c=colours, s=78, edgecolor="white", linewidth=0.8)
+        ax.set(
+            xticks=np.arange(len(order)),
+            xticklabels=order,
+            title=title,
+            xlim=(-0.6, len(order) - 0.4),
+        )
+        ax.grid(False)
+        ax.tick_params(axis="x", rotation=42, labelsize=8.5)
+        ax.tick_params(axis="y", length=0)
+        for row in range(len(shown)):
+            if row % 2 == 0:
+                ax.axhspan(row - 0.5, row + 0.5, color="#F0F4F8", zorder=0)
+
+    axes[0].set(yticks=y, yticklabels=shown["held_out_subject"])
+    axes[0].set_ylabel("Held-out subject")
+
+    inner_lower, inner_upper = _score_axis_limits(shown["inner_macro_f1"], padding=0.04)
+    axes[3].scatter(
+        shown["inner_macro_f1"], y, color=PLOT_ACCENT_COLOUR,
+        s=78, edgecolor="white", linewidth=0.8,
+    )
+    axes[3].set(
+        xlim=(inner_lower, inner_upper),
+        xlabel="Score",
+        title="Selected inner\nmacro F1",
+    )
+    _style_nested_axis(axes[3], grid_axis="x")
+
+    accuracy_colours = [_outer_accuracy_colour(value) for value in shown["outer_accuracy"]]
+    axes[4].scatter(
+        shown["outer_accuracy"], y, c=accuracy_colours,
+        s=78, edgecolor="white", linewidth=0.8,
+    )
+    axes[4].set(
+        xlim=(-0.05, 1.05),
+        xticks=[0, 0.5, 1.0],
+        xlabel="Accuracy",
+        title="Held-out\noutcome",
+    )
+    _style_nested_axis(axes[4], grid_axis="x")
+    for ax in axes[:3]:
+        for side in ("left", "bottom"):
+            ax.spines[side].set_color("#9FB3C8")
+            ax.spines[side].set_linewidth(0.8)
+    fig.suptitle(
+        "Outer-LOSO selected configuration and outcome for every subject",
+        fontsize=20,
+        fontweight="semibold",
+        y=0.995,
+    )
+    _finish_nested_plot(
+        fig,
+        NESTED_PLOTS_DIR / "outer_loso_selected_configuration_by_subject.png",
+        layout_rect=(0, 0, 1, 0.97),
+    )
+
+
+def save_outer_performance_by_selected_configuration(predictions: pd.DataFrame) -> None:
+    """Summarize outer correctness by the configuration selected in each fold."""
+    specifications = [
+        ("selected_model", "Selected model", MODEL_COLOURS),
+        ("selected_sensor_combination", "Selected sensors", SENSOR_COLOURS),
+        ("selected_feature_set", "Selected feature set", FEATURE_SET_COLOURS),
+    ]
+    fig, axes = plt.subplots(3, 1, figsize=(12, 18), sharex=True)
+    for ax, (column, title, colour_map) in zip(axes, specifications):
+        grouped = (
+            predictions.groupby(column, as_index=False)
+            .agg(
+                outer_accuracy=("correct", "mean"),
+                n_subjects=("subject", "nunique"),
+                n_predictions=("correct", "size"),
+            )
+            .sort_values("outer_accuracy")
+        )
+        colours = [
+            colour_map.get(str(name), PLOT_MUTED_COLOUR) for name in grouped[column]
+        ]
+        bars = ax.barh(
+            grouped[column].astype(str), grouped["outer_accuracy"],
+            color=colours, height=0.62, edgecolor="white",
+        )
+        for bar, (_, result) in zip(bars, grouped.iterrows()):
+            ax.text(
+                float(result["outer_accuracy"]) + 0.02,
+                bar.get_y() + bar.get_height() / 2,
+                f"{float(result['outer_accuracy']):.2f}  (n={int(result['n_subjects'])})",
+                va="center",
+                fontsize=9,
+                fontweight="semibold",
+                color=PLOT_TEXT_COLOUR,
+            )
+        ax.set(
+            xlim=(0, 1.16),
+            xticks=np.arange(0, 1.01, 0.2),
+            xlabel="Outer prediction accuracy",
+            title=title,
+        )
+        _style_nested_axis(ax, grid_axis="x")
+    fig.suptitle(
+        "Outer-LOSO performance by selected configuration\n"
+        "Descriptive only; n is the number of outer subjects selecting that option",
+        fontsize=17,
+        fontweight="semibold",
+        y=0.995,
+    )
+    _finish_nested_plot(
+        fig,
+        NESTED_PLOTS_DIR / "outer_loso_performance_by_selected_configuration.png",
+        layout_rect=(0, 0, 1, 0.92),
+    )
+
+
+def save_outer_selected_pair_heatmap(
+    predictions: pd.DataFrame,
+    row_column: str,
+    column_column: str,
+    row_order: List[str],
+    column_order: List[str],
+    row_label: str,
+    column_label: str,
+    title: str,
+    filename: str,
+) -> None:
+    """Plot held-out accuracy for configuration pairs selected by inner CV."""
+    grouped = (
+        predictions.groupby([row_column, column_column], as_index=False)
+        .agg(
+            outer_accuracy=("correct", "mean"),
+            n_subjects=("subject", "nunique"),
+        )
+    )
+    present_rows = [name for name in row_order if name in set(grouped[row_column])]
+    present_columns = [
+        name for name in column_order if name in set(grouped[column_column])
+    ]
+    accuracy = grouped.pivot(
+        index=row_column, columns=column_column, values="outer_accuracy"
+    ).reindex(index=present_rows, columns=present_columns)
+    sample_sizes = grouped.pivot(
+        index=row_column, columns=column_column, values="n_subjects"
+    ).reindex(index=present_rows, columns=present_columns)
+
+    figure_width = max(11, 2.25 * len(present_columns) + 4)
+    figure_height = max(7, 0.8 * len(present_rows) + 3)
+    fig, ax = plt.subplots(figsize=(figure_width, figure_height))
+    colour_map = plt.cm.YlGnBu.copy() # type: ignore
+    colour_map.set_bad("#E6ECF2")
+    image = ax.imshow(
+        np.ma.masked_invalid(accuracy.to_numpy(dtype=float)),
+        cmap=colour_map,
+        vmin=0,
+        vmax=1,
+        aspect="auto",
+    )
+    colour_bar = fig.colorbar(image, ax=ax, pad=0.025)
+    colour_bar.set_label("Held-out accuracy", color=PLOT_TEXT_COLOUR)
+    colour_bar.ax.tick_params(colors=PLOT_MUTED_COLOUR, length=0)
+
+    for row in range(len(accuracy.index)):
+        for column in range(len(accuracy.columns)):
+            value = accuracy.iloc[row, column]
+            n_subjects = sample_sizes.iloc[row, column]
+            if pd.notna(value):
+                ax.text(
+                    column,
+                    row,
+                    f"{value:.2f}\nn={int(n_subjects)}",
+                    ha="center",
+                    va="center",
+                    fontsize=10,
+                    fontweight="semibold",
+                    color="white" if value >= 0.68 else PLOT_TEXT_COLOUR,
+                )
+            else:
+                ax.text(
+                    column,
+                    row,
+                    "Not selected",
+                    ha="center",
+                    va="center",
+                    fontsize=8.5,
+                    color=PLOT_MUTED_COLOUR,
+                )
+    ax.set(
+        xticks=np.arange(len(accuracy.columns)),
+        yticks=np.arange(len(accuracy.index)),
+        xticklabels=accuracy.columns,
+        yticklabels=accuracy.index,
+        xlabel=column_label,
+        ylabel=row_label,
+        title=(f"{title}\n"
+               "Accuracy from held-out subjects in folds where each pairing was selected"),
+    )
+    ax.grid(False)
+    ax.tick_params(length=0, colors=PLOT_TEXT_COLOUR)
+    plt.setp(ax.get_xticklabels(), rotation=25, ha="right")
+    for spine in ax.spines.values():
+        spine.set_visible(False)
+    fig.text(
+        0.5,
+        0.01,
+        "n is the number of held-out subjects. Gray combinations were never selected. "
+        "This is descriptive, not a head-to-head test of every candidate.",
+        ha="center",
+        color=PLOT_MUTED_COLOUR,
+        fontsize=9.5,
+    )
+    _finish_nested_plot(
+        fig,
+        NESTED_PLOTS_DIR / filename,
+        layout_rect=(0, 0.04, 1, 1),
+    )
+
+
+def save_outer_configuration_heatmaps(predictions: pd.DataFrame) -> None:
+    """Create simple outer-LOSO accuracy heatmaps for selected components."""
+    save_outer_selected_pair_heatmap(
+        predictions=predictions,
+        row_column="selected_model",
+        column_column="selected_feature_set",
+        row_order=list(MODEL_COLOURS),
+        column_order=[
+            "All features", "Top 5 RFE features",
+            "Top 10 RFE features", "Top 15 RFE features",
+        ],
+        row_label="Model selected in the fold",
+        column_label="Feature set selected in the fold",
+        title="Outer-LOSO accuracy by selected model and feature set",
+        filename="outer_loso_model_feature_accuracy_heatmap.png",
+    )
+    save_outer_selected_pair_heatmap(
+        predictions=predictions,
+        row_column="selected_model",
+        column_column="selected_sensor_combination",
+        row_order=list(MODEL_COLOURS),
+        column_order=SOURCE_ORDER,
+        row_label="Model selected in the fold",
+        column_label="Sensor combination selected in the fold",
+        title="Outer-LOSO accuracy by selected model and sensors",
+        filename="outer_loso_model_sensor_accuracy_heatmap.png",
+    )
+
+
+def save_inner_score_vs_outer_outcome(summary: pd.DataFrame) -> None:
+    """Compare selected inner macro F1 with each held-out subject's outcome."""
+    shown = summary.sort_values("outer_fold").reset_index(drop=True)
+    jitter = ((np.arange(len(shown)) % 5) - 2) * 0.018
+    plotted_y = shown["outer_accuracy"].to_numpy(dtype=float) + jitter
+    colours = [
+        MODEL_COLOURS.get(str(model), PLOT_MUTED_COLOUR) for model in shown["model"]
+    ]
+    fig, ax = plt.subplots(figsize=(11, 7.5))
+    ax.scatter(
+        shown["inner_macro_f1"], plotted_y, c=colours,
+        s=95, alpha=0.9, edgecolor="white", linewidth=0.9,
+    )
+    lower, upper = _score_axis_limits(shown["inner_macro_f1"], padding=0.05)
+    ax.set(
+        xlim=(lower, upper),
+        ylim=(-0.09, 1.09),
+        yticks=[0, 0.5, 1.0],
+        xlabel="Selected configuration's inner macro F1",
+        ylabel="Held-out subject accuracy",
+        title=("Inner selection score versus outer-LOSO outcome\n"
+               "Each point is one subject; slight vertical jitter improves visibility"),
+    )
+    present_models = [
+        model for model in MODEL_COLOURS if model in set(shown["model"].astype(str))
+    ]
+    handles = [
+        Line2D(
+            [0], [0], marker="o", linestyle="", markersize=7,
+            markerfacecolor=MODEL_COLOURS[model], markeredgecolor="white", label=model,
+        )
+        for model in present_models
+    ]
+    ax.legend(
+        handles=handles, frameon=False, ncol=2,
+        loc="upper right", title="Selected model",
+    )
+    _style_nested_axis(ax, grid_axis="both")
+    _finish_nested_plot(
+        fig, NESTED_PLOTS_DIR / "outer_loso_inner_score_vs_outcome.png"
+    )
+
+
+def save_outer_metric_confidence_intervals(
+    predictions: pd.DataFrame,
+    metrics: Dict[str, float],
+    n_bootstrap: int = 2000,
+) -> None:
+    """Plot subject-bootstrap uncertainty for pooled outer-LOSO metrics."""
+    metric_keys = [
+        "accuracy", "balanced_accuracy", "macro_precision", "macro_recall",
+        "macro_f1", "weighted_f1", "mcc",
+    ]
+    grouped = {
+        str(subject): group for subject, group in predictions.groupby("subject", sort=False)
+    }
+    subjects = np.asarray(list(grouped))
+    random = np.random.default_rng(RANDOM_STATE)
+    bootstrap_values = {key: [] for key in metric_keys}
+    for _ in range(n_bootstrap):
+        sampled_subjects = random.choice(subjects, size=len(subjects), replace=True)
+        sampled = pd.concat([grouped[str(subject)] for subject in sampled_subjects])
+        sampled_metrics = evaluate_predictions(
+            sampled["true_label"].to_numpy(dtype=int),
+            sampled["predicted_label"].to_numpy(dtype=int),
+        )
+        for key in metric_keys:
+            bootstrap_values[key].append(float(sampled_metrics[key]))
+
+    table = pd.DataFrame(
+        [
+            {
+                "metric": key,
+                "label": _metric_label(key),
+                "estimate": float(metrics[key]),
+                "lower": float(np.percentile(bootstrap_values[key], 2.5)),
+                "upper": float(np.percentile(bootstrap_values[key], 97.5)),
+            }
+            for key in metric_keys
+        ]
+    ).sort_values("estimate")
+    y = np.arange(len(table))
+    lower_errors = table["estimate"] - table["lower"]
+    upper_errors = table["upper"] - table["estimate"]
+    fig, ax = plt.subplots(figsize=(11, 7.5))
+    ax.errorbar(
+        table["estimate"],
+        y,
+        xerr=np.vstack([lower_errors, upper_errors]),
+        fmt="o",
+        markersize=9,
+        color=PLOT_ACCENT_COLOUR,
+        ecolor="#829AB1",
+        elinewidth=2.2,
+        capsize=4,
+        markeredgecolor="white",
+    )
+    for row, result in table.reset_index(drop=True).iterrows():
+        ax.text(
+            float(result["upper"]) + 0.012,
+            row,
+            f"{float(result['estimate']):.3f} "
+            f"[{float(result['lower']):.3f}, {float(result['upper']):.3f}]",
+            va="center",
+            fontsize=9.5,
+            fontweight="semibold",
+            color=PLOT_TEXT_COLOUR,
+        )
+    minimum = min(0.0, float(table["lower"].min()) - 0.05)
+    ax.set(
+        yticks=y,
+        yticklabels=table["label"],
+        xlim=(minimum, 1.12),
+        xlabel="Score with 95% percentile interval",
+        title=("Outer-LOSO performance with subject-level uncertainty\n"
+               f"Percentile intervals from {n_bootstrap:,} subject bootstrap samples"),
+    )
+    _style_nested_axis(ax, grid_axis="x")
+    _finish_nested_plot(
+        fig, NESTED_PLOTS_DIR / "outer_loso_metric_confidence_intervals.png"
+    )
+
+
+def aggregate_inner_candidate_scores(
+    inner_scores: pd.DataFrame,
+    save_table: bool = True,
+) -> pd.DataFrame:
     """Average inner-CV candidate results across outer training folds for plots."""
     metric_columns = {
         "inner_accuracy": "accuracy",
@@ -1581,10 +2267,11 @@ def aggregate_inner_candidate_scores(inner_scores: pd.DataFrame) -> pd.DataFrame
         .mean()
         .rename(columns=available)
     )
-    diagnostic.to_csv(
-        NESTED_OUTPUT_DIR / "inner_cv_mean_candidate_scores_for_plots.csv",
-        index=False,
-    )
+    if save_table:
+        diagnostic.to_csv(
+            NESTED_OUTPUT_DIR / "inner_cv_mean_candidate_scores_for_plots.csv",
+            index=False,
+        )
     return diagnostic
 
 
@@ -1607,14 +2294,27 @@ def save_nested_metric_heatmaps(diagnostic: pd.DataFrame, metric: str) -> None:
         fig_width = max(11, 1.55 * len(sensors))
         fig_height = max(6, 0.65 * len(pivot.index) + 2.5)
         fig, ax = plt.subplots(figsize=(fig_width, fig_height))
-        image = ax.imshow(pivot.to_numpy(dtype=float), cmap="Blues", vmin=0, vmax=1, aspect="auto")
-        fig.colorbar(image, ax=ax, label=metric.replace("_", " ").title())
+        values = pivot.to_numpy(dtype=float)
+        finite_values = pd.Series(values.ravel()).dropna()
+        colour_min, colour_max = _score_axis_limits(finite_values, padding=0.03)
+        image = ax.imshow(
+            values,
+            cmap="YlGnBu",
+            vmin=colour_min,
+            vmax=colour_max,
+            aspect="auto",
+        )
+        colour_bar = fig.colorbar(image, ax=ax, pad=0.025)
+        colour_bar.set_label(_metric_label(metric), color=PLOT_TEXT_COLOUR)
+        colour_bar.ax.tick_params(colors=PLOT_MUTED_COLOUR, length=0)
+        text_threshold = colour_min + 0.58 * (colour_max - colour_min)
         for row in range(len(pivot.index)):
             for column in range(len(pivot.columns)):
                 value = pivot.iloc[row, column]
                 if pd.notna(value):
                     ax.text(column, row, f"{value:.3f}", ha="center", va="center",
-                            color="white" if value > 0.65 else "black", fontsize=9)
+                            color="white" if value > text_threshold else PLOT_TEXT_COLOUR,
+                            fontsize=9, fontweight="semibold")
         ax.set(
             xticks=np.arange(len(pivot.columns)),
             yticks=np.arange(len(pivot.index)),
@@ -1622,10 +2322,13 @@ def save_nested_metric_heatmaps(diagnostic: pd.DataFrame, metric: str) -> None:
             yticklabels=pivot.index,
             xlabel="Sensor combination",
             ylabel="Model",
-            title=(f"{metric.replace('_', ' ').title()} by model and sensor — {feature_set}\n"
-                   "Inner-CV selection diagnostic; not final test performance"),
+            title=(f"{_metric_label(metric)} by model and sensor: {feature_set}\n"
+                   "Inner-CV selection diagnostic; "),
         )
         ax.grid(False)
+        ax.tick_params(length=0, colors=PLOT_TEXT_COLOUR)
+        for spine in ax.spines.values():
+            spine.set_visible(False)
         plt.setp(ax.get_xticklabels(), rotation=35, ha="right")
         _finish_nested_plot(
             fig,
@@ -1639,50 +2342,150 @@ def _best_inner_candidates(diagnostic: pd.DataFrame, metric: str) -> pd.DataFram
 
 
 def save_nested_best_model_barplot(diagnostic: pd.DataFrame, metric: str) -> None:
-    """Plot the best inner-CV model for every sensor/feature-set pair."""
+    """Plot best candidates as readable feature-set small multiples."""
     best = _best_inner_candidates(diagnostic, metric)
-    best = best.sort_values(metric, ascending=True)
-    labels = [
-        f"{sensor} | {features}\n({model})"
-        for sensor, features, model in zip(
-            best["sensor_combination"], best["feature_set"], best["model"]
-        )
-    ]
-    fig, ax = plt.subplots(figsize=(12, max(8, 0.36 * len(best))))
-    bars = ax.barh(labels, best[metric], color="#3182bd")
-    ax.set_xlim(0, 1.05)
-    ax.set_xlabel(metric.replace("_", " ").title())
-    ax.set_title(
-        "Best model per sensor and feature set\n"
-        "Mean inner-CV selection score; not final test performance"
+    feature_order = _ordered_values(
+        best["feature_set"],
+        ["All features", "Top 5 RFE features", "Top 10 RFE features", "Top 15 RFE features"],
     )
-    for bar, value in zip(bars, best[metric]):
-        ax.text(value + 0.01, bar.get_y() + bar.get_height() / 2, f"{value:.3f}", va="center")
-    _finish_nested_plot(fig, NESTED_PLOTS_DIR / f"best_model_inner_cv_{metric}.png")
+    model_order = list(dict.fromkeys(best["model"].astype(str)))
+    model_colours = {
+        model: MODEL_COLOURS.get(model, PLOT_MUTED_COLOUR) for model in model_order
+    }
+
+    n_columns = 2
+    n_rows = int(np.ceil(len(feature_order) / n_columns))
+    fig, axes = plt.subplots(
+        n_rows,
+        n_columns,
+        figsize=(17, 5.2 * n_rows),
+        sharex=True,
+        squeeze=False,
+    )
+    lower, upper = _score_axis_limits(best[metric].astype(float), padding=0.05)
+
+    for ax, feature_set in zip(axes.flat, feature_order):
+        subset = best[best["feature_set"] == feature_set].copy()
+        subset["sensor_order"] = subset["sensor_combination"].map(
+            {sensor: index for index, sensor in enumerate(SOURCE_ORDER)}
+        )
+        subset = subset.sort_values("sensor_order", ascending=False)
+        y = np.arange(len(subset))
+        colours = [model_colours[str(model)] for model in subset["model"]]
+        ax.scatter(
+            subset[metric], y, c=colours, s=90, edgecolor="white",
+            linewidth=0.9, zorder=3,
+        )
+        for row, (_, candidate) in enumerate(subset.iterrows()):
+            ax.text(
+                float(candidate[metric]) + 0.008,
+                row,
+                f"{float(candidate[metric]):.3f}",
+                va="center",
+                fontsize=10,
+                fontweight="semibold",
+            )
+        ax.set(
+            yticks=y,
+            yticklabels=subset["sensor_combination"],
+            xlim=(lower, upper),
+            title=feature_set,
+        )
+        _style_nested_axis(ax, grid_axis="x")
+        for row in range(len(subset)):
+            if row % 2 == 0:
+                ax.axhspan(row - 0.5, row + 0.5, color="#f3f6f8", zorder=0)
+
+    for ax in axes.flat[len(feature_order):]:
+        ax.set_visible(False)
+    for ax in axes[-1, :]:
+        if ax.get_visible():
+            ax.set_xlabel(_metric_label(metric))
+
+    legend_handles = [
+        Line2D(
+            [0], [0], marker="o", linestyle="", markersize=8,
+            markerfacecolor=model_colours[model], markeredgecolor="white", label=model,
+        )
+        for model in model_order
+    ]
+    fig.suptitle(
+        "Best model per sensor and feature set\n"
+        "Mean inner-CV selection score;",
+        fontsize=17,
+        y=0.995,
+    )
+    fig.legend(
+        handles=legend_handles,
+        loc="lower center",
+        ncol=min(5, len(legend_handles)),
+        frameon=False,
+        title="Selected model",
+    )
+    _finish_nested_plot(
+        fig,
+        NESTED_PLOTS_DIR / f"best_model_inner_cv_{metric}.png",
+        layout_rect=(0, 0.09, 1, 0.93),
+    )
 
 
 def save_nested_model_ranking(diagnostic: pd.DataFrame, metric: str) -> None:
     ranking = diagnostic.groupby("model", as_index=False)[metric].mean().sort_values(metric) # type: ignore
-    fig, ax = plt.subplots(figsize=(10, 7))
-    bars = ax.barh(ranking["model"], ranking[metric], color="#4292c6")
-    ax.set_xlim(0, 1.05)
-    ax.set_xlabel(f"Mean {metric.replace('_', ' ')}")
-    ax.set_title("Average model ranking\nInner-CV diagnostic; not final test performance")
-    for bar, value in zip(bars, ranking[metric]):
-        ax.text(value + 0.01, bar.get_y() + bar.get_height() / 2, f"{value:.3f}", va="center")
+    fig, ax = plt.subplots(figsize=(10.5, 7))
+    y = np.arange(len(ranking))
+    colours = [
+        MODEL_COLOURS.get(str(model), PLOT_MUTED_COLOUR) for model in ranking["model"]
+    ]
+    ax.hlines(
+        y,
+        ranking[metric].min(),
+        ranking[metric],
+        color="#D9E2EC",
+        linewidth=2,
+        zorder=1,
+    )
+    ax.scatter(ranking[metric], y, c=colours, s=105, edgecolor="white", zorder=3)
+    lower, upper = _score_axis_limits(ranking[metric], padding=0.05)
+    ax.set(
+        yticks=y,
+        yticklabels=ranking["model"],
+        xlim=(lower, upper),
+        xlabel=f"Mean {_metric_label(metric)}",
+    )
+    ax.set_title("Average model ranking\nInner-CV diagnostic; ")
+    for row, value in enumerate(ranking[metric]):
+        ax.text(
+            value + 0.008, row, f"{value:.3f}", va="center",
+            fontweight="semibold", color=PLOT_TEXT_COLOUR,
+        )
+    _style_nested_axis(ax, grid_axis="x")
     _finish_nested_plot(fig, NESTED_PLOTS_DIR / f"model_ranking_inner_cv_{metric}.png")
 
 
 def save_nested_feature_set_comparison(diagnostic: pd.DataFrame, metric: str) -> None:
     best = _best_inner_candidates(diagnostic, metric)
     comparison = best.groupby("feature_set", as_index=False)[metric].mean().sort_values(metric)  # type: ignore
-    fig, ax = plt.subplots(figsize=(10, 7))
-    bars = ax.barh(comparison["feature_set"], comparison[metric], color="#6baed6")
-    ax.set_xlim(0, 1.05)
-    ax.set_xlabel(f"Mean best-model {metric.replace('_', ' ')}")
-    ax.set_title("Feature-set comparison\nInner-CV diagnostic; not final test performance")
-    for bar, value in zip(bars, comparison[metric]):
-        ax.text(value + 0.01, bar.get_y() + bar.get_height() / 2, f"{value:.3f}", va="center")
+    fig, ax = plt.subplots(figsize=(10.5, 6.5))
+    y = np.arange(len(comparison))
+    colours = [
+        FEATURE_SET_COLOURS.get(str(name), PLOT_ACCENT_COLOUR)
+        for name in comparison["feature_set"]
+    ]
+    ax.scatter(comparison[metric], y, c=colours, s=130, edgecolor="white", zorder=3)
+    lower, upper = _score_axis_limits(comparison[metric], padding=0.05)
+    ax.set(
+        yticks=y,
+        yticklabels=comparison["feature_set"],
+        xlim=(lower, upper),
+        xlabel=f"Mean best-model {_metric_label(metric)}",
+    )
+    ax.set_title("Feature-set comparison\nInner-CV diagnostic; ")
+    for row, value in enumerate(comparison[metric]):
+        ax.text(
+            value + 0.006, row, f"{value:.3f}", va="center",
+            fontweight="semibold", color=PLOT_TEXT_COLOUR,
+        )
+    _style_nested_axis(ax, grid_axis="x")
     _finish_nested_plot(fig, NESTED_PLOTS_DIR / f"feature_set_comparison_inner_cv_{metric}.png")
 
 
@@ -1697,14 +2500,27 @@ def save_nested_sensor_feature_matrix(diagnostic: pd.DataFrame, metric: str) -> 
     ]
     pivot = pivot.reindex(columns=feature_order)
     fig, ax = plt.subplots(figsize=(11, 8))
-    image = ax.imshow(pivot.to_numpy(dtype=float), cmap="Blues", vmin=0, vmax=1, aspect="auto")
-    fig.colorbar(image, ax=ax, label=metric.replace("_", " ").title())
+    values = pivot.to_numpy(dtype=float)
+    finite_values = pd.Series(values.ravel()).dropna()
+    colour_min, colour_max = _score_axis_limits(finite_values, padding=0.03)
+    image = ax.imshow(
+        values,
+        cmap="YlGnBu",
+        vmin=colour_min,
+        vmax=colour_max,
+        aspect="auto",
+    )
+    colour_bar = fig.colorbar(image, ax=ax, pad=0.025)
+    colour_bar.set_label(_metric_label(metric), color=PLOT_TEXT_COLOUR)
+    colour_bar.ax.tick_params(colors=PLOT_MUTED_COLOUR, length=0)
+    text_threshold = colour_min + 0.58 * (colour_max - colour_min)
     for row in range(len(pivot.index)):
         for column in range(len(pivot.columns)):
             value = pivot.iloc[row, column]
             if pd.notna(value):
                 ax.text(column, row, f"{value:.3f}", ha="center", va="center",
-                        color="white" if value > 0.65 else "black")
+                        color="white" if value > text_threshold else PLOT_TEXT_COLOUR,
+                        fontweight="semibold")
     ax.set(
         xticks=np.arange(len(pivot.columns)),
         yticks=np.arange(len(pivot.index)),
@@ -1713,9 +2529,12 @@ def save_nested_sensor_feature_matrix(diagnostic: pd.DataFrame, metric: str) -> 
         xlabel="Feature set",
         ylabel="Sensor combination",
         title=("Best model by sensor and feature set\n"
-               "Mean inner-CV diagnostic; not final test performance"),
+               "Mean inner-CV diagnostic; "),
     )
     ax.grid(False)
+    ax.tick_params(length=0, colors=PLOT_TEXT_COLOUR)
+    for spine in ax.spines.values():
+        spine.set_visible(False)
     plt.setp(ax.get_xticklabels(), rotation=25, ha="right")
     _finish_nested_plot(fig, NESTED_PLOTS_DIR / f"sensor_feature_matrix_inner_cv_{metric}.png")
 
@@ -1730,21 +2549,53 @@ def save_selection_frequency_plots(selections: pd.DataFrame) -> None:
     for column, label, filename in specifications:
         counts = selections[column].value_counts().sort_values()
         fig, ax = plt.subplots(figsize=(10, max(6, 0.55 * len(counts) + 2)))
-        bars = ax.barh(counts.index.astype(str), counts.values, color="#3182bd") # type: ignore
+        if column == "model":
+            colours = [
+                MODEL_COLOURS.get(str(name), PLOT_MUTED_COLOUR) for name in counts.index
+            ]
+        elif column == "feature_set":
+            colours = [
+                FEATURE_SET_COLOURS.get(str(name), PLOT_ACCENT_COLOUR)
+                for name in counts.index
+            ]
+        else:
+            colours = plt.cm.viridis(np.linspace(0.3, 0.75, len(counts))) # type: ignore
+        bars = ax.barh(
+            counts.index.astype(str), counts.values, color=colours,
+            height=0.62, edgecolor="white",
+        ) # type: ignore
         ax.set_xlabel("Number of outer folds selected")
-        ax.set_title(f"{label} frequency across outer LOSO folds")
+        ax.set_title(f"{label} frequency\nAcross outer-LOSO folds")
+        ax.set_xlim(0, max(counts.max() * 1.18, 1))
         for bar, value in zip(bars, counts.values):
-            ax.text(value + 0.1, bar.get_y() + bar.get_height() / 2, str(value), va="center")
+            ax.text(
+                value + max(counts.max() * 0.02, 0.08),
+                bar.get_y() + bar.get_height() / 2,
+                str(value),
+                va="center",
+                fontweight="semibold",
+                color=PLOT_TEXT_COLOUR,
+            )
+        _style_nested_axis(ax, grid_axis="x")
         _finish_nested_plot(fig, NESTED_PLOTS_DIR / filename)
 
     matrix = pd.crosstab(selections["model"], selections["sensor_combination"])
     matrix = matrix.reindex(columns=[name for name in SOURCE_ORDER if name in matrix.columns])
     fig, ax = plt.subplots(figsize=(12, max(6, 0.65 * len(matrix.index) + 2)))
-    image = ax.imshow(matrix.to_numpy(dtype=float), cmap="Blues", aspect="auto")
-    fig.colorbar(image, ax=ax, label="Outer folds selected")
+    matrix_values = matrix.to_numpy(dtype=float)
+    image = ax.imshow(matrix_values, cmap="YlGnBu", aspect="auto", vmin=0)
+    colour_bar = fig.colorbar(image, ax=ax, pad=0.025)
+    colour_bar.set_label("Outer folds selected", color=PLOT_TEXT_COLOUR)
+    colour_bar.ax.tick_params(colors=PLOT_MUTED_COLOUR, length=0)
+    threshold = matrix_values.max() * 0.55 if matrix_values.size else 0
     for row in range(len(matrix.index)):
         for column in range(len(matrix.columns)):
-            ax.text(column, row, str(matrix.iloc[row, column]), ha="center", va="center")
+            value = matrix.iloc[row, column]
+            ax.text(
+                column, row, str(value), ha="center", va="center",
+                color="white" if value > threshold else PLOT_TEXT_COLOUR,
+                fontweight="semibold",
+            )
     ax.set(
         xticks=np.arange(len(matrix.columns)),
         yticks=np.arange(len(matrix.index)),
@@ -1755,11 +2606,17 @@ def save_selection_frequency_plots(selections: pd.DataFrame) -> None:
         title="Selected model × sensor frequency across outer LOSO folds",
     )
     ax.grid(False)
+    ax.tick_params(length=0, colors=PLOT_TEXT_COLOUR)
+    for spine in ax.spines.values():
+        spine.set_visible(False)
     plt.setp(ax.get_xticklabels(), rotation=35, ha="right")
     _finish_nested_plot(fig, NESTED_PLOTS_DIR / "selection_frequency_model_sensor_matrix.png")
 
 
-def save_feature_selection_stability(selections: pd.DataFrame) -> None:
+def save_feature_selection_stability(
+    selections: pd.DataFrame,
+    save_table: bool = True,
+) -> None:
     """Plot how often individual features appeared in the outer-fold winners."""
     counts: Dict[str, int] = {}
     for value in selections["selected_features"].fillna(""):
@@ -1772,12 +2629,35 @@ def save_feature_selection_stability(selections: pd.DataFrame) -> None:
         sorted(counts.items(), key=lambda item: (-item[1], item[0])),
         columns=["feature", "outer_folds_selected"],
     )
-    stability.to_csv(NESTED_OUTPUT_DIR / "selected_feature_stability.csv", index=False)
+    if save_table:
+        stability.to_csv(
+            NESTED_OUTPUT_DIR / "selected_feature_stability.csv", index=False
+        )
     shown = stability.head(30).sort_values("outer_folds_selected")
     fig, ax = plt.subplots(figsize=(11, max(8, 0.38 * len(shown))))
-    ax.barh(shown["feature"], shown["outer_folds_selected"], color="#4292c6")
+    colour_scale = plt.Normalize(
+        shown["outer_folds_selected"].min(), shown["outer_folds_selected"].max()
+    )
+    colours = plt.cm.viridis(colour_scale(shown["outer_folds_selected"])) # type: ignore
+    bars = ax.barh(
+        shown["feature"], shown["outer_folds_selected"],
+        color=colours, height=0.66, edgecolor="white",
+    )
     ax.set_xlabel("Number of outer folds containing feature")
-    ax.set_title("Feature-selection stability (top 30) across outer LOSO folds")
+    ax.set_title("Feature-selection stability\nTop 30 features across outer-LOSO folds")
+    maximum = shown["outer_folds_selected"].max()
+    ax.set_xlim(0, maximum * 1.13)
+    for bar, value in zip(bars, shown["outer_folds_selected"]):
+        ax.text(
+            value + maximum * 0.015,
+            bar.get_y() + bar.get_height() / 2,
+            str(value),
+            va="center",
+            fontsize=9,
+            fontweight="semibold",
+            color=PLOT_TEXT_COLOUR,
+        )
+    _style_nested_axis(ax, grid_axis="x")
     _finish_nested_plot(fig, NESTED_PLOTS_DIR / "selected_feature_stability_top30.png")
 
 
@@ -1786,6 +2666,7 @@ def create_all_nested_plots(
     selections: pd.DataFrame,
     inner_scores: pd.DataFrame,
     metrics: Dict[str, float],
+    save_derived_tables: bool = True,
 ) -> None:
     """Create final unbiased plots and all restored comparison diagnostics."""
     NESTED_PLOTS_DIR.mkdir(parents=True, exist_ok=True)
@@ -1794,8 +2675,13 @@ def create_all_nested_plots(
     y_pred = predictions["predicted_label"].to_numpy(dtype=int)
     save_nested_confusion_matrix(y_true, y_pred)
     save_final_metric_summary(metrics)
-    save_per_class_metrics(y_true, y_pred)
-    diagnostic = aggregate_inner_candidate_scores(inner_scores)
+    save_per_class_metrics(y_true, y_pred, save_table=save_derived_tables)
+    save_outer_performance_by_selected_configuration(predictions)
+    save_outer_configuration_heatmaps(predictions)
+    save_outer_metric_confidence_intervals(predictions, metrics)
+    diagnostic = aggregate_inner_candidate_scores(
+        inner_scores, save_table=save_derived_tables
+    )
     for metric in ["accuracy", "balanced_accuracy", "macro_f1"]:
         save_nested_metric_heatmaps(diagnostic, metric)
         save_nested_best_model_barplot(diagnostic, metric)
@@ -1803,7 +2689,86 @@ def create_all_nested_plots(
         save_nested_feature_set_comparison(diagnostic, metric)
         save_nested_sensor_feature_matrix(diagnostic, metric)
     save_selection_frequency_plots(selections)
-    save_feature_selection_stability(selections)
+    save_feature_selection_stability(
+        selections, save_table=save_derived_tables
+    )
+
+
+def plot_only_main() -> None:
+    """Rebuild nested-CV plots entirely from existing result tables."""
+    # Plot-only mode is commonly run non-interactively (including over SSH).
+    # An explicit raster backend avoids depending on an available GUI session.
+    plt.switch_backend("Agg")
+    paths = {
+        "predictions": NESTED_OUTPUT_DIR / "outer_loso_predictions.csv",
+        "selections": NESTED_OUTPUT_DIR / "configuration_selected_in_each_outer_fold.csv",
+        "inner_scores": NESTED_OUTPUT_DIR / "inner_cv_candidate_scores.csv",
+        "metrics": NESTED_OUTPUT_DIR / "unbiased_final_performance.csv",
+    }
+    missing = [str(path) for path in paths.values() if not path.is_file()]
+    if missing:
+        formatted = "\n  - ".join(missing)
+        raise FileNotFoundError(
+            "Plot-only mode needs the existing nested-CV result files. "
+            f"Missing:\n  - {formatted}"
+        )
+
+    predictions = pd.read_csv(paths["predictions"])
+    selections = pd.read_csv(paths["selections"])
+    inner_scores = pd.read_csv(paths["inner_scores"])
+    metric_table = pd.read_csv(paths["metrics"])
+    if metric_table.empty:
+        raise ValueError(f"No metric row found in {paths['metrics']}")
+
+    required_columns = {
+        "predictions": {
+            "outer_fold", "sample_index", "subject", "true_label", "true_class",
+            "predicted_label", "predicted_class", "correct", "selected_model",
+            "selected_sensor_combination", "selected_feature_set",
+        },
+        "selections": {
+            "outer_fold", "held_out_subject", "model", "sensor_combination",
+            "feature_set", "inner_macro_f1", "selected_features",
+        },
+        "inner_scores": {
+            "sensor_combination", "feature_set", "model",
+            "inner_accuracy", "inner_balanced_accuracy", "inner_macro_f1",
+        },
+    }
+    tables = {
+        "predictions": predictions,
+        "selections": selections,
+        "inner_scores": inner_scores,
+    }
+    for name, required in required_columns.items():
+        absent = sorted(required.difference(tables[name].columns))
+        if absent:
+            raise ValueError(
+                f"{paths[name]} is missing required columns: {', '.join(absent)}"
+            )
+
+    metric_keys = [
+        "accuracy", "balanced_accuracy", "macro_precision", "macro_recall",
+        "macro_f1", "weighted_f1", "mcc",
+    ]
+    absent_metrics = [key for key in metric_keys if key not in metric_table.columns]
+    if absent_metrics:
+        raise ValueError(
+            f"{paths['metrics']} is missing required columns: "
+            f"{', '.join(absent_metrics)}"
+        )
+    metrics = {key: float(metric_table.iloc[0][key]) for key in metric_keys}
+
+    print("Rebuilding plots from existing nested-CV result files")
+    create_all_nested_plots(
+        predictions,
+        selections,
+        inner_scores,
+        metrics,
+        save_derived_tables=False,
+    )
+    print(f"[SAVED] Plots: {NESTED_PLOTS_DIR}")
+    print(f"[SAVED] Confusion matrix: {NESTED_CONFUSION_DIR}")
 
 
 def nested_main() -> None:
@@ -2079,7 +3044,7 @@ def main() -> None:
             metric="accuracy",
             feature_set_name=feature_set_name,
             filename=f"heatmap_accuracy_{safe_feature_set}.png",
-            title=f"Accuracy by model and sensor combination — {feature_set_name}",
+            title=f"Accuracy by model and sensor combination: {feature_set_name}",
         )
 
         save_metric_heatmap(
@@ -2087,7 +3052,7 @@ def main() -> None:
             metric="macro_f1",
             feature_set_name=feature_set_name,
             filename=f"heatmap_macro_f1_{safe_feature_set}.png",
-            title=f"Macro F1-score by model and sensor combination — {feature_set_name}",
+            title=f"Macro F1-score by model and sensor combination: {feature_set_name}",
         )
 
         save_metric_heatmap(
@@ -2095,7 +3060,7 @@ def main() -> None:
             metric="balanced_accuracy",
             feature_set_name=feature_set_name,
             filename=f"heatmap_balanced_accuracy_{safe_feature_set}.png",
-            title=f"Balanced accuracy by model and sensor combination — {feature_set_name}",
+            title=f"Balanced accuracy by model and sensor combination: {feature_set_name}",
         )
 
     save_best_model_barplot(
@@ -2132,4 +3097,13 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    nested_main()
+    required_plot_files = [
+        NESTED_OUTPUT_DIR / "outer_loso_predictions.csv",
+        NESTED_OUTPUT_DIR / "configuration_selected_in_each_outer_fold.csv",
+        NESTED_OUTPUT_DIR / "inner_cv_candidate_scores.csv",
+        NESTED_OUTPUT_DIR / "unbiased_final_performance.csv",
+    ]
+    if all(path.is_file() for path in required_plot_files):
+        plot_only_main()
+    else:
+        nested_main()
