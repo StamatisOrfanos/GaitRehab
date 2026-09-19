@@ -9,28 +9,22 @@ Classes:
 Input:
     data.csv
 
-Optional input from feature-selection step:
-    outputs/eda_plots/feature_selection/selected_features_for_classification.csv
-
-This script evaluates each sensor combination in four modes:
-    1. All features
-    2. Top 5 selected features from RFE
-    3. Top 10 selected features from RFE
-    4. Top 15 selected features from RFE
+Feature selection:
+    RFE is refitted inside every inner training fold. Whole-dataset feature
+    lists from the EDA script are deliberately not used for validation.
 
 Validation:
-    - Leave-One-Subject-Out if subject groups can be inferred from ID
-    - Otherwise row-level Leave-One-Out, with warning
+    - Outer Leave-One-Subject-Out provides the final performance estimate.
+    - Inner stratified group CV selects sensor set, feature count, and model.
+    - No row-level fallback is allowed.
 
 Outputs:
-    outputs/ml_results_loso_top5_top10_top15_all/
-        final_model_comparison.csv
-        best_model_per_sensor_combination_and_feature_set.csv
-        loo_predictions.csv
-        classification_reports/
-        confusion_matrices/
-        plots/
-        selected_feature_lists/
+    outputs/ml_results_nested_subject_cv/
+        unbiased_final_performance.csv
+        outer_loso_predictions.csv
+        configuration_selected_in_each_outer_fold.csv
+        inner_cv_candidate_scores.csv
+        final_classification_report.txt
 
 Sensor combinations:
     1. Gyroscope
@@ -58,7 +52,8 @@ from sklearn.base import clone
 from sklearn.impute import SimpleImputer
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
-from sklearn.model_selection import LeaveOneGroupOut
+from sklearn.model_selection import LeaveOneGroupOut, StratifiedGroupKFold
+from sklearn.feature_selection import RFE, VarianceThreshold
 from sklearn.metrics import (
     accuracy_score,
     balanced_accuracy_score,
@@ -92,6 +87,13 @@ SELECTED_FEATURES_PATH = Path(
 )
 
 OUTPUT_DIR = Path("outputs/ml_results_loso_top5_top10_top15_all")
+
+# Unbiased final evaluation.  The outer LOSO subjects are never used to choose
+# a sensor set, feature count, or model.  Those choices are made only in the
+# outer training data by subject-grouped inner CV.
+NESTED_OUTPUT_DIR = Path("outputs/ml_results_nested_subject_cv")
+INNER_CV_SPLITS = 5
+PRIMARY_SELECTION_METRIC = "macro_f1"
 
 ID_COLUMN = "ID"
 LABEL_COLUMN = "Label"
@@ -651,7 +653,6 @@ def build_models() -> Dict[str, Pipeline]:
                     LogisticRegression(
                         max_iter=5000,
                         class_weight="balanced",
-                        multi_class="auto",
                         random_state=RANDOM_STATE,
                     ),
                 ),
@@ -1291,7 +1292,217 @@ def save_classification_report(
 
 
 # =============================================================================
-# Main ML pipeline
+# Nested subject-level evaluation
+# =============================================================================
+
+def build_nested_pipeline(base_pipeline: Pipeline, n_features: Optional[int]) -> Pipeline:
+    """Build preprocessing, fold-fitted RFE, and classifier as one pipeline."""
+    steps = [
+        ("imputer", clone(base_pipeline.named_steps["imputer"])),
+        ("variance_filter", VarianceThreshold()),
+        ("scaler", clone(base_pipeline.named_steps["scaler"])),
+    ]
+    if n_features is not None:
+        steps.append(("feature_selector", RFE(
+            estimator=LogisticRegression(
+                solver="lbfgs", class_weight="balanced", max_iter=5000,
+                random_state=RANDOM_STATE,
+            ),
+            n_features_to_select=n_features,
+            step=0.10,
+        )))
+    steps.append(("model", clone(base_pipeline.named_steps["model"])))
+    return Pipeline(steps)
+
+
+def candidate_feature_counts(n_available: int) -> List[Optional[int]]:
+    return [None] + [n for n in SELECTED_FEATURE_COUNTS if n < n_available]
+
+
+def nested_subject_evaluation(
+    df: pd.DataFrame,
+    groups: np.ndarray,
+    sensor_columns: Dict[str, List[str]],
+    models: Dict[str, Pipeline],
+) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    """
+    Outer LOSO estimates generalisation. Sensor set, RFE feature count, and
+    classifier are chosen using grouped CV on outer-training subjects only.
+    """
+    all_features = sorted(set().union(*(set(v) for v in sensor_columns.values())))
+    # Do not use the complete dataset to remove constant columns: even that
+    # decision belongs inside the fold-fitted pipeline.
+    X_all = df[all_features].replace([np.inf, -np.inf], np.nan).copy()
+    y = df[LABEL_COLUMN].copy()
+    outer = LeaveOneGroupOut()
+    prediction_rows, selection_rows, inner_rows = [], [], []
+
+    for outer_fold, (train_idx, test_idx) in enumerate(
+        outer.split(X_all, y, groups), start=1
+    ):
+        held_out = str(np.unique(groups[test_idx])[0])
+        X_train, X_test = X_all.iloc[train_idx], X_all.iloc[test_idx]
+        y_train, y_test = y.iloc[train_idx], y.iloc[test_idx]
+        train_groups = groups[train_idx]
+        n_inner = min(INNER_CV_SPLITS, len(np.unique(train_groups)))
+        inner = StratifiedGroupKFold(
+            n_splits=n_inner, shuffle=True,
+            random_state=RANDOM_STATE + outer_fold,
+        )
+        inner_splits = list(inner.split(X_train, y_train, train_groups))
+        fold_rows = []
+        print(f"[OUTER {outer_fold:02d}] held-out subject: {held_out}")
+
+        for source in SOURCE_ORDER:
+            columns = [c for c in sensor_columns[source] if c in X_all.columns]
+            if not columns:
+                continue
+            for n_features in candidate_feature_counts(len(columns)):
+                feature_set = (
+                    "All features" if n_features is None
+                    else f"Top {n_features} RFE features"
+                )
+                for model_name, base_model in models.items():
+                    pooled_true, pooled_pred = [], []
+                    try:
+                        for inner_train, inner_valid in inner_splits:
+                            pipeline = build_nested_pipeline(base_model, n_features)
+                            pipeline.fit(
+                                X_train.iloc[inner_train][columns],
+                                y_train.iloc[inner_train],
+                            )
+                            pred = pipeline.predict(
+                                X_train.iloc[inner_valid][columns]
+                            )
+                            pooled_true.extend(y_train.iloc[inner_valid].astype(int))
+                            pooled_pred.extend(np.asarray(pred, dtype=int))
+                        scores = evaluate_predictions(
+                            np.asarray(pooled_true), np.asarray(pooled_pred)
+                        )
+                        row = {
+                            "outer_fold": outer_fold,
+                            "held_out_subject": held_out,
+                            "sensor_combination": source,
+                            "feature_set": feature_set,
+                            "n_selected_features": (
+                                "all" if n_features is None else n_features
+                            ),
+                            "model": model_name,
+                            **{f"inner_{k}": v for k, v in scores.items()},
+                        }
+                        fold_rows.append(row)
+                        inner_rows.append(row)
+                    except Exception as exc:
+                        print(f"  [SKIP] {source} | {feature_set} | {model_name}: {exc}")
+
+        if not fold_rows:
+            raise RuntimeError(f"No valid candidates in outer fold {outer_fold}.")
+        winner = pd.DataFrame(fold_rows).sort_values(
+            by=[
+                f"inner_{PRIMARY_SELECTION_METRIC}",
+                "inner_balanced_accuracy", "inner_accuracy",
+                "sensor_combination", "feature_set", "model",
+            ],
+            ascending=[False, False, False, True, True, True],
+        ).iloc[0].to_dict()
+
+        source = str(winner["sensor_combination"])
+        columns = [c for c in sensor_columns[source] if c in X_all.columns]
+        stored_count = winner["n_selected_features"]
+        n_features = None if stored_count == "all" else int(stored_count)
+        model_name = str(winner["model"])
+        final_pipeline = build_nested_pipeline(models[model_name], n_features)
+        final_pipeline.fit(X_train[columns], y_train)
+        outer_pred = final_pipeline.predict(X_test[columns])
+        selected_names = columns
+        if n_features is not None:
+            variance_mask = final_pipeline.named_steps["variance_filter"].get_support()
+            post_variance_names = np.asarray(columns)[variance_mask]
+            selected_names = list(post_variance_names[
+                final_pipeline.named_steps["feature_selector"].support_
+            ])
+        else:
+            variance_mask = final_pipeline.named_steps["variance_filter"].get_support()
+            selected_names = list(np.asarray(columns)[variance_mask])
+        selection_rows.append({
+            **winner, "selected_features": "|".join(selected_names)
+        })
+        print(
+            f"  selected: {source} | {winner['feature_set']} | {model_name} | "
+            f"inner macro-F1={winner['inner_macro_f1']:.3f}"
+        )
+
+        for local_i, sample_idx in enumerate(test_idx):
+            true_label = int(y_test.iloc[local_i])
+            pred_label = int(outer_pred[local_i])
+            prediction_rows.append({
+                "outer_fold": outer_fold,
+                "sample_index": int(sample_idx),
+                "subject": held_out,
+                "true_label": true_label,
+                "true_class": CLASS_NAMES[true_label],
+                "predicted_label": pred_label,
+                "predicted_class": CLASS_NAMES[pred_label],
+                "correct": int(true_label == pred_label),
+                "selected_sensor_combination": source,
+                "selected_feature_set": winner["feature_set"],
+                "selected_model": model_name,
+            })
+
+    return (
+        pd.DataFrame(prediction_rows),
+        pd.DataFrame(selection_rows),
+        pd.DataFrame(inner_rows),
+    )
+
+
+def nested_main() -> None:
+    NESTED_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    # infer_groups writes its diagnostic table under the legacy output root.
+    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    print("=" * 80)
+    print("NESTED SUBJECT-LEVEL EVALUATION")
+    print("Outer LOSO evaluation; inner grouped CV configuration selection")
+    print("=" * 80)
+    df = read_dataset(DATA_PATH)
+    groups = infer_groups(df)
+    predictions, selections, inner_scores = nested_subject_evaluation(
+        df, groups, get_sensor_columns(df), build_models()
+    )
+    y_true = predictions["true_label"].to_numpy(dtype=int)
+    y_pred = predictions["predicted_label"].to_numpy(dtype=int)
+    metrics = evaluate_predictions(y_true, y_pred)
+    pd.DataFrame([{
+        "validation_method": (
+            "Nested subject CV: outer LOSO, inner StratifiedGroupKFold"
+        ),
+        "selection_metric": PRIMARY_SELECTION_METRIC,
+        "n_outer_subjects": predictions["subject"].nunique(),
+        **metrics,
+    }]).to_csv(NESTED_OUTPUT_DIR / "unbiased_final_performance.csv", index=False)
+    predictions.to_csv(NESTED_OUTPUT_DIR / "outer_loso_predictions.csv", index=False)
+    selections.to_csv(
+        NESTED_OUTPUT_DIR / "configuration_selected_in_each_outer_fold.csv",
+        index=False,
+    )
+    inner_scores.to_csv(
+        NESTED_OUTPUT_DIR / "inner_cv_candidate_scores.csv", index=False
+    )
+    report = classification_report(
+        y_true, y_pred, labels=CLASS_LABELS, target_names=CLASS_LABEL_NAMES,
+        zero_division=0,
+    )
+    (NESTED_OUTPUT_DIR / "final_classification_report.txt").write_text(
+        report, encoding="utf-8"
+    )
+    print("\nFinal unbiased outer-LOSO performance")
+    for name, value in metrics.items():
+        print(f"  {name}: {value:.4f}")
+    print(f"[SAVED] {NESTED_OUTPUT_DIR}")
+
+
+# Legacy exhaustive comparison below is exploratory only. It must not be used
+# as an unbiased estimate after choosing its best-scoring configuration.
 # =============================================================================
 
 def main() -> None:
@@ -1567,4 +1778,4 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    nested_main()

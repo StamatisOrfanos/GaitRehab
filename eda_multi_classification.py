@@ -17,7 +17,8 @@ This version is adapted for the updated dataset format:
     - The new ID structure is checked explicitly:
           IDs 1-15  = healthy subjects
           IDs 16-30 = stroke subjects
-    - RFE selected-feature files are exported for top 5, 10, and 15 features
+    - Whole-dataset RFE outputs are exploratory only. They must not be supplied
+      to final validation; the ML script repeats RFE inside nested CV folds.
       and additional feature counts configured below.
 
 Outputs:
@@ -158,7 +159,7 @@ def parse_numeric_column(series: pd.Series) -> pd.Series:
     if pd.api.types.is_numeric_dtype(series):
         return series
 
-    cleaned = series.astype(str).str.strip()
+    cleaned = series.astype(str).str.strip() # type: ignore
     cleaned = cleaned.str.replace("\u00a0", "", regex=False)
     cleaned = cleaned.str.replace(" ", "", regex=False)
     cleaned = cleaned.str.replace(",", ".", regex=False)
@@ -257,7 +258,7 @@ def read_dataset(path: Path) -> pd.DataFrame:
         if parsed_id.notna().all():
             df[ID_COLUMN] = parsed_id.astype(int)
         else:
-            df[ID_COLUMN] = df[ID_COLUMN].astype(str).str.strip()
+            df[ID_COLUMN] = df[ID_COLUMN].astype(str).str.strip() # type: ignore
 
     metadata_columns = {ID_COLUMN, LABEL_COLUMN}
 
@@ -806,13 +807,12 @@ def build_rfe_estimator() -> LogisticRegression:
     Logistic regression is used here because RFE needs a model with coefficients
     or feature importances.
 
-    The liblinear solver handles multiclass through one-vs-rest, which is fine
-    for feature ranking in this small tabular dataset.
+    The lbfgs solver supports the three-class problem directly.
     """
 
     return LogisticRegression(
         penalty="l2",
-        solver="liblinear",
+        solver="lbfgs",
         class_weight="balanced",
         max_iter=5000,
         random_state=42,
@@ -1151,7 +1151,11 @@ def create_final_selected_feature_lists(
     all_rfe_df: pd.DataFrame,
 ) -> None:
     """
-    Creates small, practical selected-feature-list CSVs for later classification.
+    Creates exploratory whole-dataset feature lists for interpretation only.
+
+    IMPORTANT: these lists use all labels and therefore must not be used as
+    fixed inputs to cross-validated performance estimation. The classification
+    script performs feature selection again inside each training fold.
 
     Output format:
         source
@@ -1191,7 +1195,7 @@ def create_final_selected_feature_lists(
         ascending=[True, True, True, False],
     )
 
-    output_path = OUTPUT_DIR / "feature_selection" / "selected_features_for_classification.csv"
+    output_path = OUTPUT_DIR / "feature_selection" / "exploratory_rfe_features_full_dataset.csv"
     selected.to_csv(output_path, index=False)
 
     print(f"[SAVED] {output_path}")

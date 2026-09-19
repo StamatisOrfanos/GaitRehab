@@ -7,7 +7,7 @@ import pandas as pd
 import scipy.signal as signal
 from scipy.signal import butter, filtfilt, find_peaks
 from scipy.fft import fft, fftfreq
-from data_preprocessing import merge_data
+from old_code.data_preprocessing import merge_data
 from scipy.stats import skew, kurtosis, iqr
 from scipy import signal
 from scipy.stats import iqr, skew, kurtosis
@@ -43,7 +43,7 @@ def time_domain_features(data_dir: str, data_type: str):
         metrics[f'{side}-z-axis-({measurement_unit})-max']   = z_axis.max()
         metrics[f'{side}-z-axis-({measurement_unit})-min']   = z_axis.min()        
         metrics[f'{side}-z-axis-({measurement_unit})-rms']   = np.sqrt(np.mean(z_axis ** 2))
-        metrics[f'{side}-z-axis-({measurement_unit})-mad']   = np.median(np.abs(z_axis - np.median(z_axis)))
+        metrics[f'{side}-z-axis-({measurement_unit})-mad']   = np.median(np.abs(z_axis - np.median(z_axis))) # type: ignore
         metrics[f'{side}-z-axis-({measurement_unit})-range'] = metrics[f'{side}-z-axis-({measurement_unit})-max'] - metrics[f'{side}-z-axis-({measurement_unit})-min']
         metrics[f'{side}-z-axis-({measurement_unit})-iqr']   = np.percentile(z_axis, 75) - np.percentile(z_axis, 25)
         metrics[f'{side}-z-axis-({measurement_unit})-skew']  = ((z_axis - z_axis.mean())**3).mean() / (z_axis.std()**3)
@@ -97,7 +97,7 @@ def frequency_domain_features(data_dir: str, data_type: str, fs=100, window_dura
 
             fft_values  = fft(signal)
             frequencies = fftfreq(len(signal), d=1/fs)
-            power_spectral_density = np.abs(fft_values)**2
+            power_spectral_density = np.abs(fft_values)**2 # type: ignore
 
             pos_frequencies = frequencies[:len(signal) // 2]
             pos_power_spectral_density   = power_spectral_density[:len(signal) // 2]
@@ -147,8 +147,8 @@ def gait_features(data_dir: str, data_type: str):
     right_stride_times = np.diff(right_peaks[0])
     left_stance_swing  = detect_stance_swing_fast(data['left-z-axis (deg/s)'], data['timestamp (+0700)'])
     right_stance_swing = detect_stance_swing_fast(data['right-z-axis (deg/s)'], data['timestamp (+0700)'])
-    asymmetry = asymmetry_index(left_stride_times, right_stride_times)
-    symmetry  = symmetry_ratio(left_stride_times, right_stride_times)  
+    asymmetry = asymmetry_index(left_stride_times, right_stride_times) # type: ignore
+    symmetry  = symmetry_ratio(left_stride_times, right_stride_times)  # type: ignore
     
     output_dir = os.path.join(data_dir, 'gait_features')
     os.makedirs(output_dir, exist_ok=True) 
@@ -168,8 +168,8 @@ def gait_features(data_dir: str, data_type: str):
 
     pd.DataFrame({'symmetry_ratio': symmetry_ratios}).to_csv(os.path.join(output_dir, f'summary_gait_metrics_{data_type}.csv'), index=False)
 
-    asymmetry = asymmetry_index(left_stride_times, right_stride_times)
-    symmetry = symmetry_ratio(left_stride_times, right_stride_times)
+    asymmetry = asymmetry_index(left_stride_times, right_stride_times) # type: ignore
+    symmetry = symmetry_ratio(left_stride_times, right_stride_times) # type: ignore
     pd.DataFrame({'asymmetry_index': [asymmetry], 'symmetry_ratio': [symmetry]}).to_csv(
         os.path.join(output_dir, f'summary_gait_metrics_overall_{data_type}.csv'), index=False
     )
@@ -232,7 +232,7 @@ def cross_limb_features(data_dir: str, data_type: str, fs=100):
     cross_limb_features.to_csv(os.path.join(data_dir, 'cross_limb_metrics.csv'), index=False)
 
 
-def butter_low_pass(data: np.array, cutoff=6, fs=100, order=2):
+def butter_low_pass(data: np.array, cutoff=6, fs=100, order=2): # type: ignore
     '''
     Apply a low-pass Butterworth filter to the data.
     Args:
@@ -243,11 +243,11 @@ def butter_low_pass(data: np.array, cutoff=6, fs=100, order=2):
     '''
     nyq = 0.5 * fs
     normal_cutoff = cutoff / nyq
-    b, a = butter(order, normal_cutoff, btype='low', analog=False)
+    b, a = butter(order, normal_cutoff, btype='low', analog=False) # type: ignore
     return filtfilt(b, a, data)
 
 
-def detect_stance_swing_fast(z_filtered: np.array, time: np.array):
+def detect_stance_swing_fast(z_filtered: np.array, time: np.array): # type: ignore
     '''
     Vectorized stance and swing phase detection from filtered z-axis gyro signal.
     Args:
