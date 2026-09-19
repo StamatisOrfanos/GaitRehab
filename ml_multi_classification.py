@@ -25,6 +25,8 @@ Outputs:
         configuration_selected_in_each_outer_fold.csv
         inner_cv_candidate_scores.csv
         final_classification_report.txt
+        plots/*.png
+        confusion_matrices/*.png
 
 Sensor combinations:
     1. Gyroscope
@@ -55,23 +57,12 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.model_selection import LeaveOneGroupOut, StratifiedGroupKFold
 from sklearn.feature_selection import RFE, VarianceThreshold
 from sklearn.metrics import (
-    accuracy_score,
-    balanced_accuracy_score,
-    precision_score,
-    recall_score,
-    f1_score,
-    matthews_corrcoef,
-    confusion_matrix,
-    classification_report,
+    accuracy_score, balanced_accuracy_score, precision_score, recall_score, f1_score, matthews_corrcoef, confusion_matrix, classification_report,
 )
 
 from sklearn.linear_model import LogisticRegression
 from sklearn.svm import SVC
-from sklearn.ensemble import (
-    RandomForestClassifier,
-    ExtraTreesClassifier,
-    GradientBoostingClassifier,
-)
+from sklearn.ensemble import (RandomForestClassifier, ExtraTreesClassifier, GradientBoostingClassifier)
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.naive_bayes import GaussianNB
 
@@ -92,6 +83,8 @@ OUTPUT_DIR = Path("outputs/ml_results_loso_top5_top10_top15_all")
 # a sensor set, feature count, or model.  Those choices are made only in the
 # outer training data by subject-grouped inner CV.
 NESTED_OUTPUT_DIR = Path("outputs/ml_results_nested_subject_cv")
+NESTED_PLOTS_DIR = NESTED_OUTPUT_DIR / "plots"
+NESTED_CONFUSION_DIR = NESTED_OUTPUT_DIR / "confusion_matrices"
 INNER_CV_SPLITS = 5
 PRIMARY_SELECTION_METRIC = "macro_f1"
 
@@ -1456,6 +1449,363 @@ def nested_subject_evaluation(
     )
 
 
+def _finish_nested_plot(fig: plt.Figure, path: Path) -> None: # type: ignore
+    """Save and close one nested-evaluation figure."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fig.tight_layout()
+    fig.savefig(path, bbox_inches="tight")
+    plt.close(fig)
+
+
+def save_nested_confusion_matrix(
+    y_true: np.ndarray,
+    y_pred: np.ndarray,
+) -> None:
+    """Plot the final confusion matrix using only outer-LOSO predictions."""
+    matrix = confusion_matrix(y_true, y_pred, labels=CLASS_LABELS)
+    fig, ax = plt.subplots(figsize=(8, 7))
+    image = ax.imshow(matrix, cmap="Blues")
+    fig.colorbar(image, ax=ax, fraction=0.046, pad=0.04)
+    threshold = matrix.max() / 2 if matrix.size else 0
+    for row in range(matrix.shape[0]):
+        for column in range(matrix.shape[1]):
+            ax.text(
+                column,
+                row,
+                str(matrix[row, column]),
+                ha="center",
+                va="center",
+                color="white" if matrix[row, column] > threshold else "black",
+                fontweight="bold",
+            )
+    ax.set(
+        xticks=np.arange(len(CLASS_LABEL_NAMES)),
+        yticks=np.arange(len(CLASS_LABEL_NAMES)),
+        xticklabels=CLASS_LABEL_NAMES,
+        yticklabels=CLASS_LABEL_NAMES,
+        xlabel="Predicted class",
+        ylabel="True class",
+        title="Final confusion matrix — unbiased outer LOSO predictions",
+    )
+    ax.grid(False)
+    plt.setp(ax.get_xticklabels(), rotation=25, ha="right")
+    _finish_nested_plot(
+        fig, NESTED_CONFUSION_DIR / "final_outer_loso_confusion_matrix.png"
+    )
+
+
+def save_final_metric_summary(metrics: Dict[str, float]) -> None:
+    """Plot every final metric calculated from pooled outer-LOSO predictions."""
+    labels = [
+        "Accuracy", "Balanced\naccuracy", "Macro\nprecision",
+        "Macro\nrecall", "Macro F1", "Weighted F1", "MCC",
+    ]
+    keys = [
+        "accuracy", "balanced_accuracy", "macro_precision", "macro_recall",
+        "macro_f1", "weighted_f1", "mcc",
+    ]
+    values = [float(metrics[key]) for key in keys]
+    fig, ax = plt.subplots(figsize=(11, 7))
+    bars = ax.bar(labels, values, color=plt.cm.Blues(np.linspace(0.45, 0.9, len(keys)))) # type: ignore
+    lower_limit = min(0.0, min(values) - 0.08)
+    ax.set_ylim(lower_limit, 1.05)
+    ax.set_ylabel("Score")
+    ax.set_title("Final performance — unbiased outer LOSO predictions")
+    for bar, value in zip(bars, values):
+        ax.text(
+            bar.get_x() + bar.get_width() / 2,
+            value + (0.02 if value >= 0 else -0.05),
+            f"{value:.3f}",
+            ha="center",
+            va="bottom" if value >= 0 else "top",
+        )
+    _finish_nested_plot(fig, NESTED_PLOTS_DIR / "final_outer_loso_all_metrics.png")
+
+
+def save_per_class_metrics(y_true: np.ndarray, y_pred: np.ndarray) -> None:
+    """Plot final precision, recall and F1 separately for each class."""
+    report = classification_report(
+        y_true,
+        y_pred,
+        labels=CLASS_LABELS,
+        target_names=CLASS_LABEL_NAMES,
+        output_dict=True,
+        zero_division=0,
+    )
+    class_table = pd.DataFrame(
+        [
+            {
+                "class": class_name,
+                "precision": report[class_name]["precision"], # type: ignore
+                "recall": report[class_name]["recall"], # type: ignore
+                "f1_score": report[class_name]["f1-score"], # type: ignore
+                "support": report[class_name]["support"], # type: ignore
+            }
+            for class_name in CLASS_LABEL_NAMES
+        ]
+    )
+    class_table.to_csv(NESTED_OUTPUT_DIR / "final_per_class_metrics.csv", index=False)
+    x = np.arange(len(CLASS_LABEL_NAMES))
+    width = 0.24
+    fig, ax = plt.subplots(figsize=(10, 7))
+    ax.bar(x - width, class_table["precision"], width, label="Precision", color="#9ecae1")
+    ax.bar(x, class_table["recall"], width, label="Recall", color="#4292c6")
+    ax.bar(x + width, class_table["f1_score"], width, label="F1-score", color="#08519c")
+    ax.set(
+        xticks=x,
+        xticklabels=CLASS_LABEL_NAMES,
+        ylim=(0, 1.05),
+        ylabel="Score",
+        title="Per-class performance — unbiased outer LOSO predictions",
+    )
+    ax.legend()
+    _finish_nested_plot(fig, NESTED_PLOTS_DIR / "final_outer_loso_per_class_metrics.png")
+
+
+def aggregate_inner_candidate_scores(inner_scores: pd.DataFrame) -> pd.DataFrame:
+    """Average inner-CV candidate results across outer training folds for plots."""
+    metric_columns = {
+        "inner_accuracy": "accuracy",
+        "inner_balanced_accuracy": "balanced_accuracy",
+        "inner_macro_precision": "macro_precision",
+        "inner_macro_recall": "macro_recall",
+        "inner_macro_f1": "macro_f1",
+        "inner_weighted_f1": "weighted_f1",
+        "inner_mcc": "mcc",
+    }
+    available = {old: new for old, new in metric_columns.items() if old in inner_scores}
+    diagnostic = (
+        inner_scores.groupby(
+            ["sensor_combination", "feature_set", "model"], as_index=False
+        )[list(available)]
+        .mean()
+        .rename(columns=available)
+    )
+    diagnostic.to_csv(
+        NESTED_OUTPUT_DIR / "inner_cv_mean_candidate_scores_for_plots.csv",
+        index=False,
+    )
+    return diagnostic
+
+
+def _ordered_values(values: pd.Series, preferred: List[str]) -> List[str]:
+    present = list(dict.fromkeys(values.astype(str)))
+    return [value for value in preferred if value in present] + [value for value in present if value not in preferred] # type: ignore
+
+
+def save_nested_metric_heatmaps(diagnostic: pd.DataFrame, metric: str) -> None:
+    """Recreate model-by-sensor heatmaps from leakage-safe inner-CV scores."""
+    feature_order = _ordered_values(
+        diagnostic["feature_set"],
+        ["All features", "Top 5 RFE features", "Top 10 RFE features", "Top 15 RFE features"],
+    )
+    for feature_set in feature_order:
+        subset = diagnostic[diagnostic["feature_set"] == feature_set]
+        pivot = subset.pivot(index="model", columns="sensor_combination", values=metric)
+        sensors = [name for name in SOURCE_ORDER if name in pivot.columns]
+        pivot = pivot.reindex(columns=sensors)
+        fig_width = max(11, 1.55 * len(sensors))
+        fig_height = max(6, 0.65 * len(pivot.index) + 2.5)
+        fig, ax = plt.subplots(figsize=(fig_width, fig_height))
+        image = ax.imshow(pivot.to_numpy(dtype=float), cmap="Blues", vmin=0, vmax=1, aspect="auto")
+        fig.colorbar(image, ax=ax, label=metric.replace("_", " ").title())
+        for row in range(len(pivot.index)):
+            for column in range(len(pivot.columns)):
+                value = pivot.iloc[row, column]
+                if pd.notna(value):
+                    ax.text(column, row, f"{value:.3f}", ha="center", va="center",
+                            color="white" if value > 0.65 else "black", fontsize=9)
+        ax.set(
+            xticks=np.arange(len(pivot.columns)),
+            yticks=np.arange(len(pivot.index)),
+            xticklabels=pivot.columns,
+            yticklabels=pivot.index,
+            xlabel="Sensor combination",
+            ylabel="Model",
+            title=(f"{metric.replace('_', ' ').title()} by model and sensor — {feature_set}\n"
+                   "Inner-CV selection diagnostic; not final test performance"),
+        )
+        ax.grid(False)
+        plt.setp(ax.get_xticklabels(), rotation=35, ha="right")
+        _finish_nested_plot(
+            fig,
+            NESTED_PLOTS_DIR / f"heatmap_inner_cv_{metric}_{safe_filename(feature_set)}.png",
+        )
+
+
+def _best_inner_candidates(diagnostic: pd.DataFrame, metric: str) -> pd.DataFrame:
+    ordered = diagnostic.sort_values(metric, ascending=False)
+    return ordered.groupby(["sensor_combination", "feature_set"], as_index=False).first()
+
+
+def save_nested_best_model_barplot(diagnostic: pd.DataFrame, metric: str) -> None:
+    """Plot the best inner-CV model for every sensor/feature-set pair."""
+    best = _best_inner_candidates(diagnostic, metric)
+    best = best.sort_values(metric, ascending=True)
+    labels = [
+        f"{sensor} | {features}\n({model})"
+        for sensor, features, model in zip(
+            best["sensor_combination"], best["feature_set"], best["model"]
+        )
+    ]
+    fig, ax = plt.subplots(figsize=(12, max(8, 0.36 * len(best))))
+    bars = ax.barh(labels, best[metric], color="#3182bd")
+    ax.set_xlim(0, 1.05)
+    ax.set_xlabel(metric.replace("_", " ").title())
+    ax.set_title(
+        "Best model per sensor and feature set\n"
+        "Mean inner-CV selection score; not final test performance"
+    )
+    for bar, value in zip(bars, best[metric]):
+        ax.text(value + 0.01, bar.get_y() + bar.get_height() / 2, f"{value:.3f}", va="center")
+    _finish_nested_plot(fig, NESTED_PLOTS_DIR / f"best_model_inner_cv_{metric}.png")
+
+
+def save_nested_model_ranking(diagnostic: pd.DataFrame, metric: str) -> None:
+    ranking = diagnostic.groupby("model", as_index=False)[metric].mean().sort_values(metric) # type: ignore
+    fig, ax = plt.subplots(figsize=(10, 7))
+    bars = ax.barh(ranking["model"], ranking[metric], color="#4292c6")
+    ax.set_xlim(0, 1.05)
+    ax.set_xlabel(f"Mean {metric.replace('_', ' ')}")
+    ax.set_title("Average model ranking\nInner-CV diagnostic; not final test performance")
+    for bar, value in zip(bars, ranking[metric]):
+        ax.text(value + 0.01, bar.get_y() + bar.get_height() / 2, f"{value:.3f}", va="center")
+    _finish_nested_plot(fig, NESTED_PLOTS_DIR / f"model_ranking_inner_cv_{metric}.png")
+
+
+def save_nested_feature_set_comparison(diagnostic: pd.DataFrame, metric: str) -> None:
+    best = _best_inner_candidates(diagnostic, metric)
+    comparison = best.groupby("feature_set", as_index=False)[metric].mean().sort_values(metric)  # type: ignore
+    fig, ax = plt.subplots(figsize=(10, 7))
+    bars = ax.barh(comparison["feature_set"], comparison[metric], color="#6baed6")
+    ax.set_xlim(0, 1.05)
+    ax.set_xlabel(f"Mean best-model {metric.replace('_', ' ')}")
+    ax.set_title("Feature-set comparison\nInner-CV diagnostic; not final test performance")
+    for bar, value in zip(bars, comparison[metric]):
+        ax.text(value + 0.01, bar.get_y() + bar.get_height() / 2, f"{value:.3f}", va="center")
+    _finish_nested_plot(fig, NESTED_PLOTS_DIR / f"feature_set_comparison_inner_cv_{metric}.png")
+
+
+def save_nested_sensor_feature_matrix(diagnostic: pd.DataFrame, metric: str) -> None:
+    best = _best_inner_candidates(diagnostic, metric)
+    pivot = best.pivot(index="sensor_combination", columns="feature_set", values=metric)
+    pivot = pivot.reindex([sensor for sensor in SOURCE_ORDER if sensor in pivot.index])
+    feature_order = [
+        feature for feature in
+        ["All features", "Top 5 RFE features", "Top 10 RFE features", "Top 15 RFE features"]
+        if feature in pivot.columns
+    ]
+    pivot = pivot.reindex(columns=feature_order)
+    fig, ax = plt.subplots(figsize=(11, 8))
+    image = ax.imshow(pivot.to_numpy(dtype=float), cmap="Blues", vmin=0, vmax=1, aspect="auto")
+    fig.colorbar(image, ax=ax, label=metric.replace("_", " ").title())
+    for row in range(len(pivot.index)):
+        for column in range(len(pivot.columns)):
+            value = pivot.iloc[row, column]
+            if pd.notna(value):
+                ax.text(column, row, f"{value:.3f}", ha="center", va="center",
+                        color="white" if value > 0.65 else "black")
+    ax.set(
+        xticks=np.arange(len(pivot.columns)),
+        yticks=np.arange(len(pivot.index)),
+        xticklabels=pivot.columns,
+        yticklabels=pivot.index,
+        xlabel="Feature set",
+        ylabel="Sensor combination",
+        title=("Best model by sensor and feature set\n"
+               "Mean inner-CV diagnostic; not final test performance"),
+    )
+    ax.grid(False)
+    plt.setp(ax.get_xticklabels(), rotation=25, ha="right")
+    _finish_nested_plot(fig, NESTED_PLOTS_DIR / f"sensor_feature_matrix_inner_cv_{metric}.png")
+
+
+def save_selection_frequency_plots(selections: pd.DataFrame) -> None:
+    """Show how often nested CV selected each model, sensor and feature set."""
+    specifications = [
+        ("model", "Selected model", "selection_frequency_models.png"),
+        ("sensor_combination", "Selected sensor combination", "selection_frequency_sensors.png"),
+        ("feature_set", "Selected feature set", "selection_frequency_feature_sets.png"),
+    ]
+    for column, label, filename in specifications:
+        counts = selections[column].value_counts().sort_values()
+        fig, ax = plt.subplots(figsize=(10, max(6, 0.55 * len(counts) + 2)))
+        bars = ax.barh(counts.index.astype(str), counts.values, color="#3182bd") # type: ignore
+        ax.set_xlabel("Number of outer folds selected")
+        ax.set_title(f"{label} frequency across outer LOSO folds")
+        for bar, value in zip(bars, counts.values):
+            ax.text(value + 0.1, bar.get_y() + bar.get_height() / 2, str(value), va="center")
+        _finish_nested_plot(fig, NESTED_PLOTS_DIR / filename)
+
+    matrix = pd.crosstab(selections["model"], selections["sensor_combination"])
+    matrix = matrix.reindex(columns=[name for name in SOURCE_ORDER if name in matrix.columns])
+    fig, ax = plt.subplots(figsize=(12, max(6, 0.65 * len(matrix.index) + 2)))
+    image = ax.imshow(matrix.to_numpy(dtype=float), cmap="Blues", aspect="auto")
+    fig.colorbar(image, ax=ax, label="Outer folds selected")
+    for row in range(len(matrix.index)):
+        for column in range(len(matrix.columns)):
+            ax.text(column, row, str(matrix.iloc[row, column]), ha="center", va="center")
+    ax.set(
+        xticks=np.arange(len(matrix.columns)),
+        yticks=np.arange(len(matrix.index)),
+        xticklabels=matrix.columns,
+        yticklabels=matrix.index,
+        xlabel="Sensor combination",
+        ylabel="Model",
+        title="Selected model × sensor frequency across outer LOSO folds",
+    )
+    ax.grid(False)
+    plt.setp(ax.get_xticklabels(), rotation=35, ha="right")
+    _finish_nested_plot(fig, NESTED_PLOTS_DIR / "selection_frequency_model_sensor_matrix.png")
+
+
+def save_feature_selection_stability(selections: pd.DataFrame) -> None:
+    """Plot how often individual features appeared in the outer-fold winners."""
+    counts: Dict[str, int] = {}
+    for value in selections["selected_features"].fillna(""):
+        for feature in str(value).split("|"):
+            if feature:
+                counts[feature] = counts.get(feature, 0) + 1
+    if not counts:
+        return
+    stability = pd.DataFrame(
+        sorted(counts.items(), key=lambda item: (-item[1], item[0])),
+        columns=["feature", "outer_folds_selected"],
+    )
+    stability.to_csv(NESTED_OUTPUT_DIR / "selected_feature_stability.csv", index=False)
+    shown = stability.head(30).sort_values("outer_folds_selected")
+    fig, ax = plt.subplots(figsize=(11, max(8, 0.38 * len(shown))))
+    ax.barh(shown["feature"], shown["outer_folds_selected"], color="#4292c6")
+    ax.set_xlabel("Number of outer folds containing feature")
+    ax.set_title("Feature-selection stability (top 30) across outer LOSO folds")
+    _finish_nested_plot(fig, NESTED_PLOTS_DIR / "selected_feature_stability_top30.png")
+
+
+def create_all_nested_plots(
+    predictions: pd.DataFrame,
+    selections: pd.DataFrame,
+    inner_scores: pd.DataFrame,
+    metrics: Dict[str, float],
+) -> None:
+    """Create final unbiased plots and all restored comparison diagnostics."""
+    NESTED_PLOTS_DIR.mkdir(parents=True, exist_ok=True)
+    NESTED_CONFUSION_DIR.mkdir(parents=True, exist_ok=True)
+    y_true = predictions["true_label"].to_numpy(dtype=int)
+    y_pred = predictions["predicted_label"].to_numpy(dtype=int)
+    save_nested_confusion_matrix(y_true, y_pred)
+    save_final_metric_summary(metrics)
+    save_per_class_metrics(y_true, y_pred)
+    diagnostic = aggregate_inner_candidate_scores(inner_scores)
+    for metric in ["accuracy", "balanced_accuracy", "macro_f1"]:
+        save_nested_metric_heatmaps(diagnostic, metric)
+        save_nested_best_model_barplot(diagnostic, metric)
+        save_nested_model_ranking(diagnostic, metric)
+        save_nested_feature_set_comparison(diagnostic, metric)
+        save_nested_sensor_feature_matrix(diagnostic, metric)
+    save_selection_frequency_plots(selections)
+    save_feature_selection_stability(selections)
+
+
 def nested_main() -> None:
     NESTED_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     # infer_groups writes its diagnostic table under the legacy output root.
@@ -1495,10 +1845,14 @@ def nested_main() -> None:
     (NESTED_OUTPUT_DIR / "final_classification_report.txt").write_text(
         report, encoding="utf-8" # type: ignore
     )
+    print("\nCreating restored plots")
+    create_all_nested_plots(predictions, selections, inner_scores, metrics)
     print("\nFinal unbiased outer-LOSO performance")
     for name, value in metrics.items():
         print(f"  {name}: {value:.4f}")
     print(f"[SAVED] {NESTED_OUTPUT_DIR}")
+    print(f"[SAVED] Plots: {NESTED_PLOTS_DIR}")
+    print(f"[SAVED] Confusion matrix: {NESTED_CONFUSION_DIR}")
 
 
 # Legacy exhaustive comparison below is exploratory only. It must not be used
