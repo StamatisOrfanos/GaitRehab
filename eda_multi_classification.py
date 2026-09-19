@@ -52,7 +52,7 @@ from sklearn.linear_model import LogisticRegression
 # =============================================================================
 
 DATA_PATH = Path("data.csv")
-OUTPUT_DIR = Path("outputs/eda_plots")
+OUTPUT_DIR = Path("eda")
 
 ID_COLUMN = "ID"
 LABEL_COLUMN = "Label"
