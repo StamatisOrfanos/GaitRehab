@@ -1,116 +1,84 @@
 """
-Machine learning comparison script for 3-class gait classification.
+Leakage-safe nested subject-level evaluation for three-class gait classification.
 
-Classes:
-    0 = Healthy leg
-    1 = Affected side
-    2 = Non-affected side
+Classes
+-------
+0: Healthy leg
+1: Affected side
+2: Non-affected side
 
-Input:
-    data.csv
+The script treats each participant as an indivisible group. The outer loop is
+Leave-One-Subject-Out (LOSO) and estimates final generalisation. The inner loop
+uses StratifiedGroupKFold to select the sensor combination, fold-fitted feature
+count, and prespecified classifier using mean macro F1.
 
-Feature selection:
-    RFE is refitted inside every inner training fold. Whole-dataset feature
-    lists from the EDA script are deliberately not used for validation.
+Only outer-LOSO predictions are used for final performance figures. Inner-CV
+figures are written to a supplementary directory and labelled as selection
+diagnostics.
 
-Validation:
-    - Outer Leave-One-Subject-Out provides the final performance estimate.
-    - Inner stratified group CV selects sensor set, feature count, and model.
-    - No row-level fallback is allowed.
-
-Outputs:
-    outputs/ml_results_nested_subject_cv/
-        unbiased_final_performance.csv
-        outer_loso_predictions.csv
-        configuration_selected_in_each_outer_fold.csv
-        inner_cv_candidate_scores.csv
-        final_classification_report.txt
-        plots/*.png
-        confusion_matrices/*.png
-
-Sensor combinations:
-    1. Gyroscope
-    2. Accelerometer
-    3. EMG
-    4. Gyroscope + Accelerometer
-    5. Gyroscope + EMG
-    6. Accelerometer + EMG
-    7. All sensors
+Example
+-------
+python ml_multi_classification_nested_journal.py --data data.csv
 """
 
 from __future__ import annotations
 
-import re
+import argparse
 import json
+import re
 import warnings
+from collections import Counter
 from pathlib import Path
-from typing import Dict, List, Tuple, Optional
+from typing import Dict, Iterable, List, Optional, Sequence, Tuple
 
+import matplotlib
+
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-import matplotlib.pyplot as plt
-from matplotlib.colors import ListedColormap
-from matplotlib.lines import Line2D
-
-from sklearn.base import clone
+from sklearn.base import BaseEstimator, TransformerMixin, clone
+from sklearn.ensemble import ExtraTreesClassifier, RandomForestClassifier
+from sklearn.feature_selection import f_classif
 from sklearn.impute import SimpleImputer
+from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import (
+    accuracy_score,
+    balanced_accuracy_score,
+    classification_report,
+    confusion_matrix,
+    f1_score,
+    matthews_corrcoef,
+    precision_recall_fscore_support,
+    precision_score,
+    recall_score,
+)
+from sklearn.model_selection import LeaveOneGroupOut, StratifiedGroupKFold
+from sklearn.naive_bayes import GaussianNB
+from sklearn.neighbors import KNeighborsClassifier
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
-from sklearn.model_selection import LeaveOneGroupOut, StratifiedGroupKFold
-from sklearn.feature_selection import RFE, VarianceThreshold
-from sklearn.metrics import (
-    accuracy_score, balanced_accuracy_score, precision_score, recall_score, f1_score, matthews_corrcoef, confusion_matrix, classification_report,
-)
-
-from sklearn.linear_model import LogisticRegression
 from sklearn.svm import SVC
-from sklearn.ensemble import (RandomForestClassifier, ExtraTreesClassifier, GradientBoostingClassifier)
-from sklearn.neighbors import KNeighborsClassifier
-from sklearn.naive_bayes import GaussianNB
 
-
-# =============================================================================
-# Configuration
-# =============================================================================
-
-DATA_PATH = Path("data.csv")
-
-SELECTED_FEATURES_PATH = Path(
-    "outputs/eda_plots/feature_selection/selected_features_for_classification.csv"
-)
-
-OUTPUT_DIR = Path("outputs/ml_results_loso_top5_top10_top15_all")
-
-# Unbiased final evaluation.  The outer LOSO subjects are never used to choose
-# a sensor set, feature count, or model.  Those choices are made only in the
-# outer training data by subject-grouped inner CV.
-NESTED_OUTPUT_DIR = Path("outputs/ml_results_nested_subject_cv")
-NESTED_PLOTS_DIR = NESTED_OUTPUT_DIR / "plots"
-NESTED_CONFUSION_DIR = NESTED_OUTPUT_DIR / "confusion_matrices"
-INNER_CV_SPLITS = 5
-PRIMARY_SELECTION_METRIC = "macro_f1"
 
 ID_COLUMN = "ID"
 LABEL_COLUMN = "Label"
-
-RANDOM_STATE = 42
-
-SELECTED_FEATURE_COUNTS = [5, 10, 15]
-
+CLASS_LABELS = [0, 1, 2]
 CLASS_NAMES = {
     0: "Healthy leg",
     1: "Affected side",
     2: "Non-affected side",
 }
+RANDOM_STATE = 42
+INNER_SPLITS = 5
+BOOTSTRAP_REPLICATES = 5000
+FEATURE_COUNTS: Tuple[Optional[int], ...] = (5, 10, 15, None)
+PRIMARY_METRIC = "macro_f1"
 
-CLASS_LABELS = [0, 1, 2]
-CLASS_LABEL_NAMES = [CLASS_NAMES[label] for label in CLASS_LABELS]
-
-GYRO_PREFIXES = ["gyrox", "gyroy", "gyroz"]
-ACC_PREFIXES = ["accx", "accy", "accz"]
-EMG_PREFIXES = ["GMinter", "RFinter", "BFinter", "MGinter", "TAinter", "PLinter"]
-
-SENSOR_PREFIXES = {
+GYRO_PREFIXES = ("gyrox", "gyroy", "gyroz")
+ACC_PREFIXES = ("accx", "accy", "accz")
+EMG_PREFIXES = ("GMinter", "RFinter", "BFinter", "MGinter", "TAinter", "PLinter")
+SENSOR_PREFIXES: Dict[str, Tuple[str, ...]] = {
     "Gyroscope": GYRO_PREFIXES,
     "Accelerometer": ACC_PREFIXES,
     "EMG": EMG_PREFIXES,
@@ -119,2991 +87,1444 @@ SENSOR_PREFIXES = {
     "Accelerometer + EMG": ACC_PREFIXES + EMG_PREFIXES,
     "All sensors": GYRO_PREFIXES + ACC_PREFIXES + EMG_PREFIXES,
 }
-
-SOURCE_ORDER = [
-    "Gyroscope",
-    "Accelerometer",
-    "EMG",
-    "Gyroscope + Accelerometer",
-    "Gyroscope + EMG",
-    "Accelerometer + EMG",
-    "All sensors",
+SENSOR_ORDER = list(SENSOR_PREFIXES)
+MODEL_ORDER = [
+    "Logistic Regression",
+    "Linear SVM",
+    "RBF SVM",
+    "k-NN",
+    "Gaussian Naive Bayes",
+    "Random Forest",
+    "Extra Trees",
+    "XGBoost",
 ]
 
-FEATURE_SET_ORDER = [
-    "All features",
-    "Top 5 selected features",
-    "Top 10 selected features",
-    "Top 15 selected features",
-]
-
-
-# =============================================================================
-# Plot styling
-# =============================================================================
-
-plt.rcParams.update(
-    {
-        "figure.figsize": (11, 7),
-        "figure.dpi": 130,
-        "savefig.dpi": 300,
-        "savefig.facecolor": "white",
-        "font.size": 11,
-        "axes.titlesize": 15,
-        "axes.titleweight": "semibold",
-        "axes.labelsize": 12,
-        "xtick.labelsize": 10,
-        "ytick.labelsize": 10,
-        "legend.fontsize": 10,
-        "axes.spines.top": False,
-        "axes.spines.right": False,
-        "axes.grid": True,
-        "axes.axisbelow": True,
-        "grid.color": "#D9E2EC",
-        "grid.alpha": 0.65,
-        "grid.linewidth": 0.8,
-        "figure.facecolor": "white",
-        "axes.facecolor": "#FBFCFE",
-    }
-)
-
-PLOT_TEXT_COLOUR = "#243447"
-PLOT_MUTED_COLOUR = "#627D98"
-PLOT_ACCENT_COLOUR = "#247BA0"
-MODEL_COLOURS = {
-    "Logistic Regression": "#CC79A7",
-    "Linear SVM": "#56B4E9",
-    "RBF SVM": "#E69F00",
-    "k-NN": "#D55E00",
-    "Gaussian Naive Bayes": "#7DB7D8",
-    "Random Forest": "#009E73",
-    "Extra Trees": "#0072B2",
-    "Gradient Boosting": "#7A5195",
-    "XGBoost": "#222222",
-}
-FEATURE_SET_COLOURS = {
-    "All features": "#264653",
-    "Top 5 RFE features": "#2A9D8F",
-    "Top 10 RFE features": "#E9C46A",
-    "Top 15 RFE features": "#E76F51",
-}
-SENSOR_COLOURS = {
-    "Gyroscope": "#3B528B",
-    "Accelerometer": "#21918C",
-    "EMG": "#5EC962",
-    "Gyroscope + Accelerometer": "#440154",
-    "Gyroscope + EMG": "#31688E",
-    "Accelerometer + EMG": "#35B779",
-    "All sensors": "#FDE725",
+COLOURS = {
+    "blue": "#2F6690",
+    "light_blue": "#D9EAF4",
+    "dark": "#243447",
+    "muted": "#627D98",
+    "grid": "#D9E2EC",
+    "healthy": "#4C78A8",
+    "affected": "#E45756",
+    "non_affected": "#72B7B2",
 }
 
 
-# =============================================================================
-# Utility functions
-# =============================================================================
+def configure_plot_style() -> None:
+    plt.rcParams.update(
+        {
+            "figure.dpi": 130,
+            "savefig.dpi": 300,
+            "savefig.facecolor": "white",
+            "font.size": 10.5,
+            "axes.titlesize": 13,
+            "axes.titleweight": "semibold",
+            "axes.labelsize": 11,
+            "axes.spines.top": False,
+            "axes.spines.right": False,
+            "axes.grid": True,
+            "axes.grid.axis": "x",
+            "axes.axisbelow": True,
+            "grid.color": COLOURS["grid"],
+            "grid.alpha": 0.75,
+            "figure.facecolor": "white",
+            "axes.facecolor": "white",
+        }
+    )
 
-def ensure_directories() -> None:
-    directories = [
-        OUTPUT_DIR,
-        OUTPUT_DIR / "plots",
-        OUTPUT_DIR / "confusion_matrices",
-        OUTPUT_DIR / "classification_reports",
-        OUTPUT_DIR / "selected_feature_lists",
-    ]
 
-    for directory in directories:
-        directory.mkdir(parents=True, exist_ok=True)
-
-
-def safe_filename(name: str) -> str:
-    name = name.lower()
-    name = name.replace("+", "plus")
-    name = re.sub(r"[^a-z0-9]+", "_", name)
-    return name.strip("_")
-
-
-def parse_numeric_column(series: pd.Series) -> pd.Series:
-    """
-    Converts numeric columns robustly.
-
-    Handles:
-        1. Standard decimal point format: 1.234
-        2. Decimal comma format: 1,234
-        3. Spaces or non-breaking spaces inside values
-
-    This is needed because the new dataset is semicolon-separated and uses
-    decimal commas in the feature values.
-    """
-
+def parse_numeric(series: pd.Series) -> pd.Series:
     if pd.api.types.is_numeric_dtype(series):
-        return series
-
+        return pd.to_numeric(series, errors="coerce")
     cleaned = series.astype(str).str.strip() # type: ignore
     cleaned = cleaned.str.replace("\u00a0", "", regex=False)
     cleaned = cleaned.str.replace(" ", "", regex=False)
     cleaned = cleaned.str.replace(",", ".", regex=False)
-
     cleaned = cleaned.replace(
-        {
-            "": np.nan,
-            "nan": np.nan,
-            "None": np.nan,
-            "NaN": np.nan,
-            "<NA>": np.nan,
-        }
+        {"": np.nan, "nan": np.nan, "NaN": np.nan, "None": np.nan, "<NA>": np.nan}
     )
-
     return pd.to_numeric(cleaned, errors="coerce")
 
 
 def read_dataset(path: Path) -> pd.DataFrame:
-    if not path.exists():
-        raise FileNotFoundError(
-            f"Could not find {path}. Put this script in the same folder as data.csv "
-            f"or change DATA_PATH."
-        )
-
-    # sep=None makes the script robust to comma, semicolon, or tab-separated files.
-    # The new dataset is semicolon-separated and uses decimal commas.
+    if not path.is_file():
+        raise FileNotFoundError(f"Dataset not found: {path}")
     df = pd.read_csv(path, sep=None, engine="python")
-
-    # Remove fully empty columns and Excel-export blank columns.
     df = df.dropna(axis=1, how="all")
     df = df.loc[:, ~df.columns.astype(str).str.startswith("Unnamed")]
-
-    # Clean column names.
-    df.columns = [str(col).strip() for col in df.columns]
-
-    # Normalize known column-name inconsistency in the new dataset.
-    # Example:
-    #   PLLinter_iEMG -> PLinter_iEMG
-    #   PLLinter_zeroCrossing -> PLinter_zeroCrossing
-    #   PLLinter_slopeSignChange -> PLinter_slopeSignChange
-    df.columns = [
-        col.replace("PLLinter_", "PLinter_")
-        for col in df.columns
-    ]
-
-    if LABEL_COLUMN not in df.columns:
-        raise ValueError(
-            f"Expected label column '{LABEL_COLUMN}', but found:\n{df.columns.tolist()}" # type: ignore
-        )
-
-    if ID_COLUMN not in df.columns:
-        raise ValueError(
-            f"Expected ID column '{ID_COLUMN}', but it was not found. "
-            "Strict LOSO validation requires a subject ID column."
-        )
-
-    # Make labels numeric.
-    df[LABEL_COLUMN] = parse_numeric_column(df[LABEL_COLUMN])
-
-    # Drop rows without labels.
-    df = df.dropna(subset=[LABEL_COLUMN])
+    df.columns = [str(column).strip().replace("PLLinter_", "PLinter_") for column in df]
+    missing = {ID_COLUMN, LABEL_COLUMN}.difference(df.columns)
+    if missing:
+        raise ValueError(f"Missing required columns: {sorted(missing)}")
+    df[LABEL_COLUMN] = parse_numeric(df[LABEL_COLUMN])
+    df = df.dropna(subset=[ID_COLUMN, LABEL_COLUMN]).copy()
     df[LABEL_COLUMN] = df[LABEL_COLUMN].astype(int)
-
-    # Keep ID as a clean subject identifier.
-    # Numeric IDs are converted to clean integer-like strings later by infer_subject_group_from_id().
+    unknown = sorted(set(df[LABEL_COLUMN]).difference(CLASS_LABELS))
+    if unknown:
+        raise ValueError(f"Unexpected labels: {unknown}; expected {CLASS_LABELS}")
     df[ID_COLUMN] = df[ID_COLUMN].astype(str).str.strip()
+    for column in df.columns:
+        if column not in {ID_COLUMN, LABEL_COLUMN}:
+            df[column] = parse_numeric(df[column])
+    return df.reset_index(drop=True)
 
-    # Convert feature columns to numeric.
-    metadata_columns = {ID_COLUMN, LABEL_COLUMN}
 
-    for col in df.columns:
-        if col not in metadata_columns:
-            df[col] = parse_numeric_column(df[col])
+def infer_subject(raw_id: object) -> str:
+    text = str(raw_id).strip()
+    text = re.sub(
+        r"(?i)(non[_\- ]?affected|affected|healthy|left|right|leg|side)", "", text
+    )
+    text = re.sub(r"[_\-\s]+", "_", text).strip("_")
+    match = re.search(r"(?i)([a-z]+)[_\- ]*0*([0-9]+)", text)
+    if match:
+        return f"{match.group(1).upper()}{int(match.group(2)):02d}"
+    match = re.search(r"([0-9]+)", text)
+    if match:
+        return f"S{int(match.group(1)):02d}"
+    if not text:
+        raise ValueError(f"Could not infer subject from ID {raw_id!r}")
+    return text.upper()
 
-    return df
 
-def get_feature_columns(df: pd.DataFrame, prefixes: List[str]) -> List[str]:
-    feature_columns = []
-
-    for col in df.columns:
-        if col in {ID_COLUMN, LABEL_COLUMN}:
-            continue
-
-        for prefix in prefixes:
-            if str(col).startswith(prefix + "_"):
-                feature_columns.append(col)
-                break
-
-    return feature_columns
+def validate_subject_structure(df: pd.DataFrame, groups: np.ndarray) -> pd.DataFrame:
+    rows = []
+    for subject in sorted(np.unique(groups)):
+        labels = df.loc[groups == subject, LABEL_COLUMN].astype(int).tolist() # type: ignore
+        counts = Counter(labels)
+        if counts == Counter({0: 2}):
+            phenotype = "healthy"
+        elif counts == Counter({1: 1, 2: 1}):
+            phenotype = "stroke"
+        else:
+            phenotype = "unexpected"
+        rows.append(
+            {
+                "subject": subject,
+                "n_rows": len(labels),
+                "labels": "|".join(map(str, labels)),
+                "phenotype": phenotype,
+            }
+        )
+    summary = pd.DataFrame(rows)
+    bad = summary[summary["phenotype"] == "unexpected"]
+    if not bad.empty:
+        raise ValueError(
+            "Subject grouping produced unexpected label patterns:\n"
+            + bad.to_string(index=False)
+        )
+    if summary["phenotype"].nunique() != 2:
+        raise ValueError("Both healthy and stroke subjects are required.")
+    return summary
 
 
 def get_sensor_columns(df: pd.DataFrame) -> Dict[str, List[str]]:
-    return {
-        source_name: get_feature_columns(df, prefixes)
-        for source_name, prefixes in SENSOR_PREFIXES.items()
-    }
+    result: Dict[str, List[str]] = {}
+    for sensor_name, prefixes in SENSOR_PREFIXES.items():
+        columns = [
+            column
+            for column in df.columns
+            if column not in {ID_COLUMN, LABEL_COLUMN}
+            and any(str(column).startswith(prefix + "_") for prefix in prefixes)
+        ]
+        result[sensor_name] = columns
+    return result
 
 
-def clean_feature_matrix(
-    df: pd.DataFrame,
-    feature_columns: List[str],
-) -> Tuple[pd.DataFrame, pd.Series]:
-    existing_features = [col for col in feature_columns if col in df.columns]
+class AdaptiveANOVASelector(BaseEstimator, TransformerMixin):
+    """Fold-fitted ANOVA selector that safely caps k at available features."""
 
-    if len(existing_features) == 0:
-        return pd.DataFrame(index=df.index), df[LABEL_COLUMN].copy()
+    def __init__(self, k: Optional[int] = None):
+        self.k = k
 
-    X = df[existing_features].copy()
-    y = df[LABEL_COLUMN].copy()
-
-    X = X.replace([np.inf, -np.inf], np.nan)
-
-    # Drop features that are entirely missing.
-    X = X.dropna(axis=1, how="all")
-
-    # Drop constant columns.
-    nunique = X.nunique(dropna=False)
-    X = X.loc[:, nunique > 1]
-
-    return X, y
-
-
-# =============================================================================
-# Subject grouping
-# =============================================================================
-
-def infer_subject_group_from_id(raw_id: object) -> str:
-    """
-    Attempts to infer subject-level grouping from sample ID.
-
-    This is important because left/right legs from the same subject should not
-    be split across train and test.
-
-    Examples handled:
-        H01_left        -> H01
-        H01_right       -> H01
-        HT01_L          -> HT01
-        PT03_affected   -> PT03
-        P12_nonaffected -> P12
-        Stroke_05_A     -> STROKE05
-
-    If your ID format is different, modify this function.
-    """
-
-    text = str(raw_id).strip()
-
-    # Remove common side/leg suffixes.
-    text = re.sub(
-        r"(?i)(left|right|affected|nonaffected|non_affected|non-affected|healthy|leg|side)",
-        "",
-        text,
-    )
-
-    # Remove repeated separators.
-    text = re.sub(r"[_\-\s]+", "_", text).strip("_")
-
-    # Prefer a leading text prefix plus subject number.
-    match = re.search(r"(?i)([a-z]+)[_\- ]*0*([0-9]+)", text)
-
-    if match:
-        prefix = match.group(1).upper()
-        number = int(match.group(2))
-        return f"{prefix}{number:02d}"
-
-    # If only a number exists, return the number.
-    match = re.search(r"([0-9]+)", text)
-
-    if match:
-        return f"S{int(match.group(1)):02d}"
-
-    return text
-
-
-def create_subject_id_summary(df: pd.DataFrame, groups: np.ndarray) -> pd.DataFrame:
-    """
-    Creates a subject-level diagnostic table for the new dataset.
-
-    Expected new structure:
-        IDs 1-15  -> healthy subjects, two label-0 rows each
-        IDs 16-30 -> stroke subjects, one label-1 and one label-2 row each
-    """
-
-    summary_rows = []
-
-    for group in sorted(np.unique(groups), key=lambda value: int(re.sub(r"\D", "", value) or 0)):
-        mask = groups == group
-        labels = df.loc[mask, LABEL_COLUMN].astype(int).tolist() # type: ignore
-        label_counts = pd.Series(labels).value_counts().to_dict()
-
-        if label_counts == {0: 2}:
-            inferred_subject_type = "Healthy subject"
-        elif label_counts == {1: 1, 2: 1}:
-            inferred_subject_type = "Stroke subject"
+    def fit(self, X: np.ndarray, y: np.ndarray):
+        X = np.asarray(X, dtype=float)
+        if X.ndim != 2 or X.shape[1] == 0:
+            raise ValueError("Feature selector received no columns.")
+        variances = np.nanvar(X, axis=0)
+        self.nonconstant_mask_ = np.isfinite(variances) & (variances > 0)
+        if not self.nonconstant_mask_.any():
+            raise ValueError("All training features are constant.")
+        X_valid = X[:, self.nonconstant_mask_]
+        if self.k is None or self.k >= X_valid.shape[1]:
+            local_support = np.ones(X_valid.shape[1], dtype=bool)
+            self.scores_ = np.full(X_valid.shape[1], np.nan)
         else:
-            inferred_subject_type = "Unexpected label pattern"
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                scores, _ = f_classif(X_valid, y)
+            scores = np.nan_to_num(scores, nan=-np.inf, neginf=-np.inf, posinf=np.inf)
+            chosen = np.argsort(scores, kind="mergesort")[-int(self.k) :]
+            local_support = np.zeros(X_valid.shape[1], dtype=bool)
+            local_support[chosen] = True
+            self.scores_ = scores
+        self.support_ = np.zeros(X.shape[1], dtype=bool)
+        self.support_[np.flatnonzero(self.nonconstant_mask_)[local_support]] = True
+        return self
 
-        summary_rows.append(
-            {
-                "subject_group": group,
-                "n_rows": int(mask.sum()),
-                "labels": ",".join(str(label) for label in labels),
-                "n_healthy_label_0": int(label_counts.get(0, 0)),
-                "n_affected_label_1": int(label_counts.get(1, 0)),
-                "n_non_affected_label_2": int(label_counts.get(2, 0)),
-                "inferred_subject_type": inferred_subject_type,
-            }
-        )
+    def transform(self, X: np.ndarray) -> np.ndarray:
+        return np.asarray(X)[:, self.support_]
 
-    return pd.DataFrame(summary_rows)
-
-
-def infer_groups(df: pd.DataFrame) -> np.ndarray:
-    if ID_COLUMN not in df.columns:
-        raise ValueError(
-            f"Strict LOSO validation requires column '{ID_COLUMN}', but it was not found."
-        )
-
-    groups = df[ID_COLUMN].apply(infer_subject_group_from_id).astype(str).values
-
-    n_samples = len(groups)
-    n_groups = len(np.unique(groups)) # type: ignore
-
-    print()
-    print("=" * 80)
-    print("Subject/group inference for strict LOSO")
-    print("=" * 80)
-    print(f"Samples: {n_samples}")
-    print(f"Inferred subject groups: {n_groups}")
-
-    group_counts = pd.Series(groups).value_counts().sort_index()
-    print("Rows per subject distribution:")
-    print(group_counts.value_counts().sort_index().to_string())
-
-    if n_groups == n_samples:
-        raise ValueError(
-            "Every row appears to have a unique subject group. "
-            "This is not valid for strict LOSO on paired-leg data. "
-            "Check the ID column and infer_subject_group_from_id()."
-        )
-
-    if group_counts.min() < 2:
-        raise ValueError(
-            "At least one inferred subject group has fewer than 2 rows. "
-            "For this paired-leg dataset, each subject should normally have 2 rows. "
-            "Check the ID column and subject-group inference."
-        )
-
-    subject_summary = create_subject_id_summary(df, groups) # type: ignore
-
-    healthy_subjects = (
-        subject_summary["inferred_subject_type"] == "Healthy subject"
-    ).sum()
-
-    stroke_subjects = (
-        subject_summary["inferred_subject_type"] == "Stroke subject"
-    ).sum()
-
-    unexpected_subjects = (
-        subject_summary["inferred_subject_type"] == "Unexpected label pattern"
-    ).sum()
-
-    print(f"Healthy-like subjects: {healthy_subjects}")
-    print(f"Stroke-like subjects: {stroke_subjects}")
-    print(f"Unexpected subject patterns: {unexpected_subjects}")
-
-    subject_summary_path = OUTPUT_DIR / "subject_id_summary.csv"
-    subject_summary.to_csv(subject_summary_path, index=False)
-    print(f"[SAVED] Subject ID summary: {subject_summary_path}")
-
-    if unexpected_subjects > 0:
-        raise ValueError(
-            "Some subject groups have unexpected label patterns. "
-            "Check outputs/ml_results_loso_top5_top10_top15_all/subject_id_summary.csv "
-            "before running classification."
-        )
-
-    return groups # type: ignore
+    def get_support(self) -> np.ndarray:
+        return self.support_.copy()
 
 
-# =============================================================================
-# Selected feature loading
-# =============================================================================
-
-def load_selected_features(path: Path) -> pd.DataFrame:
-    if not path.exists():
-        print()
-        print("[WARNING]")
-        print(f"Selected-features file was not found: {path}")
-        print("The script will evaluate only the all-features mode.")
-        return pd.DataFrame(columns=["source", "n_features", "feature"])
-
-    selected_df = pd.read_csv(path)
-
-    required_columns = {"source", "n_features", "feature"}
-    missing = required_columns - set(selected_df.columns)
-
-    if missing:
-        raise ValueError(
-            f"Selected-features file is missing columns: {missing}. "
-            f"Expected columns: {required_columns}"
-        )
-
-    selected_df["source"] = selected_df["source"].astype(str)
-    selected_df["feature"] = selected_df["feature"].astype(str)
-    selected_df["n_features"] = pd.to_numeric(
-        selected_df["n_features"],
-        errors="coerce",
-    ).astype("Int64")
-
-    return selected_df
-
-
-def get_top_selected_features_for_source(
-    selected_df: pd.DataFrame,
-    source_name: str,
-    available_features: List[str],
-    top_n: int,
-) -> List[str]:
-    """
-    Reads the selected features for one sensor source.
-
-    Preferred:
-        source == source_name and n_features == top_n
-
-    Fallback:
-        if exact top_n is missing, use the smallest available n_features > top_n.
-        if that is missing, use the largest available n_features < top_n.
-    """
-
-    if selected_df.empty:
-        return []
-
-    source_df = selected_df[selected_df["source"] == source_name].copy()
-
-    if source_df.empty:
-        return []
-
-    available_feature_set = set(available_features)
-
-    exact = source_df[source_df["n_features"] == top_n].copy()
-
-    if not exact.empty:
-        selected_features = exact["feature"].tolist()
-    else:
-        available_counts = sorted(
-            [
-                int(value)
-                for value in source_df["n_features"].dropna().unique().tolist()
-            ]
-        )
-
-        larger_or_equal = [value for value in available_counts if value >= top_n]
-        smaller = [value for value in available_counts if value < top_n]
-
-        if larger_or_equal:
-            chosen_count = larger_or_equal[0]
-        elif smaller:
-            chosen_count = smaller[-1]
-        else:
-            return []
-
-        print(
-            f"[WARNING] No exact top-{top_n} selected feature set for {source_name}. "
-            f"Using n_features={chosen_count} and taking the first {top_n} features."
-        )
-
-        selected_features = source_df[
-            source_df["n_features"] == chosen_count
-        ]["feature"].tolist()
-
-    selected_features = [
-        feature for feature in selected_features
-        if feature in available_feature_set
-    ]
-
-    selected_features = selected_features[:top_n]
-
-    return selected_features
-
-
-def build_feature_sets_for_source(
-    source_name: str,
-    all_features: List[str],
-    selected_df: pd.DataFrame,
-) -> Dict[str, List[str]]:
-    feature_sets = {
-        "All features": all_features,
-    }
-
-    for selected_count in SELECTED_FEATURE_COUNTS:
-        feature_set_name = f"Top {selected_count} selected features"
-
-        selected_features = get_top_selected_features_for_source(
-            selected_df=selected_df,
-            source_name=source_name,
-            available_features=all_features,
-            top_n=selected_count,
-        )
-
-        if selected_features:
-            feature_sets[feature_set_name] = selected_features
-
-            output_path = (
-                OUTPUT_DIR /
-                "selected_feature_lists" /
-                f"selected_features_{safe_filename(source_name)}_top_{selected_count}.txt"
-            )
-
-            with open(output_path, "w", encoding="utf-8") as file:
-                for feature in selected_features:
-                    file.write(f"{feature}\n")
-
-        else:
-            print(
-                f"[WARNING] No selected top-{selected_count} features found "
-                f"for {source_name}. Skipping {feature_set_name}."
-            )
-
-    return feature_sets
-
-
-# =============================================================================
-# Model definitions
-# =============================================================================
-
-def build_models() -> Dict[str, Pipeline]:
-    """
-    Common ML models for tabular classification.
-
-    Scaling is included for all models for consistency.
-    Tree-based models do not require scaling, but keeping one uniform pipeline
-    makes the code simpler.
-    """
-
-    models = {
-        "Logistic Regression": Pipeline(
-            steps=[
-                ("imputer", SimpleImputer(strategy="median")),
-                ("scaler", StandardScaler()),
-                (
-                    "model",
-                    LogisticRegression(
-                        max_iter=5000,
-                        class_weight="balanced",
-                        random_state=RANDOM_STATE,
-                    ),
-                ),
-            ]
+def build_models() -> Dict[str, BaseEstimator]:
+    models: Dict[str, BaseEstimator] = {
+        "Logistic Regression": LogisticRegression(
+            max_iter=5000, class_weight="balanced", C=1.0, random_state=RANDOM_STATE
         ),
-        "Linear SVM": Pipeline(
-            steps=[
-                ("imputer", SimpleImputer(strategy="median")),
-                ("scaler", StandardScaler()),
-                (
-                    "model",
-                    SVC(
-                        kernel="linear",
-                        class_weight="balanced",
-                        probability=False,
-                        random_state=RANDOM_STATE,
-                    ),
-                ),
-            ]
+        "Linear SVM": SVC(kernel="linear", C=1.0, class_weight="balanced"),
+        "RBF SVM": SVC(kernel="rbf", C=1.0, gamma="scale", class_weight="balanced"),
+        "k-NN": KNeighborsClassifier(n_neighbors=5, weights="distance"),
+        "Gaussian Naive Bayes": GaussianNB(),
+        "Random Forest": RandomForestClassifier(
+            n_estimators=500,
+            min_samples_leaf=2,
+            max_features="sqrt",
+            class_weight="balanced",
+            random_state=RANDOM_STATE,
+            n_jobs=-1,
         ),
-        "RBF SVM": Pipeline(
-            steps=[
-                ("imputer", SimpleImputer(strategy="median")),
-                ("scaler", StandardScaler()),
-                (
-                    "model",
-                    SVC(
-                        kernel="rbf",
-                        class_weight="balanced",
-                        probability=False,
-                        random_state=RANDOM_STATE,
-                    ),
-                ),
-            ]
-        ),
-        "k-NN": Pipeline(
-            steps=[
-                ("imputer", SimpleImputer(strategy="median")),
-                ("scaler", StandardScaler()),
-                (
-                    "model",
-                    KNeighborsClassifier(
-                        n_neighbors=5,
-                        weights="distance",
-                    ),
-                ),
-            ]
-        ),
-        "Gaussian Naive Bayes": Pipeline(
-            steps=[
-                ("imputer", SimpleImputer(strategy="median")),
-                ("scaler", StandardScaler()),
-                ("model", GaussianNB()),
-            ]
-        ),
-        "Random Forest": Pipeline(
-            steps=[
-                ("imputer", SimpleImputer(strategy="median")),
-                ("scaler", StandardScaler()),
-                (
-                    "model",
-                    RandomForestClassifier(
-                        n_estimators=500,
-                        max_depth=None,
-                        min_samples_leaf=2,
-                        class_weight="balanced",
-                        random_state=RANDOM_STATE,
-                        n_jobs=-1,
-                    ),
-                ),
-            ]
-        ),
-        "Extra Trees": Pipeline(
-            steps=[
-                ("imputer", SimpleImputer(strategy="median")),
-                ("scaler", StandardScaler()),
-                (
-                    "model",
-                    ExtraTreesClassifier(
-                        n_estimators=500,
-                        max_depth=None,
-                        min_samples_leaf=2,
-                        class_weight="balanced",
-                        random_state=RANDOM_STATE,
-                        n_jobs=-1,
-                    ),
-                ),
-            ]
-        ),
-        "Gradient Boosting": Pipeline(
-            steps=[
-                ("imputer", SimpleImputer(strategy="median")),
-                ("scaler", StandardScaler()),
-                (
-                    "model",
-                    GradientBoostingClassifier(
-                        random_state=RANDOM_STATE,
-                    ),
-                ),
-            ]
+        "Extra Trees": ExtraTreesClassifier(
+            n_estimators=500,
+            min_samples_leaf=2,
+            max_features="sqrt",
+            class_weight="balanced",
+            random_state=RANDOM_STATE,
+            n_jobs=-1,
         ),
     }
-
     try:
         from xgboost import XGBClassifier
 
-        models["XGBoost"] = Pipeline(
-            steps=[
-                ("imputer", SimpleImputer(strategy="median")),
-                ("scaler", StandardScaler()),
-                (
-                    "model",
-                    XGBClassifier(
-                        n_estimators=300,
-                        max_depth=3,
-                        learning_rate=0.05,
-                        subsample=0.9,
-                        colsample_bytree=0.9,
-                        objective="multi:softmax",
-                        num_class=3,
-                        eval_metric="mlogloss",
-                        random_state=RANDOM_STATE,
-                    ),
-                ),
-            ]
+        models["XGBoost"] = XGBClassifier(
+            n_estimators=300,
+            max_depth=3,
+            learning_rate=0.05,
+            subsample=0.9,
+            colsample_bytree=0.9,
+            objective="multi:softmax",
+            num_class=3,
+            eval_metric="mlogloss",
+            random_state=RANDOM_STATE,
+            n_jobs=-1,
         )
-
-        print("[INFO] XGBoost found and included.")
-
     except ImportError:
-        print("[INFO] XGBoost not installed. Skipping XGBoost.")
-
+        pass
     return models
 
 
-# =============================================================================
-# Leave-One-Subject-Out evaluation
-# =============================================================================
-
-def make_loso_splits(
-    X: pd.DataFrame,
-    y: pd.Series,
-    groups: np.ndarray,
-):
-    """
-    Strict Leave-One-Subject-Out validation.
-
-    No row-level Leave-One-Out fallback is allowed because it can leak information
-    between paired samples from the same subject.
-    """
-
-    if groups is None:
-        raise ValueError(
-            "Strict LOSO validation requires subject groups, but groups is None."
-        )
-
-    print("[INFO] Using strict Leave-One-Subject-Out validation.")
-    splitter = LeaveOneGroupOut()
-    return splitter.split(X, y, groups=groups), "Leave-One-Subject-Out"
+def build_pipeline(model: BaseEstimator, feature_count: Optional[int]) -> Pipeline:
+    return Pipeline(
+        [
+            ("imputer", SimpleImputer(strategy="median", keep_empty_features=True)),
+            ("scaler", StandardScaler()),
+            ("selector", AdaptiveANOVASelector(feature_count)),
+            ("model", clone(model)),
+        ]
+    )
 
 
-def evaluate_predictions(
-    y_true: np.ndarray,
-    y_pred: np.ndarray,
-) -> Dict[str, float]:
+def metrics(y_true: Sequence[int], y_pred: Sequence[int]) -> Dict[str, float]:
+    y_true_array = np.asarray(y_true, dtype=int)
+    y_pred_array = np.asarray(y_pred, dtype=int)
     return {
-        "accuracy": accuracy_score(y_true, y_pred),
-        "balanced_accuracy": balanced_accuracy_score(y_true, y_pred),
-        "macro_precision": precision_score(
-            y_true,
-            y_pred,
-            average="macro",
-            zero_division=0,
+        "accuracy": float(accuracy_score(y_true_array, y_pred_array)),
+        "balanced_accuracy": float(balanced_accuracy_score(y_true_array, y_pred_array)),
+        "macro_precision": float(
+            precision_score(y_true_array, y_pred_array, labels=CLASS_LABELS, average="macro", zero_division=0)
         ),
-        "macro_recall": recall_score(
-            y_true,
-            y_pred,
-            average="macro",
-            zero_division=0,
+        "macro_recall": float(
+            recall_score(y_true_array, y_pred_array, labels=CLASS_LABELS, average="macro", zero_division=0)
         ),
-        "macro_f1": f1_score(
-            y_true,
-            y_pred,
-            average="macro",
-            zero_division=0,
+        "macro_f1": float(
+            f1_score(y_true_array, y_pred_array, labels=CLASS_LABELS, average="macro", zero_division=0)
         ),
-        "weighted_f1": f1_score(
-            y_true,
-            y_pred,
-            average="weighted",
-            zero_division=0,
+        "weighted_f1": float(
+            f1_score(y_true_array, y_pred_array, labels=CLASS_LABELS, average="weighted", zero_division=0)
         ),
-        "mcc": matthews_corrcoef(y_true, y_pred),
-    } # type: ignore
-
-
-def evaluate_model_with_loso(
-    model: Pipeline,
-    X: pd.DataFrame,
-    y: pd.Series,
-    groups: np.ndarray,
-) -> Tuple[Dict[str, float], pd.DataFrame, np.ndarray, str]:
-    split_iterator, validation_method = make_loso_splits(X, y, groups)
-
-    prediction_rows = []
-    all_true = []
-    all_pred = []
-
-    for fold_idx, (train_idx, test_idx) in enumerate(split_iterator, start=1):
-        X_train = X.iloc[train_idx]
-        X_test = X.iloc[test_idx]
-        y_train = y.iloc[train_idx]
-        y_test = y.iloc[test_idx]
-
-        fold_model = clone(model)
-        fold_model.fit(X_train, y_train)
-
-        y_pred = fold_model.predict(X_test)
-
-        for local_idx, sample_index in enumerate(test_idx):
-            true_label = int(y_test.iloc[local_idx])
-            predicted_label = int(y_pred[local_idx])
-
-            group_value = None
-
-            group_value = str(groups[sample_index])
-
-            prediction_rows.append(
-                {
-                    "fold": fold_idx,
-                    "sample_index": int(sample_index),
-                    "group": group_value,
-                    "true_label": true_label,
-                    "true_class": CLASS_NAMES.get(true_label, str(true_label)),
-                    "predicted_label": predicted_label,
-                    "predicted_class": CLASS_NAMES.get(predicted_label, str(predicted_label)),
-                    "correct": int(true_label == predicted_label),
-                }
-            )
-
-        all_true.extend(y_test.values)
-        all_pred.extend(y_pred)
-
-    all_true = np.array(all_true)
-    all_pred = np.array(all_pred)
-
-    overall_metrics = evaluate_predictions(all_true, all_pred)
-    predictions_df = pd.DataFrame(prediction_rows)
-
-    return overall_metrics, predictions_df, all_pred, validation_method
-
-
-# =============================================================================
-# Plot functions
-# =============================================================================
-
-def save_confusion_matrix_plot(
-    y_true: np.ndarray,
-    y_pred: np.ndarray,
-    source_name: str,
-    feature_set_name: str,
-    model_name: str,
-) -> None:
-    cm = confusion_matrix(y_true, y_pred, labels=CLASS_LABELS)
-
-    fig, ax = plt.subplots(figsize=(7.5, 6.5))
-
-    image = ax.imshow(cm, cmap="Blues")
-
-    ax.set_title(
-        f"Confusion matrix\n"
-        f"{source_name} | {feature_set_name} | {model_name}"
-    )
-    ax.set_xlabel("Predicted class")
-    ax.set_ylabel("True class")
-
-    ax.set_xticks(np.arange(len(CLASS_LABEL_NAMES)))
-    ax.set_yticks(np.arange(len(CLASS_LABEL_NAMES)))
-    ax.set_xticklabels(CLASS_LABEL_NAMES, rotation=30, ha="right")
-    ax.set_yticklabels(CLASS_LABEL_NAMES)
-
-    max_value = cm.max() if cm.size > 0 else 1
-
-    for i in range(cm.shape[0]):
-        for j in range(cm.shape[1]):
-            value = cm[i, j]
-            text_color = "white" if value > max_value / 2 else "black"
-
-            ax.text(
-                j,
-                i,
-                str(value),
-                ha="center",
-                va="center",
-                color=text_color,
-                fontweight="bold",
-                fontsize=13,
-            )
-
-    cbar = fig.colorbar(image, ax=ax)
-    cbar.set_label("Number of samples")
-
-    ax.grid(False)
-
-    filename = (
-        f"confusion_matrix_{safe_filename(source_name)}_"
-        f"{safe_filename(feature_set_name)}_"
-        f"{safe_filename(model_name)}.png"
-    )
-
-    output_path = OUTPUT_DIR / "confusion_matrices" / filename
-
-    plt.tight_layout()
-    plt.savefig(output_path, bbox_inches="tight")
-    plt.close()
-
-
-def save_metric_heatmap(
-    results_df: pd.DataFrame,
-    metric: str,
-    feature_set_name: str,
-    filename: str,
-    title: str,
-) -> None:
-    subset = results_df[results_df["feature_set"] == feature_set_name].copy()
-
-    if subset.empty:
-        return
-
-    pivot = subset.pivot(
-        index="sensor_combination",
-        columns="model",
-        values=metric,
-    )
-
-    pivot = pivot.reindex(SOURCE_ORDER)
-
-    fig, ax = plt.subplots(figsize=(15, 7))
-
-    image = ax.imshow(pivot.values, cmap="viridis", vmin=0, vmax=1, aspect="auto")
-
-    ax.set_title(title)
-    ax.set_xlabel("Model")
-    ax.set_ylabel("Sensor combination")
-
-    ax.set_xticks(np.arange(len(pivot.columns)))
-    ax.set_yticks(np.arange(len(pivot.index)))
-
-    ax.set_xticklabels(pivot.columns, rotation=35, ha="right")
-    ax.set_yticklabels(pivot.index)
-
-    for i in range(pivot.shape[0]):
-        for j in range(pivot.shape[1]):
-            value = pivot.values[i, j]
-
-            if pd.isna(value):
-                label = "NA"
-            else:
-                label = f"{value:.2f}"
-
-            ax.text(
-                j,
-                i,
-                label,
-                ha="center",
-                va="center",
-                color="white" if not pd.isna(value) and value < 0.65 else "black",
-                fontsize=9,
-                fontweight="bold",
-            )
-
-    cbar = fig.colorbar(image, ax=ax)
-    cbar.set_label(metric.replace("_", " ").title())
-
-    ax.grid(False)
-
-    output_path = OUTPUT_DIR / "plots" / filename
-
-    plt.tight_layout()
-    plt.savefig(output_path, bbox_inches="tight")
-    plt.close()
-
-
-def save_best_model_barplot(
-    best_df: pd.DataFrame,
-    metric: str = "macro_f1",
-) -> None:
-    plot_df = best_df.copy()
-    plot_df["label"] = plot_df["sensor_combination"] + " | " + plot_df["feature_set"]
-    plot_df = plot_df.sort_values(metric, ascending=True)
-
-    fig, ax = plt.subplots(figsize=(13, 12))
-
-    bars = ax.barh(
-        plot_df["label"],
-        plot_df[metric],
-        edgecolor="black",
-        linewidth=0.8,
-    )
-
-    for bar, model_name, value in zip(
-        bars,
-        plot_df["model"],
-        plot_df[metric],
-    ):
-        ax.text(
-            value + 0.01,
-            bar.get_y() + bar.get_height() / 2,
-            f"{value:.3f} | {model_name}",
-            va="center",
-            fontsize=9,
-            fontweight="bold",
-        )
-
-    ax.set_title("Best model per sensor combination and feature set")
-    ax.set_xlabel(metric.replace("_", " ").title())
-    ax.set_ylabel("Sensor combination | Feature set")
-    ax.set_xlim(0, 1.05)
-    ax.grid(axis="x", alpha=0.25)
-    ax.grid(axis="y", visible=False)
-
-    output_path = OUTPUT_DIR / "plots" / f"best_model_per_combination_and_feature_set_{metric}.png"
-
-    plt.tight_layout()
-    plt.savefig(output_path, bbox_inches="tight")
-    plt.close()
-
-
-def save_model_ranking_barplot(
-    results_df: pd.DataFrame,
-    metric: str = "macro_f1",
-) -> None:
-    model_ranking = (
-        results_df.groupby("model")[metric]
-        .mean()
-        .sort_values(ascending=True)
-        .reset_index()
-    )
-
-    fig, ax = plt.subplots(figsize=(11, 6))
-
-    bars = ax.barh(
-        model_ranking["model"],
-        model_ranking[metric],
-        edgecolor="black",
-        linewidth=0.8,
-    )
-
-    for bar, value in zip(bars, model_ranking[metric]):
-        ax.text(
-            value + 0.01,
-            bar.get_y() + bar.get_height() / 2,
-            f"{value:.3f}",
-            va="center",
-            fontsize=10,
-            fontweight="bold",
-        )
-
-    ax.set_title("Average model performance across all experiments")
-    ax.set_xlabel(f"Mean {metric.replace('_', ' ').title()}")
-    ax.set_ylabel("Model")
-    ax.set_xlim(0, 1.05)
-    ax.grid(axis="x", alpha=0.25)
-    ax.grid(axis="y", visible=False)
-
-    output_path = OUTPUT_DIR / "plots" / f"average_model_ranking_{metric}.png"
-
-    plt.tight_layout()
-    plt.savefig(output_path, bbox_inches="tight")
-    plt.close()
-
-
-def save_feature_set_comparison_barplot(
-    results_df: pd.DataFrame,
-    metric: str = "macro_f1",
-) -> None:
-    best_per_sensor_feature_set = (
-        results_df.sort_values(
-            by=["macro_f1", "accuracy", "balanced_accuracy"],
-            ascending=False,
-        )
-        .groupby(["sensor_combination", "feature_set"], as_index=False)
-        .first()
-    )
-
-    best_per_sensor_feature_set["label"] = (
-        best_per_sensor_feature_set["sensor_combination"]
-        + " | "
-        + best_per_sensor_feature_set["feature_set"]
-    )
-
-    plot_df = best_per_sensor_feature_set.sort_values(metric, ascending=True)
-
-    fig, ax = plt.subplots(figsize=(13, 12))
-
-    bars = ax.barh(
-        plot_df["label"],
-        plot_df[metric],
-        edgecolor="black",
-        linewidth=0.8,
-    )
-
-    for bar, model_name, value in zip(
-        bars,
-        plot_df["model"],
-        plot_df[metric],
-    ):
-        ax.text(
-            value + 0.01,
-            bar.get_y() + bar.get_height() / 2,
-            f"{value:.3f} | {model_name}",
-            va="center",
-            fontsize=9,
-            fontweight="bold",
-        )
-
-    ax.set_title("Best performance: all features vs top 5 vs top 10 vs top 15")
-    ax.set_xlabel(metric.replace("_", " ").title())
-    ax.set_ylabel("Experiment")
-    ax.set_xlim(0, 1.05)
-    ax.grid(axis="x", alpha=0.25)
-    ax.grid(axis="y", visible=False)
-
-    output_path = OUTPUT_DIR / "plots" / f"all_vs_top5_vs_top10_vs_top15_best_{metric}.png"
-
-    plt.tight_layout()
-    plt.savefig(output_path, bbox_inches="tight")
-    plt.close()
-
-
-def save_sensor_feature_set_matrix_plot(
-    best_df: pd.DataFrame,
-    metric: str = "macro_f1",
-) -> None:
-    """
-    Shows the best model score for each sensor combination and feature-set mode.
-    """
-
-    pivot = best_df.pivot(
-        index="sensor_combination",
-        columns="feature_set",
-        values=metric,
-    )
-
-    pivot = pivot.reindex(SOURCE_ORDER)
-    existing_columns = [col for col in FEATURE_SET_ORDER if col in pivot.columns]
-    pivot = pivot[existing_columns]
-
-    fig, ax = plt.subplots(figsize=(12, 7))
-
-    image = ax.imshow(pivot.values, cmap="viridis", vmin=0, vmax=1, aspect="auto")
-
-    ax.set_title(f"Best {metric.replace('_', ' ').title()} by sensor and feature set")
-    ax.set_xlabel("Feature set")
-    ax.set_ylabel("Sensor combination")
-
-    ax.set_xticks(np.arange(len(pivot.columns)))
-    ax.set_yticks(np.arange(len(pivot.index)))
-
-    ax.set_xticklabels(pivot.columns, rotation=25, ha="right")
-    ax.set_yticklabels(pivot.index)
-
-    for i in range(pivot.shape[0]):
-        for j in range(pivot.shape[1]):
-            value = pivot.values[i, j]
-
-            if pd.isna(value):
-                label = "NA"
-            else:
-                label = f"{value:.3f}"
-
-            ax.text(
-                j,
-                i,
-                label,
-                ha="center",
-                va="center",
-                color="white" if not pd.isna(value) and value < 0.65 else "black",
-                fontsize=10,
-                fontweight="bold",
-            )
-
-    cbar = fig.colorbar(image, ax=ax)
-    cbar.set_label(metric.replace("_", " ").title())
-
-    ax.grid(False)
-
-    output_path = OUTPUT_DIR / "plots" / f"best_{metric}_sensor_by_feature_set_matrix.png"
-
-    plt.tight_layout()
-    plt.savefig(output_path, bbox_inches="tight")
-    plt.close()
-
-
-# =============================================================================
-# Report saving
-# =============================================================================
-
-def save_classification_report(
-    y_true: np.ndarray,
-    y_pred: np.ndarray,
-    source_name: str,
-    feature_set_name: str,
-    model_name: str,
-) -> None:
-    report_dict = classification_report(
-        y_true,
-        y_pred,
-        labels=CLASS_LABELS,
-        target_names=CLASS_LABEL_NAMES,
-        zero_division=0,
-        output_dict=True,
-    )
-
-    report_text = classification_report(
-        y_true,
-        y_pred,
-        labels=CLASS_LABELS,
-        target_names=CLASS_LABEL_NAMES,
-        zero_division=0,
-    )
-
-    base_filename = (
-        f"classification_report_{safe_filename(source_name)}_"
-        f"{safe_filename(feature_set_name)}_"
-        f"{safe_filename(model_name)}"
-    )
-
-    json_path = OUTPUT_DIR / "classification_reports" / f"{base_filename}.json"
-    txt_path = OUTPUT_DIR / "classification_reports" / f"{base_filename}.txt"
-
-    with open(json_path, "w", encoding="utf-8") as file:
-        json.dump(report_dict, file, indent=4)
-
-    with open(txt_path, "w", encoding="utf-8") as file:
-        file.write(report_text) # type: ignore
-
-
-# =============================================================================
-# Nested subject-level evaluation
-# =============================================================================
-
-def build_nested_pipeline(base_pipeline: Pipeline, n_features: Optional[int]) -> Pipeline:
-    """Build preprocessing, fold-fitted RFE, and classifier as one pipeline."""
-    steps = [
-        ("imputer", clone(base_pipeline.named_steps["imputer"])),
-        ("variance_filter", VarianceThreshold()),
-        ("scaler", clone(base_pipeline.named_steps["scaler"])),
+        "mcc": float(matthews_corrcoef(y_true_array, y_pred_array)),
+    }
+
+
+def validate_inner_splits(
+    splits: Iterable[Tuple[np.ndarray, np.ndarray]], y: pd.Series
+) -> List[Tuple[np.ndarray, np.ndarray]]:
+    checked = []
+    expected = set(CLASS_LABELS)
+    for train_index, valid_index in splits:
+        if set(y.iloc[train_index].astype(int)) != expected:
+            raise ValueError("An inner training fold does not contain all classes.")
+        if set(y.iloc[valid_index].astype(int)) != expected:
+            raise ValueError("An inner validation fold does not contain all classes.")
+        checked.append((train_index, valid_index))
+    return checked
+
+
+def feature_label(feature_count: Optional[int]) -> str:
+    return "All features" if feature_count is None else f"Top {feature_count} ANOVA features"
+
+
+def model_complexity_rank(name: str) -> int:
+    preferred = [
+        "Logistic Regression",
+        "Gaussian Naive Bayes",
+        "Linear SVM",
+        "k-NN",
+        "RBF SVM",
+        "Random Forest",
+        "Extra Trees",
+        "XGBoost",
     ]
-    if n_features is not None:
-        steps.append(("feature_selector", RFE(
-            estimator=LogisticRegression(
-                solver="lbfgs", class_weight="balanced", max_iter=5000,
-                random_state=RANDOM_STATE,
-            ),
-            n_features_to_select=n_features,
-            step=0.10,
-        )))
-    steps.append(("model", clone(base_pipeline.named_steps["model"])))
-    return Pipeline(steps)
+    return preferred.index(name) if name in preferred else len(preferred)
 
 
-def candidate_feature_counts(n_available: int) -> List[Optional[int]]:
-    return [None] + [n for n in SELECTED_FEATURE_COUNTS if n < n_available]
-
-
-def nested_subject_evaluation(
+def nested_evaluation(
     df: pd.DataFrame,
     groups: np.ndarray,
     sensor_columns: Dict[str, List[str]],
-    models: Dict[str, Pipeline],
-) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
-    """
-    Outer LOSO estimates generalisation. Sensor set, RFE feature count, and
-    classifier are chosen using grouped CV on outer-training subjects only.
-    """
-    all_features = sorted(set().union(*(set(v) for v in sensor_columns.values())))
-    # Do not use the complete dataset to remove constant columns: even that
-    # decision belongs inside the fold-fitted pipeline.
-    X_all = df[all_features].replace([np.inf, -np.inf], np.nan).copy()
-    y = df[LABEL_COLUMN].copy()
-    outer = LeaveOneGroupOut()
-    prediction_rows, selection_rows, inner_rows = [], [], []
+    models: Dict[str, BaseEstimator],
+) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    all_columns = sorted({column for columns in sensor_columns.values() for column in columns})
+    if not all_columns:
+        raise ValueError("No sensor feature columns matched the configured prefixes.")
+    X = df[all_columns].replace([np.inf, -np.inf], np.nan)
+    y = df[LABEL_COLUMN].astype(int)
+    predictions: List[dict] = []
+    selections: List[dict] = []
+    candidate_rows: List[dict] = []
+    fold_score_rows: List[dict] = []
+    model_prediction_rows: List[dict] = []
 
-    for outer_fold, (train_idx, test_idx) in enumerate(
-        outer.split(X_all, y, groups), start=1
+    outer = LeaveOneGroupOut()
+    for outer_fold, (train_index, test_index) in enumerate(
+        outer.split(X, y, groups), start=1
     ):
-        held_out = str(np.unique(groups[test_idx])[0])
-        X_train, X_test = X_all.iloc[train_idx], X_all.iloc[test_idx]
-        y_train, y_test = y.iloc[train_idx], y.iloc[test_idx]
-        train_groups = groups[train_idx]
-        n_inner = min(INNER_CV_SPLITS, len(np.unique(train_groups)))
+        held_out = str(np.unique(groups[test_index])[0])
+        X_train, X_test = X.iloc[train_index], X.iloc[test_index]
+        y_train, y_test = y.iloc[train_index], y.iloc[test_index]
+        train_groups = groups[train_index]
         inner = StratifiedGroupKFold(
-            n_splits=n_inner, shuffle=True,
+            n_splits=INNER_SPLITS,
+            shuffle=True,
             random_state=RANDOM_STATE + outer_fold,
         )
-        inner_splits = list(inner.split(X_train, y_train, train_groups))
-        fold_rows = []
-        print(f"[OUTER {outer_fold:02d}] held-out subject: {held_out}")
+        inner_splits = validate_inner_splits(
+            inner.split(X_train, y_train, train_groups), y_train
+        )
+        fold_candidates: List[dict] = []
 
-        for source in SOURCE_ORDER:
-            columns = [c for c in sensor_columns[source] if c in X_all.columns]
+        for sensor_rank, sensor_name in enumerate(SENSOR_ORDER):
+            columns = [column for column in sensor_columns[sensor_name] if column in X]
             if not columns:
                 continue
-            for n_features in candidate_feature_counts(len(columns)):
-                feature_set = (
-                    "All features" if n_features is None
-                    else f"Top {n_features} RFE features"
-                )
-                for model_name, base_model in models.items():
-                    pooled_true, pooled_pred = [], []
-                    try:
-                        for inner_train, inner_valid in inner_splits:
-                            pipeline = build_nested_pipeline(base_model, n_features)
-                            pipeline.fit(
-                                X_train.iloc[inner_train][columns],
-                                y_train.iloc[inner_train],
+            counts = [count for count in FEATURE_COUNTS if count is None or count < len(columns)]
+            for feature_count in counts:
+                for model_name, estimator in models.items():
+                    per_fold_scores: List[Dict[str, float]] = []
+                    failed = False
+                    for inner_fold, (inner_train, inner_valid) in enumerate(inner_splits, start=1):
+                        pipeline = build_pipeline(estimator, feature_count)
+                        try:
+                            pipeline.fit(X_train.iloc[inner_train][columns], y_train.iloc[inner_train])
+                            predicted = pipeline.predict(X_train.iloc[inner_valid][columns])
+                        except Exception as error:
+                            warnings.warn(
+                                f"Skipped candidate in outer fold {outer_fold}: "
+                                f"{sensor_name} | {feature_label(feature_count)} | {model_name}: {error}"
                             )
-                            pred = pipeline.predict(
-                                X_train.iloc[inner_valid][columns]
-                            )
-                            pooled_true.extend(y_train.iloc[inner_valid].astype(int))
-                            pooled_pred.extend(np.asarray(pred, dtype=int))
-                        scores = evaluate_predictions(
-                            np.asarray(pooled_true), np.asarray(pooled_pred)
+                            failed = True
+                            break
+                        score = metrics(y_train.iloc[inner_valid], predicted) # type: ignore
+                        per_fold_scores.append(score)
+                        fold_score_rows.append(
+                            {
+                                "outer_fold": outer_fold,
+                                "held_out_subject": held_out,
+                                "inner_fold": inner_fold,
+                                "sensor_combination": sensor_name,
+                                "feature_set": feature_label(feature_count),
+                                "feature_count": "all" if feature_count is None else feature_count,
+                                "model": model_name,
+                                **score,
+                            }
                         )
-                        row = {
-                            "outer_fold": outer_fold,
-                            "held_out_subject": held_out,
-                            "sensor_combination": source,
-                            "feature_set": feature_set,
-                            "n_selected_features": (
-                                "all" if n_features is None else n_features
-                            ),
-                            "model": model_name,
-                            **{f"inner_{k}": v for k, v in scores.items()},
-                        }
-                        fold_rows.append(row)
-                        inner_rows.append(row)
-                    except Exception as exc:
-                        print(f"  [SKIP] {source} | {feature_set} | {model_name}: {exc}")
+                    if failed:
+                        continue
+                    candidate = {
+                        "outer_fold": outer_fold,
+                        "held_out_subject": held_out,
+                        "sensor_combination": sensor_name,
+                        "sensor_rank": sensor_rank,
+                        "feature_set": feature_label(feature_count),
+                        "feature_count": "all" if feature_count is None else feature_count,
+                        "feature_rank": len(columns) if feature_count is None else int(feature_count),
+                        "model": model_name,
+                        "model_rank": model_complexity_rank(model_name),
+                    }
+                    for metric_name in per_fold_scores[0]:
+                        values = [score[metric_name] for score in per_fold_scores]
+                        candidate[f"mean_{metric_name}"] = float(np.mean(values))
+                        candidate[f"sd_{metric_name}"] = float(np.std(values, ddof=1))
+                    fold_candidates.append(candidate)
+                    candidate_rows.append(candidate.copy())
 
-        if not fold_rows:
+        if not fold_candidates:
             raise RuntimeError(f"No valid candidates in outer fold {outer_fold}.")
-        winner = pd.DataFrame(fold_rows).sort_values(
-            by=[
-                f"inner_{PRIMARY_SELECTION_METRIC}",
-                "inner_balanced_accuracy", "inner_accuracy",
-                "sensor_combination", "feature_set", "model",
+        ranked = pd.DataFrame(fold_candidates).sort_values(
+            [
+                "mean_macro_f1",
+                "mean_balanced_accuracy",
+                "mean_accuracy",
+                "feature_rank",
+                "sensor_rank",
+                "model_rank",
             ],
             ascending=[False, False, False, True, True, True],
-        ).iloc[0].to_dict()
-
-        source = str(winner["sensor_combination"])
-        columns = [c for c in sensor_columns[source] if c in X_all.columns]
-        stored_count = winner["n_selected_features"]
-        n_features = None if stored_count == "all" else int(stored_count)
+            kind="mergesort",
+        )
+        winner = ranked.iloc[0].to_dict()
+        sensor_name = str(winner["sensor_combination"])
         model_name = str(winner["model"])
-        final_pipeline = build_nested_pipeline(models[model_name], n_features)
+        raw_count = winner["feature_count"]
+        feature_count = None if str(raw_count) == "all" else int(raw_count)
+        columns = sensor_columns[sensor_name]
+        final_pipeline = build_pipeline(models[model_name], feature_count)
         final_pipeline.fit(X_train[columns], y_train)
-        outer_pred = final_pipeline.predict(X_test[columns])
-        selected_names = columns
-        if n_features is not None:
-            variance_mask = final_pipeline.named_steps["variance_filter"].get_support()
-            post_variance_names = np.asarray(columns)[variance_mask]
-            selected_names = list(post_variance_names[
-                final_pipeline.named_steps["feature_selector"].support_
-            ])
-        else:
-            variance_mask = final_pipeline.named_steps["variance_filter"].get_support()
-            selected_names = list(np.asarray(columns)[variance_mask])
-        selection_rows.append({
-            **winner, "selected_features": "|".join(selected_names)
-        })
+        outer_pred = final_pipeline.predict(X_test[columns]).astype(int) # type: ignore
+        support = final_pipeline.named_steps["selector"].get_support()
+        selected_features = list(np.asarray(columns)[support])
+        selection = {
+            **winner,
+            "selected_features": "|".join(selected_features),
+        }
+        selections.append(selection)
+        for local_index, sample_index in enumerate(test_index):
+            true_label = int(y_test.iloc[local_index])
+            predicted_label = int(outer_pred[local_index])
+            predictions.append(
+                {
+                    "outer_fold": outer_fold,
+                    "sample_index": int(sample_index),
+                    "subject": held_out,
+                    "true_label": true_label,
+                    "true_class": CLASS_NAMES[true_label],
+                    "predicted_label": predicted_label,
+                    "predicted_class": CLASS_NAMES[predicted_label],
+                    "correct": int(true_label == predicted_label),
+                    "selected_model": model_name,
+                    "selected_sensor_combination": sensor_name,
+                    "selected_feature_set": feature_label(feature_count),
+                }
+            )
+
+        # Unbiased classifier comparison: within this outer training set,
+        # independently select the best sensor/feature configuration for each
+        # classifier using inner CV only. Each classifier then predicts the
+        # same untouched outer subject. These predictions support a fair
+        # outer-LOSO comparison between classifiers.
+        for comparison_model_name, comparison_estimator in models.items():
+            model_ranked = ranked[ranked["model"] == comparison_model_name]
+            if model_ranked.empty:
+                continue
+            model_winner = model_ranked.iloc[0].to_dict()
+            comparison_sensor = str(model_winner["sensor_combination"])
+            comparison_columns = sensor_columns[comparison_sensor]
+            comparison_raw_count = model_winner["feature_count"]
+            comparison_feature_count = (
+                None
+                if str(comparison_raw_count) == "all"
+                else int(comparison_raw_count)
+            )
+            comparison_pipeline = build_pipeline(
+                comparison_estimator, comparison_feature_count
+            )
+            comparison_pipeline.fit(
+                X_train[comparison_columns], y_train
+            )
+            comparison_predictions = comparison_pipeline.predict(
+                X_test[comparison_columns] 
+            ).astype(int) # type: ignore
+            for local_index, sample_index in enumerate(test_index):
+                true_label = int(y_test.iloc[local_index])
+                predicted_label = int(comparison_predictions[local_index])
+                model_prediction_rows.append(
+                    {
+                        "outer_fold": outer_fold,
+                        "sample_index": int(sample_index),
+                        "subject": held_out,
+                        "true_label": true_label,
+                        "true_class": CLASS_NAMES[true_label],
+                        "predicted_label": predicted_label,
+                        "predicted_class": CLASS_NAMES[predicted_label],
+                        "correct": int(true_label == predicted_label),
+                        "model": comparison_model_name,
+                        "selected_sensor_combination": comparison_sensor,
+                        "selected_feature_set": feature_label(
+                            comparison_feature_count
+                        ),
+                        "inner_macro_f1": float(
+                            model_winner["mean_macro_f1"]
+                        ),
+                    }
+                )
         print(
-            f"  selected: {source} | {winner['feature_set']} | {model_name} | "
-            f"inner macro-F1={winner['inner_macro_f1']:.3f}"
+            f"Outer {outer_fold:02d} | held out {held_out} | "
+            f"{sensor_name} | {feature_label(feature_count)} | {model_name} | "
+            f"inner macro F1={winner['mean_macro_f1']:.3f}"
         )
 
-        for local_i, sample_idx in enumerate(test_idx):
-            true_label = int(y_test.iloc[local_i])
-            pred_label = int(outer_pred[local_i])
-            prediction_rows.append({
-                "outer_fold": outer_fold,
-                "sample_index": int(sample_idx),
-                "subject": held_out,
-                "true_label": true_label,
-                "true_class": CLASS_NAMES[true_label],
-                "predicted_label": pred_label,
-                "predicted_class": CLASS_NAMES[pred_label],
-                "correct": int(true_label == pred_label),
-                "selected_sensor_combination": source,
-                "selected_feature_set": winner["feature_set"],
-                "selected_model": model_name,
-            })
-
     return (
-        pd.DataFrame(prediction_rows),
-        pd.DataFrame(selection_rows),
-        pd.DataFrame(inner_rows),
+        pd.DataFrame(predictions),
+        pd.DataFrame(selections),
+        pd.DataFrame(candidate_rows),
+        pd.DataFrame(fold_score_rows),
+        pd.DataFrame(model_prediction_rows),
     )
 
 
-def _finish_nested_plot(
-    fig: plt.Figure,
-    path: Path,
-    layout_rect: Optional[Tuple[float, float, float, float]] = None,
-) -> None: # type: ignore
-    """Save and close one nested-evaluation figure."""
+def subject_stratified_bootstrap(
+    predictions: pd.DataFrame,
+    subject_summary: pd.DataFrame,
+    n_replicates: int,
+) -> Tuple[pd.DataFrame, pd.DataFrame]:
+    rng = np.random.default_rng(RANDOM_STATE)
+    subject_tables = {
+        str(subject): group.copy()
+        for subject, group in predictions.groupby("subject", sort=False)
+    }
+    strata = {
+        phenotype: group["subject"].astype(str).tolist()
+        for phenotype, group in subject_summary.groupby("phenotype", sort=False)
+    }
+    overall_rows: List[dict] = []
+    class_rows: List[dict] = []
+    for replicate in range(n_replicates):
+        sampled_tables = []
+        for subjects in strata.values():
+            sampled_subjects = rng.choice(subjects, size=len(subjects), replace=True)
+            sampled_tables.extend(subject_tables[str(subject)] for subject in sampled_subjects)
+        sample = pd.concat(sampled_tables, ignore_index=True)
+        y_true = sample["true_label"].to_numpy(dtype=int)
+        y_pred = sample["predicted_label"].to_numpy(dtype=int)
+        overall_rows.append({"replicate": replicate, **metrics(y_true, y_pred)})
+        precision, recall, f1, support = precision_recall_fscore_support(
+            y_true, y_pred, labels=CLASS_LABELS, zero_division=0
+        )
+        for index, label in enumerate(CLASS_LABELS):
+            class_rows.append(
+                {
+                    "replicate": replicate,
+                    "label": label,
+                    "class": CLASS_NAMES[label],
+                    "precision": float(precision[index]), # type: ignore
+                    "recall": float(recall[index]), # type: ignore
+                    "f1": float(f1[index]), # type: ignore
+                    "support": int(support[index]), # type: ignore
+                }
+            )
+    return pd.DataFrame(overall_rows), pd.DataFrame(class_rows)
+
+
+def confidence_interval(values: pd.Series) -> Tuple[float, float]:
+    return float(values.quantile(0.025)), float(values.quantile(0.975))
+
+
+def model_comparison_with_intervals(
+    model_predictions: pd.DataFrame,
+    subject_summary: pd.DataFrame,
+    n_replicates: int,
+) -> pd.DataFrame:
+    """Calculate unbiased outer-LOSO metrics and subject-level intervals per model."""
+    rows: List[dict] = []
+    for model_name, predictions in model_predictions.groupby("model", sort=False):
+        estimates = metrics( predictions["true_label"], predictions["predicted_label"]) # type: ignore
+        bootstrap, _ = subject_stratified_bootstrap(
+            predictions, subject_summary, n_replicates
+        )
+        for metric_name, estimate in estimates.items():
+            lower, upper = confidence_interval(bootstrap[metric_name])
+            rows.append(
+                {
+                    "model": model_name,
+                    "metric": metric_name,
+                    "estimate": estimate,
+                    "lower": lower,
+                    "upper": upper,
+                    "n_subjects": int(predictions["subject"].nunique()),
+                    "n_predictions": int(len(predictions)),
+                }
+            )
+    return pd.DataFrame(rows)
+
+
+def plot_outer_model_comparison(table: pd.DataFrame, path: Path) -> None:
+    """Four-panel forest plot comparing classifiers on identical outer subjects."""
+    metric_panels = [
+        ("accuracy", "Accuracy"),
+        ("balanced_accuracy", "Balanced accuracy"),
+        ("macro_f1", "Macro F1"),
+        ("mcc", "MCC"),
+    ]
+    available_models = set(table["model"].astype(str))
+    ordered_models = [name for name in MODEL_ORDER if name in available_models]
+    ordered_models.extend(sorted(available_models.difference(ordered_models))) # type: ignore
+    model_colours = dict(
+        zip(ordered_models, plt.cm.Blues(np.linspace(0.45, 0.9, len(ordered_models)))) # type: ignore
+    )
+    y = np.arange(len(ordered_models))
+    fig, axes = plt.subplots(
+        2,
+        2,
+        figsize=(13.5, max(8.0, 0.62 * len(ordered_models) + 5.0)),
+        sharey=True,
+    )
+    for ax, (metric_name, metric_label) in zip(axes.flat, metric_panels):
+        subset = (
+            table[table["metric"] == metric_name]
+            .set_index("model")
+            .reindex(ordered_models)
+        )
+        estimates = subset["estimate"].to_numpy(dtype=float)
+        lower = subset["lower"].to_numpy(dtype=float)
+        upper = subset["upper"].to_numpy(dtype=float)
+        for index, model_name in enumerate(ordered_models):
+            ax.errorbar(
+                estimates[index],
+                index,
+                xerr=np.array(
+                    [
+                        [estimates[index] - lower[index]],
+                        [upper[index] - estimates[index]],
+                    ]
+                ),
+                fmt="o",
+                color=model_colours[model_name],
+                ecolor=model_colours[model_name],
+                elinewidth=2,
+                capsize=3,
+                markersize=7,
+            )
+            ax.text(
+                min(upper[index] + 0.018, 1.04),
+                index,
+                f"{estimates[index]:.3f}",
+                va="center",
+                fontsize=8.5,
+                color=COLOURS["dark"],
+            )
+        ax.set_yticks(y, ordered_models)
+        ax.set_title(metric_label)
+        ax.set_xlabel("Outer-LOSO score (95% CI)")
+        if metric_name == "mcc":
+            minimum = min(-0.10, float(np.nanmin(lower)) - 0.05)
+            ax.set_xlim(max(-1.0, minimum), 1.08)
+            ax.axvline(0, color=COLOURS["muted"], linewidth=1, linestyle="--")
+        else:
+            ax.set_xlim(-0.03, 1.08)
+        ax.grid(axis="x")
+    fig.suptitle(
+        "Unbiased classifier comparison on held-out subjects\n"
+        "Sensor combination and feature count selected independently within each outer training set",
+        fontsize=14,
+        fontweight="semibold",
+    )
+    save_figure(fig, path)
+
+
+def save_figure(fig: plt.Figure, path: Path) -> None: # type: ignore
     path.parent.mkdir(parents=True, exist_ok=True)
-    fig.tight_layout(rect=layout_rect)
+    fig.tight_layout()
     fig.savefig(path, bbox_inches="tight")
     plt.close(fig)
 
 
-def _metric_label(metric: str) -> str:
-    """Return consistent publication-friendly metric labels."""
+def plot_overall_metrics(
+    estimates: Dict[str, float], bootstrap: pd.DataFrame, path: Path
+) -> pd.DataFrame:
     labels = {
         "accuracy": "Accuracy",
         "balanced_accuracy": "Balanced accuracy",
-        "macro_f1": "Macro F1",
         "macro_precision": "Macro precision",
         "macro_recall": "Macro recall",
+        "macro_f1": "Macro F1",
         "weighted_f1": "Weighted F1",
         "mcc": "MCC",
     }
-    return labels.get(metric, metric.replace("_", " ").title())
+    rows = []
+    for key, label in labels.items():
+        lower, upper = confidence_interval(bootstrap[key])
+        rows.append(
+            {"metric": key, "label": label, "estimate": estimates[key], "lower": lower, "upper": upper}
+        )
+    table = pd.DataFrame(rows).sort_values("estimate")
+    y = np.arange(len(table))
+    fig, ax = plt.subplots(figsize=(8.6, 5.5))
+    ax.errorbar(
+        table["estimate"],
+        y,
+        xerr=np.vstack([table["estimate"] - table["lower"], table["upper"] - table["estimate"]]),
+        fmt="o",
+        color=COLOURS["blue"],
+        ecolor=COLOURS["muted"],
+        capsize=4,
+        markersize=7,
+    )
+    for index, row in table.reset_index(drop=True).iterrows():
+        ax.text(
+            min(float(row["upper"]) + 0.015, 1.03),
+            index,
+            f"{row['estimate']:.3f} [{row['lower']:.3f}, {row['upper']:.3f}]",
+            va="center",
+            fontsize=8.7,
+            color=COLOURS["dark"],
+        )
+    ax.set_yticks(y, table["label"])
+    ax.set_xlim(min(-0.05, float(table["lower"].min()) - 0.05), 1.08)
+    ax.set_xlabel("Score and 95% subject bootstrap interval")
+    ax.set_title("Outer LOSO performance on held-out subjects")
+    save_figure(fig, path)
+    return table
 
 
-def _score_axis_limits(values: pd.Series, padding: float = 0.04) -> Tuple[float, float]:
-    """Choose shared, rounded limits that retain context while showing differences."""
-    numeric = pd.to_numeric(values, errors="coerce").dropna()
-    if numeric.empty:
-        return 0.0, 1.0
-    lower = max(0.0, np.floor((numeric.min() - padding) * 20) / 20)
-    upper = min(1.0, np.ceil((numeric.max() + padding) * 20) / 20)
-    if upper - lower < 0.15:
-        lower = max(0.0, upper - 0.15)
-    return float(lower), float(upper)
+def per_class_estimates(predictions: pd.DataFrame) -> pd.DataFrame:
+    precision, recall, f1, support = precision_recall_fscore_support(
+        predictions["true_label"],
+        predictions["predicted_label"],
+        labels=CLASS_LABELS,
+        zero_division=0,
+    )
+    return pd.DataFrame(
+        {
+            "label": CLASS_LABELS,
+            "class": [CLASS_NAMES[label] for label in CLASS_LABELS],
+            "precision": precision,
+            "recall": recall,
+            "f1": f1,
+            "support": support,
+        }
+    )
 
 
-def _style_nested_axis(ax: plt.Axes, grid_axis: str = "x") -> None: # type: ignore
-    """Apply the shared nested-results visual style to one axis."""
-    ax.set_facecolor("#FBFCFE")
-    ax.tick_params(colors=PLOT_TEXT_COLOUR, length=0)
-    ax.xaxis.label.set_color(PLOT_TEXT_COLOUR)
-    ax.yaxis.label.set_color(PLOT_TEXT_COLOUR)
-    ax.title.set_color(PLOT_TEXT_COLOUR)
-    ax.grid(False)
-    if grid_axis in ("x", "both"):
-        ax.xaxis.grid(True)
-    if grid_axis in ("y", "both"):
-        ax.yaxis.grid(True)
-    for side in ("left", "bottom"):
-        ax.spines[side].set_color("#9FB3C8")
-        ax.spines[side].set_linewidth(0.8)
-
-
-def save_nested_confusion_matrix(
-    y_true: np.ndarray,
-    y_pred: np.ndarray,
-) -> None:
-    """Plot the final confusion matrix using only outer-LOSO predictions."""
-    matrix = confusion_matrix(y_true, y_pred, labels=CLASS_LABELS)
-    fig, ax = plt.subplots(figsize=(8.5, 7.5))
-    image = ax.imshow(matrix, cmap="Blues", aspect="equal")
-    colour_bar = fig.colorbar(image, ax=ax, fraction=0.046, pad=0.04)
-    colour_bar.set_label("Number of predictions", color=PLOT_TEXT_COLOUR)
-    colour_bar.ax.tick_params(colors=PLOT_MUTED_COLOUR, length=0)
-    threshold = matrix.max() / 2 if matrix.size else 0
-    row_totals = matrix.sum(axis=1, keepdims=True)
-    for row in range(matrix.shape[0]):
-        for column in range(matrix.shape[1]):
-            percentage = (
-                100 * matrix[row, column] / row_totals[row, 0]
-                if row_totals[row, 0]
-                else 0
+def plot_per_class_metrics(
+    estimates: pd.DataFrame, bootstrap: pd.DataFrame, path: Path
+) -> pd.DataFrame:
+    interval_rows = []
+    for _, row in estimates.iterrows():
+        subset = bootstrap[bootstrap["label"] == row["label"]]
+        for metric_name in ("precision", "recall", "f1"):
+            lower, upper = confidence_interval(subset[metric_name])
+            interval_rows.append(
+                {
+                    "label": int(row["label"]),
+                    "class": row["class"],
+                    "metric": metric_name,
+                    "estimate": float(row[metric_name]),
+                    "lower": lower,
+                    "upper": upper,
+                    "support": int(row["support"]),
+                }
             )
+    table = pd.DataFrame(interval_rows)
+    fig, ax = plt.subplots(figsize=(9.2, 5.7))
+    x = np.arange(len(CLASS_LABELS))
+    offsets = {"precision": -0.22, "recall": 0.0, "f1": 0.22}
+    colours = {"precision": "#4C78A8", "recall": "#F2A541", "f1": "#59A14F"}
+    for metric_name in ("precision", "recall", "f1"):
+        subset = table[table["metric"] == metric_name].sort_values("label")
+        positions = x + offsets[metric_name]
+        ax.errorbar(
+            positions,
+            subset["estimate"],
+            yerr=np.vstack([subset["estimate"] - subset["lower"], subset["upper"] - subset["estimate"]]),
+            fmt="o",
+            color=colours[metric_name],
+            capsize=3,
+            markersize=7,
+            label=metric_name.capitalize(),
+        )
+    tick_labels = [
+        f"{row['class']}\n(n={int(row['support'])})" for _, row in estimates.sort_values("label").iterrows()
+    ]
+    ax.set_xticks(x, tick_labels)
+    ax.set_ylim(-0.03, 1.05)
+    ax.set_ylabel("Score and 95% subject bootstrap interval")
+    ax.set_title("Per-class outer LOSO performance")
+    ax.legend(frameon=False, ncol=3, loc="lower center")
+    ax.grid(axis="y")
+    save_figure(fig, path)
+    return table
+
+
+def plot_confusion(predictions: pd.DataFrame, path: Path) -> pd.DataFrame:
+    cm = confusion_matrix(
+        predictions["true_label"], predictions["predicted_label"], labels=CLASS_LABELS
+    )
+    row_total = cm.sum(axis=1, keepdims=True)
+    percentages = np.divide(cm, row_total, out=np.zeros_like(cm, dtype=float), where=row_total != 0)
+    fig, ax = plt.subplots(figsize=(7.2, 6.2))
+    image = ax.imshow(percentages, cmap="Blues", vmin=0, vmax=1)
+    for row in range(cm.shape[0]):
+        for column in range(cm.shape[1]):
+            colour = "white" if percentages[row, column] >= 0.55 else COLOURS["dark"]
             ax.text(
                 column,
                 row,
-                f"{matrix[row, column]}\n{percentage:.0f}%",
+                f"{cm[row, column]}\n{percentages[row, column] * 100:.1f}%",
                 ha="center",
                 va="center",
-                color="white" if matrix[row, column] > threshold else "black",
-                fontweight="bold",
-                fontsize=12,
+                color=colour,
+                fontweight="semibold",
             )
-    ax.set(
-        xticks=np.arange(len(CLASS_LABEL_NAMES)),
-        yticks=np.arange(len(CLASS_LABEL_NAMES)),
-        xticklabels=CLASS_LABEL_NAMES,
-        yticklabels=CLASS_LABEL_NAMES,
-        xlabel="Predicted class",
-        ylabel="True class",
-        title=("Final confusion matrix\n"
-               "Unbiased outer-LOSO predictions; row percentages shown"),
-    )
+    names = [CLASS_NAMES[label] for label in CLASS_LABELS]
+    ax.set_xticks(range(3), names, rotation=20, ha="right")
+    ax.set_yticks(range(3), names)
+    ax.set_xlabel("Predicted class")
+    ax.set_ylabel("True class")
+    ax.set_title("Outer LOSO confusion matrix\nCounts and row percentages")
+    fig.colorbar(image, ax=ax, fraction=0.046, pad=0.04, label="Row proportion")
     ax.grid(False)
-    ax.tick_params(length=0, colors=PLOT_TEXT_COLOUR)
-    for spine in ax.spines.values():
-        spine.set_visible(False)
-    plt.setp(ax.get_xticklabels(), rotation=25, ha="right")
-    _finish_nested_plot(
-        fig, NESTED_CONFUSION_DIR / "final_outer_loso_confusion_matrix.png"
-    )
-
-
-def save_final_metric_summary(metrics: Dict[str, float]) -> None:
-    """Plot every final metric calculated from pooled outer-LOSO predictions."""
-    labels = [
-        "Accuracy", "Balanced accuracy", "Macro precision",
-        "Macro recall", "Macro F1", "Weighted F1", "MCC",
-    ]
-    keys = [
-        "accuracy", "balanced_accuracy", "macro_precision", "macro_recall",
-        "macro_f1", "weighted_f1", "mcc",
-    ]
-    values = [float(metrics[key]) for key in keys]
-    order = np.argsort(values)
-    ordered_labels = [labels[index] for index in order]
-    ordered_values = [values[index] for index in order]
-    colours = plt.cm.viridis(np.linspace(0.25, 0.8, len(keys))) # type: ignore
-    fig, ax = plt.subplots(figsize=(10.5, 7))
-    bars = ax.barh(
-        ordered_labels,
-        ordered_values,
-        color=colours,
-        height=0.62,
-        edgecolor="white",
-    )
-    lower_limit = min(0.0, min(values) - 0.08)
-    ax.set_xlim(lower_limit, 1.0)
-    ax.set_xlabel("Score")
-    ax.set_title("Final performance\nUnbiased outer-LOSO predictions", pad=14)
-    for bar, value in zip(bars, ordered_values):
-        ax.text(
-            value + (0.012 if value >= 0 else -0.012),
-            bar.get_y() + bar.get_height() / 2,
-            f"{value:.3f}",
-            ha="left" if value >= 0 else "right",
-            va="center",
-            fontweight="semibold",
-            color=PLOT_TEXT_COLOUR,
-        )
-    _style_nested_axis(ax, grid_axis="x")
-    _finish_nested_plot(fig, NESTED_PLOTS_DIR / "final_outer_loso_all_metrics.png")
-
-
-def save_per_class_metrics(
-    y_true: np.ndarray,
-    y_pred: np.ndarray,
-    save_table: bool = True,
-) -> None:
-    """Plot final precision, recall and F1 separately for each class."""
-    report = classification_report(
-        y_true,
-        y_pred,
-        labels=CLASS_LABELS,
-        target_names=CLASS_LABEL_NAMES,
-        output_dict=True,
-        zero_division=0,
-    )
-    class_table = pd.DataFrame(
-        [
-            {
-                "class": class_name,
-                "precision": report[class_name]["precision"], # type: ignore
-                "recall": report[class_name]["recall"], # type: ignore
-                "f1_score": report[class_name]["f1-score"], # type: ignore
-                "support": report[class_name]["support"], # type: ignore
-            }
-            for class_name in CLASS_LABEL_NAMES
-        ]
-    )
-    if save_table:
-        class_table.to_csv(NESTED_OUTPUT_DIR / "final_per_class_metrics.csv", index=False)
-    x = np.arange(len(CLASS_LABEL_NAMES))
-    width = 0.24
-    fig, ax = plt.subplots(figsize=(10.5, 7))
-    bar_groups = [
-        ax.bar(x - width, class_table["precision"], width, label="Precision", color="#56B4E9"),
-        ax.bar(x, class_table["recall"], width, label="Recall", color="#2A9D8F"),
-        ax.bar(x + width, class_table["f1_score"], width, label="F1-score", color="#7A5195"),
-    ]
-    ax.set(
-        xticks=x,
-        xticklabels=CLASS_LABEL_NAMES,
-        ylim=(0, 1.05),
-        ylabel="Score",
-        title="Per-class performance\nUnbiased outer-LOSO predictions",
-    )
-    for bars in bar_groups:
-        for bar in bars:
-            value = bar.get_height()
-            ax.text(
-                bar.get_x() + bar.get_width() / 2,
-                value + 0.018,
-                f"{value:.2f}",
-                ha="center",
-                va="bottom",
-                fontsize=9,
-                color=PLOT_TEXT_COLOUR,
+    save_figure(fig, path)
+    rows = []
+    for row, true_label in enumerate(CLASS_LABELS):
+        for column, predicted_label in enumerate(CLASS_LABELS):
+            rows.append(
+                {
+                    "true_label": true_label,
+                    "true_class": CLASS_NAMES[true_label],
+                    "predicted_label": predicted_label,
+                    "predicted_class": CLASS_NAMES[predicted_label],
+                    "count": int(cm[row, column]),
+                    "row_percentage": float(percentages[row, column]),
+                }
             )
-    ax.legend(frameon=False, ncol=3, loc="upper center")
-    _style_nested_axis(ax, grid_axis="y")
-    _finish_nested_plot(fig, NESTED_PLOTS_DIR / "final_outer_loso_per_class_metrics.png")
+    return pd.DataFrame(rows)
 
 
-def build_outer_fold_summary(
-    predictions: pd.DataFrame,
-    selections: pd.DataFrame,
-) -> pd.DataFrame:
-    """Combine each outer fold's selected configuration and held-out outcome."""
-    outcomes = (
-        predictions.groupby(["outer_fold", "subject"], as_index=False)
-        .agg(
-            n_predictions=("correct", "size"),
-            n_correct=("correct", "sum"),
-            outer_accuracy=("correct", "mean"),
-        )
-        .rename(columns={"subject": "held_out_subject"})
+def plot_subject_outcomes(predictions: pd.DataFrame, path: Path) -> pd.DataFrame:
+    summary = (
+        predictions.groupby("subject", as_index=False)
+        .agg(accuracy=("correct", "mean"), correct=("correct", "sum"), n_predictions=("correct", "size"))
+        .sort_values(["accuracy", "subject"])
     )
-    selection_columns = [
-        "outer_fold", "held_out_subject", "model", "sensor_combination",
-        "feature_set", "inner_macro_f1",
-    ]
-    selected = selections[selection_columns].drop_duplicates("outer_fold")
-    summary = outcomes.merge(
-        selected,
-        on=["outer_fold", "held_out_subject"],
-        how="left",
-        validate="one_to_one",
-    )
-    if summary[selection_columns[2:]].isna().any().any():
-        raise ValueError("Could not match every outer fold to its selected configuration.")
-    return summary.sort_values("outer_fold").reset_index(drop=True)
+    fig, ax = plt.subplots(figsize=(8.6, 7.2))
+    y = np.arange(len(summary))
+    colours = np.where(summary["accuracy"] == 1.0, "#59A14F", np.where(summary["accuracy"] == 0.0, "#E45756", "#F2A541"))
+    ax.scatter(summary["accuracy"], y, c=colours, s=55, edgecolor="white", linewidth=0.7)
+    ax.hlines(y, 0, summary["accuracy"], color=COLOURS["grid"], linewidth=1.5)
+    ax.set_yticks(y, summary["subject"])
+    ax.set_xlim(-0.03, 1.05)
+    ax.set_xlabel("Held-out subject accuracy")
+    ax.set_ylabel("Subject")
+    ax.set_title("Outer LOSO outcome for each held-out subject")
+    save_figure(fig, path)
+    return summary
 
 
-def _outer_accuracy_colour(value: float) -> str:
-    if value >= 0.999:
-        return "#2A9D8F"
-    if value <= 0.001:
-        return "#D1495B"
-    return "#E9C46A"
-
-
-def save_outer_subject_accuracy(summary: pd.DataFrame) -> None:
-    """Show held-out accuracy for every outer subject and selected model."""
-    shown = summary.sort_values("outer_fold", ascending=False)
-    y = np.arange(len(shown))
-    colours = [
-        MODEL_COLOURS.get(str(model), PLOT_MUTED_COLOUR) for model in shown["model"]
-    ]
-    fig, ax = plt.subplots(figsize=(11.5, max(9, 0.37 * len(shown) + 2.5)))
-    ax.hlines(y, 0, shown["outer_accuracy"], color="#D9E2EC", linewidth=2.2)
-    ax.scatter(
-        shown["outer_accuracy"], y, c=colours, s=95,
-        edgecolor="white", linewidth=0.9, zorder=3,
-    )
-    for row, (_, result) in enumerate(shown.iterrows()):
-        ax.text(
-            float(result["outer_accuracy"]) + 0.025,
-            row,
-            f"{int(result['n_correct'])}/{int(result['n_predictions'])}",
-            va="center",
-            fontsize=9,
-            fontweight="semibold",
-            color=PLOT_TEXT_COLOUR,
-        )
-    ax.set(
-        yticks=y,
-        yticklabels=shown["held_out_subject"],
-        xlim=(-0.03, 1.13),
-        xticks=[0, 0.25, 0.5, 0.75, 1.0],
-        xlabel="Outer-fold accuracy",
-        ylabel="Held-out subject",
-        title=("Outer-LOSO accuracy by held-out subject\n"
-               "Point color identifies the model selected inside that fold"),
-    )
-    present_models = [
-        model for model in MODEL_COLOURS if model in set(shown["model"].astype(str))
-    ]
-    handles = [
-        Line2D(
-            [0], [0], marker="o", linestyle="", markersize=7,
-            markerfacecolor=MODEL_COLOURS[model], markeredgecolor="white", label=model,
-        )
-        for model in present_models
-    ]
-    fig.legend(
-        handles=handles, frameon=False, ncol=4, loc="lower center",
-        title="Selected model", bbox_to_anchor=(0.5, 0.01),
-    )
-    _style_nested_axis(ax, grid_axis="x")
-    _finish_nested_plot(
-        fig,
-        NESTED_PLOTS_DIR / "outer_loso_subject_accuracy.png",
-        layout_rect=(0, 0.08, 1, 1),
-    )
-
-
-def save_outer_prediction_outcomes(predictions: pd.DataFrame) -> None:
-    """Show every held-out prediction as a correct or incorrect subject-level tile."""
-    ordered = predictions.sort_values(["outer_fold", "sample_index"]).copy()
-    subject_order = list(dict.fromkeys(ordered["subject"].astype(str)))
-    grouped = {subject: group for subject, group in ordered.groupby("subject", sort=False)}
-    max_observations = max(len(group) for group in grouped.values())
-    outcome_matrix = np.full((len(subject_order), max_observations), np.nan)
-    annotations = np.full((len(subject_order), max_observations), "", dtype=object)
-    class_codes = {
+def plot_outer_prediction_grid(predictions: pd.DataFrame, path: Path) -> None:
+    """Show every held-out prediction as a correct/incorrect subject-level tile."""
+    ordered = predictions.sort_values(["subject", "sample_index"]).copy()
+    subjects = list(dict.fromkeys(ordered["subject"].astype(str)))
+    grouped = {
+        subject: group.reset_index(drop=True)
+        for subject, group in ordered.groupby("subject", sort=False)
+    }
+    maximum = max(len(group) for group in grouped.values())
+    matrix = np.full((len(subjects), maximum), np.nan)
+    annotations = np.full((len(subjects), maximum), "", dtype=object)
+    short_names = {
         "Healthy leg": "Healthy",
         "Affected side": "Affected",
         "Non-affected side": "Non-affected",
     }
-    for row, subject in enumerate(subject_order):
+    for row, subject in enumerate(subjects):
         group = grouped[subject]
-        for column, (_, prediction) in enumerate(group.iterrows()):
-            outcome_matrix[row, column] = int(prediction["correct"])
-            true_name = class_codes.get(str(prediction["true_class"]), str(prediction["true_class"]))
-            predicted_name = class_codes.get(
-                str(prediction["predicted_class"]), str(prediction["predicted_class"])
+        for column, result in group.iterrows():
+            matrix[row, column] = int(result["correct"])
+            true_name = short_names.get(str(result["true_class"]), str(result["true_class"]))
+            predicted_name = short_names.get(
+                str(result["predicted_class"]), str(result["predicted_class"])
             )
-            annotations[row, column] = f"{true_name} -> {predicted_name}"
+            annotations[row, column] = (
+                f"{true_name}\n→ {predicted_name}"
+            )
+    from matplotlib.colors import ListedColormap
 
     fig, ax = plt.subplots(
-        figsize=(10.5, max(10, 0.43 * len(subject_order) + 2.8))
+        figsize=(8.8, max(6.5, 0.42 * len(subjects) + 2.2))
     )
-    masked = np.ma.masked_invalid(outcome_matrix)
-    image = ax.imshow(
+    masked = np.ma.masked_invalid(matrix)
+    ax.imshow(
         masked,
-        cmap=ListedColormap(["#E76F51", "#2A9D8F"]),
+        cmap=ListedColormap(["#E45756", "#59A14F"]),
         vmin=0,
         vmax=1,
         aspect="auto",
     )
-    image.cmap.set_bad("#F0F4F8")
-    for row in range(len(subject_order)):
-        for column in range(max_observations):
-            if annotations[row, column]:
+    for row in range(matrix.shape[0]):
+        for column in range(matrix.shape[1]):
+            if np.isfinite(matrix[row, column]):
                 ax.text(
                     column,
                     row,
                     annotations[row, column],
                     ha="center",
                     va="center",
-                    fontsize=8.5,
+                    color="white",
+                    fontsize=8,
                     fontweight="semibold",
-                    color="white" if outcome_matrix[row, column] == 0 else "#102A43",
                 )
-    ax.set(
-        xticks=np.arange(max_observations),
-        yticks=np.arange(len(subject_order)),
-        xticklabels=[f"Held-out observation {index + 1}" for index in range(max_observations)],
-        yticklabels=subject_order,
-        xlabel="True class -> predicted class",
-        ylabel="Held-out subject",
-        title=("Outer-LOSO prediction outcomes by subject\n"
-               "Green is correct; red is incorrect"),
-    )
+    ax.set_yticks(np.arange(len(subjects)), subjects)
+    ax.set_xticks(np.arange(maximum), [f"Observation {i + 1}" for i in range(maximum)])
+    ax.set_xlabel("Held-out observation")
+    ax.set_ylabel("Held-out subject")
+    ax.set_title("Outer-LOSO prediction outcomes by subject\nGreen = correct; red = incorrect")
     ax.grid(False)
-    ax.tick_params(length=0, colors=PLOT_TEXT_COLOUR)
-    for spine in ax.spines.values():
-        spine.set_visible(False)
-    _finish_nested_plot(fig, NESTED_PLOTS_DIR / "outer_loso_prediction_outcomes.png")
+    save_figure(fig, path)
 
 
-def save_outer_selected_configurations(summary: pd.DataFrame) -> None:
-    """Connect each held-out subject to its selected configuration and outcome."""
-    shown = summary.sort_values("outer_fold", ascending=False).reset_index(drop=True)
-    y = np.arange(len(shown))
-    model_order = [
-        name for name in MODEL_COLOURS if name in set(shown["model"].astype(str))
-    ]
-    sensor_order = [
-        name for name in SOURCE_ORDER if name in set(shown["sensor_combination"].astype(str))
-    ]
-    feature_order = _ordered_values(
-        shown["feature_set"],
-        ["All features", "Top 5 RFE features", "Top 10 RFE features", "Top 15 RFE features"],
+def plot_selected_configuration_by_subject(
+    selections: pd.DataFrame, predictions: pd.DataFrame, path: Path
+) -> None:
+    """Display the inner-CV-selected model, sensors and feature set per outer fold."""
+    outcomes = (
+        predictions.groupby(["outer_fold", "subject"], as_index=False)
+        .agg(outer_accuracy=("correct", "mean"))
+        .rename(columns={"subject": "held_out_subject"})
     )
+    table = selections.merge(
+        outcomes, on=["outer_fold", "held_out_subject"], how="left"
+    ).sort_values("outer_fold")
+    columns = [
+        ("model", "Selected model"),
+        ("sensor_combination", "Selected sensors"),
+        ("feature_set", "Selected feature set"),
+    ]
     fig, axes = plt.subplots(
-        1, 5, figsize=(24, max(10, 0.4 * len(shown) + 3)),
-        sharey=True, gridspec_kw={"width_ratios": [1.5, 1.5, 1.25, 1.0, 1.0]},
+        1,
+        3,
+        figsize=(16, max(7.5, 0.38 * len(table) + 2.4)),
+        sharey=True,
     )
-    categorical = [
-        ("model", model_order, MODEL_COLOURS, "Selected model"),
-        ("sensor_combination", sensor_order, SENSOR_COLOURS, "Selected sensors"),
-        ("feature_set", feature_order, FEATURE_SET_COLOURS, "Selected features"),
-    ]
-    for ax, (column, order, colour_map, title) in zip(axes[:3], categorical):
-        positions = {value: index for index, value in enumerate(order)}
-        x = [positions[str(value)] for value in shown[column]]
-        colours = [colour_map.get(str(value), PLOT_MUTED_COLOUR) for value in shown[column]]
-        ax.scatter(x, y, c=colours, s=78, edgecolor="white", linewidth=0.8)
-        ax.set(
-            xticks=np.arange(len(order)),
-            xticklabels=order,
-            title=title,
-            xlim=(-0.6, len(order) - 0.4),
-        )
-        ax.grid(False)
-        ax.tick_params(axis="x", rotation=42, labelsize=8.5)
-        ax.tick_params(axis="y", length=0)
-        for row in range(len(shown)):
-            if row % 2 == 0:
-                ax.axhspan(row - 0.5, row + 0.5, color="#F0F4F8", zorder=0)
-
-    axes[0].set(yticks=y, yticklabels=shown["held_out_subject"])
-    axes[0].set_ylabel("Held-out subject")
-
-    inner_lower, inner_upper = _score_axis_limits(shown["inner_macro_f1"], padding=0.04)
-    axes[3].scatter(
-        shown["inner_macro_f1"], y, color=PLOT_ACCENT_COLOUR,
-        s=78, edgecolor="white", linewidth=0.8,
-    )
-    axes[3].set(
-        xlim=(inner_lower, inner_upper),
-        xlabel="Score",
-        title="Selected inner\nmacro F1",
-    )
-    _style_nested_axis(axes[3], grid_axis="x")
-
-    accuracy_colours = [_outer_accuracy_colour(value) for value in shown["outer_accuracy"]]
-    axes[4].scatter(
-        shown["outer_accuracy"], y, c=accuracy_colours,
-        s=78, edgecolor="white", linewidth=0.8,
-    )
-    axes[4].set(
-        xlim=(-0.05, 1.05),
-        xticks=[0, 0.5, 1.0],
-        xlabel="Accuracy",
-        title="Held-out\noutcome",
-    )
-    _style_nested_axis(axes[4], grid_axis="x")
-    for ax in axes[:3]:
-        for side in ("left", "bottom"):
-            ax.spines[side].set_color("#9FB3C8")
-            ax.spines[side].set_linewidth(0.8)
-    fig.suptitle(
-        "Outer-LOSO selected configuration and outcome for every subject",
-        fontsize=20,
-        fontweight="semibold",
-        y=0.995,
-    )
-    _finish_nested_plot(
-        fig,
-        NESTED_PLOTS_DIR / "outer_loso_selected_configuration_by_subject.png",
-        layout_rect=(0, 0, 1, 0.97),
-    )
-
-
-def save_outer_performance_by_selected_configuration(predictions: pd.DataFrame) -> None:
-    """Summarize outer correctness by the configuration selected in each fold."""
-    specifications = [
-        ("selected_model", "Selected model", MODEL_COLOURS),
-        ("selected_sensor_combination", "Selected sensors", SENSOR_COLOURS),
-        ("selected_feature_set", "Selected feature set", FEATURE_SET_COLOURS),
-    ]
-    fig, axes = plt.subplots(3, 1, figsize=(12, 18), sharex=True)
-    for ax, (column, title, colour_map) in zip(axes, specifications):
-        grouped = (
-            predictions.groupby(column, as_index=False)
-            .agg(
-                outer_accuracy=("correct", "mean"),
-                n_subjects=("subject", "nunique"),
-                n_predictions=("correct", "size"),
-            )
-            .sort_values("outer_accuracy")
-        )
-        colours = [
-            colour_map.get(str(name), PLOT_MUTED_COLOUR) for name in grouped[column]
-        ]
-        bars = ax.barh(
-            grouped[column].astype(str), grouped["outer_accuracy"],
-            color=colours, height=0.62, edgecolor="white",
-        )
-        for bar, (_, result) in zip(bars, grouped.iterrows()):
-            ax.text(
-                float(result["outer_accuracy"]) + 0.02,
-                bar.get_y() + bar.get_height() / 2,
-                f"{float(result['outer_accuracy']):.2f}  (n={int(result['n_subjects'])})",
-                va="center",
-                fontsize=9,
-                fontweight="semibold",
-                color=PLOT_TEXT_COLOUR,
-            )
-        ax.set(
-            xlim=(0, 1.16),
-            xticks=np.arange(0, 1.01, 0.2),
-            xlabel="Outer prediction accuracy",
-            title=title,
-        )
-        _style_nested_axis(ax, grid_axis="x")
-    fig.suptitle(
-        "Outer-LOSO performance by selected configuration\n"
-        "Descriptive only; n is the number of outer subjects selecting that option",
-        fontsize=17,
-        fontweight="semibold",
-        y=0.995,
-    )
-    _finish_nested_plot(
-        fig,
-        NESTED_PLOTS_DIR / "outer_loso_performance_by_selected_configuration.png",
-        layout_rect=(0, 0, 1, 0.92),
-    )
-
-
-def save_outer_selected_pair_heatmap(
-    predictions: pd.DataFrame,
-    row_column: str,
-    column_column: str,
-    row_order: List[str],
-    column_order: List[str],
-    row_label: str,
-    column_label: str,
-    title: str,
-    filename: str,
-) -> None:
-    """Plot held-out accuracy for configuration pairs selected by inner CV."""
-    grouped = (
-        predictions.groupby([row_column, column_column], as_index=False)
-        .agg(
-            outer_accuracy=("correct", "mean"),
-            n_subjects=("subject", "nunique"),
-        )
-    )
-    present_rows = [name for name in row_order if name in set(grouped[row_column])]
-    present_columns = [
-        name for name in column_order if name in set(grouped[column_column])
-    ]
-    accuracy = grouped.pivot(
-        index=row_column, columns=column_column, values="outer_accuracy"
-    ).reindex(index=present_rows, columns=present_columns)
-    sample_sizes = grouped.pivot(
-        index=row_column, columns=column_column, values="n_subjects"
-    ).reindex(index=present_rows, columns=present_columns)
-
-    figure_width = max(11, 2.25 * len(present_columns) + 4)
-    figure_height = max(7, 0.8 * len(present_rows) + 3)
-    fig, ax = plt.subplots(figsize=(figure_width, figure_height))
-    colour_map = plt.cm.YlGnBu.copy() # type: ignore
-    colour_map.set_bad("#E6ECF2")
-    image = ax.imshow(
-        np.ma.masked_invalid(accuracy.to_numpy(dtype=float)),
-        cmap=colour_map,
-        vmin=0,
-        vmax=1,
-        aspect="auto",
-    )
-    colour_bar = fig.colorbar(image, ax=ax, pad=0.025)
-    colour_bar.set_label("Held-out accuracy", color=PLOT_TEXT_COLOUR)
-    colour_bar.ax.tick_params(colors=PLOT_MUTED_COLOUR, length=0)
-
-    for row in range(len(accuracy.index)):
-        for column in range(len(accuracy.columns)):
-            value = accuracy.iloc[row, column]
-            n_subjects = sample_sizes.iloc[row, column]
-            if pd.notna(value):
-                ax.text(
-                    column,
-                    row,
-                    f"{value:.2f}\nn={int(n_subjects)}",
-                    ha="center",
-                    va="center",
-                    fontsize=10,
-                    fontweight="semibold",
-                    color="white" if value >= 0.68 else PLOT_TEXT_COLOUR,
-                )
-            else:
-                ax.text(
-                    column,
-                    row,
-                    "Not selected",
-                    ha="center",
-                    va="center",
-                    fontsize=8.5,
-                    color=PLOT_MUTED_COLOUR,
-                )
-    ax.set(
-        xticks=np.arange(len(accuracy.columns)),
-        yticks=np.arange(len(accuracy.index)),
-        xticklabels=accuracy.columns,
-        yticklabels=accuracy.index,
-        xlabel=column_label,
-        ylabel=row_label,
-        title=(f"{title}\n"
-               "Accuracy from held-out subjects in folds where each pairing was selected"),
-    )
-    ax.grid(False)
-    ax.tick_params(length=0, colors=PLOT_TEXT_COLOUR)
-    plt.setp(ax.get_xticklabels(), rotation=25, ha="right")
-    for spine in ax.spines.values():
-        spine.set_visible(False)
-    fig.text(
-        0.5,
-        0.01,
-        "n is the number of held-out subjects. Gray combinations were never selected. "
-        "This is descriptive, not a head-to-head test of every candidate.",
-        ha="center",
-        color=PLOT_MUTED_COLOUR,
-        fontsize=9.5,
-    )
-    _finish_nested_plot(
-        fig,
-        NESTED_PLOTS_DIR / filename,
-        layout_rect=(0, 0.04, 1, 1),
-    )
-
-
-def save_outer_configuration_heatmaps(predictions: pd.DataFrame) -> None:
-    """Create simple outer-LOSO accuracy heatmaps for selected components."""
-    save_outer_selected_pair_heatmap(
-        predictions=predictions,
-        row_column="selected_model",
-        column_column="selected_feature_set",
-        row_order=list(MODEL_COLOURS),
-        column_order=[
-            "All features", "Top 5 RFE features",
-            "Top 10 RFE features", "Top 15 RFE features",
-        ],
-        row_label="Model selected in the fold",
-        column_label="Feature set selected in the fold",
-        title="Outer-LOSO accuracy by selected model and feature set",
-        filename="outer_loso_model_feature_accuracy_heatmap.png",
-    )
-    save_outer_selected_pair_heatmap(
-        predictions=predictions,
-        row_column="selected_model",
-        column_column="selected_sensor_combination",
-        row_order=list(MODEL_COLOURS),
-        column_order=SOURCE_ORDER,
-        row_label="Model selected in the fold",
-        column_label="Sensor combination selected in the fold",
-        title="Outer-LOSO accuracy by selected model and sensors",
-        filename="outer_loso_model_sensor_accuracy_heatmap.png",
-    )
-
-
-def save_inner_score_vs_outer_outcome(summary: pd.DataFrame) -> None:
-    """Compare selected inner macro F1 with each held-out subject's outcome."""
-    shown = summary.sort_values("outer_fold").reset_index(drop=True)
-    jitter = ((np.arange(len(shown)) % 5) - 2) * 0.018
-    plotted_y = shown["outer_accuracy"].to_numpy(dtype=float) + jitter
-    colours = [
-        MODEL_COLOURS.get(str(model), PLOT_MUTED_COLOUR) for model in shown["model"]
-    ]
-    fig, ax = plt.subplots(figsize=(11, 7.5))
-    ax.scatter(
-        shown["inner_macro_f1"], plotted_y, c=colours,
-        s=95, alpha=0.9, edgecolor="white", linewidth=0.9,
-    )
-    lower, upper = _score_axis_limits(shown["inner_macro_f1"], padding=0.05)
-    ax.set(
-        xlim=(lower, upper),
-        ylim=(-0.09, 1.09),
-        yticks=[0, 0.5, 1.0],
-        xlabel="Selected configuration's inner macro F1",
-        ylabel="Held-out subject accuracy",
-        title=("Inner selection score versus outer-LOSO outcome\n"
-               "Each point is one subject; slight vertical jitter improves visibility"),
-    )
-    present_models = [
-        model for model in MODEL_COLOURS if model in set(shown["model"].astype(str))
-    ]
-    handles = [
-        Line2D(
-            [0], [0], marker="o", linestyle="", markersize=7,
-            markerfacecolor=MODEL_COLOURS[model], markeredgecolor="white", label=model,
-        )
-        for model in present_models
-    ]
-    ax.legend(
-        handles=handles, frameon=False, ncol=2,
-        loc="upper right", title="Selected model",
-    )
-    _style_nested_axis(ax, grid_axis="both")
-    _finish_nested_plot(
-        fig, NESTED_PLOTS_DIR / "outer_loso_inner_score_vs_outcome.png"
-    )
-
-
-def save_outer_metric_confidence_intervals(
-    predictions: pd.DataFrame,
-    metrics: Dict[str, float],
-    n_bootstrap: int = 2000,
-) -> None:
-    """Plot subject-bootstrap uncertainty for pooled outer-LOSO metrics."""
-    metric_keys = [
-        "accuracy", "balanced_accuracy", "macro_precision", "macro_recall",
-        "macro_f1", "weighted_f1", "mcc",
-    ]
-    grouped = {
-        str(subject): group for subject, group in predictions.groupby("subject", sort=False)
-    }
-    subjects = np.asarray(list(grouped))
-    random = np.random.default_rng(RANDOM_STATE)
-    bootstrap_values = {key: [] for key in metric_keys}
-    for _ in range(n_bootstrap):
-        sampled_subjects = random.choice(subjects, size=len(subjects), replace=True)
-        sampled = pd.concat([grouped[str(subject)] for subject in sampled_subjects])
-        sampled_metrics = evaluate_predictions(
-            sampled["true_label"].to_numpy(dtype=int),
-            sampled["predicted_label"].to_numpy(dtype=int),
-        )
-        for key in metric_keys:
-            bootstrap_values[key].append(float(sampled_metrics[key]))
-
-    table = pd.DataFrame(
-        [
-            {
-                "metric": key,
-                "label": _metric_label(key),
-                "estimate": float(metrics[key]),
-                "lower": float(np.percentile(bootstrap_values[key], 2.5)),
-                "upper": float(np.percentile(bootstrap_values[key], 97.5)),
-            }
-            for key in metric_keys
-        ]
-    ).sort_values("estimate")
     y = np.arange(len(table))
-    lower_errors = table["estimate"] - table["lower"]
-    upper_errors = table["upper"] - table["estimate"]
-    fig, ax = plt.subplots(figsize=(11, 7.5))
-    ax.errorbar(
-        table["estimate"],
-        y,
-        xerr=np.vstack([lower_errors, upper_errors]),
-        fmt="o",
-        markersize=9,
-        color=PLOT_ACCENT_COLOUR,
-        ecolor="#829AB1",
-        elinewidth=2.2,
-        capsize=4,
-        markeredgecolor="white",
+    for ax, (column, title) in zip(axes, columns):
+        categories = list(dict.fromkeys(table[column].astype(str)))
+        category_position = {value: index for index, value in enumerate(categories)}
+        x = table[column].astype(str).map(category_position).to_numpy()
+        colours = plt.cm.RdYlGn(table["outer_accuracy"].fillna(0.5).to_numpy()) # type: ignore
+        ax.scatter(x, y, c=colours, s=55, edgecolor="white", linewidth=0.6)
+        ax.set_xticks(np.arange(len(categories)), categories, rotation=35, ha="right")
+        ax.set_title(title)
+        ax.grid(axis="y", alpha=0.35)
+    axes[0].set_yticks(y, table["held_out_subject"].astype(str))
+    axes[0].set_ylabel("Held-out subject")
+    fig.suptitle(
+        "Configuration selected independently within each outer training set\n"
+        "Point colour indicates held-out subject accuracy",
+        fontsize=14,
+        fontweight="semibold",
     )
-    for row, result in table.reset_index(drop=True).iterrows():
-        ax.text(
-            float(result["upper"]) + 0.012,
-            row,
-            f"{float(result['estimate']):.3f} "
-            f"[{float(result['lower']):.3f}, {float(result['upper']):.3f}]",
-            va="center",
-            fontsize=9.5,
-            fontweight="semibold",
-            color=PLOT_TEXT_COLOUR,
-        )
-    minimum = min(0.0, float(table["lower"].min()) - 0.05)
-    ax.set(
-        yticks=y,
-        yticklabels=table["label"],
-        xlim=(minimum, 1.12),
-        xlabel="Score with 95% percentile interval",
-        title=("Outer-LOSO performance with subject-level uncertainty\n"
-               f"Percentile intervals from {n_bootstrap:,} subject bootstrap samples"),
-    )
-    _style_nested_axis(ax, grid_axis="x")
-    _finish_nested_plot(
-        fig, NESTED_PLOTS_DIR / "outer_loso_metric_confidence_intervals.png"
-    )
+    save_figure(fig, path)
 
 
-def aggregate_inner_candidate_scores(
-    inner_scores: pd.DataFrame,
-    save_table: bool = True,
-) -> pd.DataFrame:
-    """Average inner-CV candidate results across outer training folds for plots."""
-    metric_columns = {
-        "inner_accuracy": "accuracy",
-        "inner_balanced_accuracy": "balanced_accuracy",
-        "inner_macro_precision": "macro_precision",
-        "inner_macro_recall": "macro_recall",
-        "inner_macro_f1": "macro_f1",
-        "inner_weighted_f1": "weighted_f1",
-        "inner_mcc": "mcc",
-    }
-    available = {old: new for old, new in metric_columns.items() if old in inner_scores}
-    diagnostic = (
-        inner_scores.groupby(
-            ["sensor_combination", "feature_set", "model"], as_index=False
-        )[list(available)]
+def plot_selection_frequency(selections: pd.DataFrame, path: Path) -> None:
+    columns = [
+        ("model", "Selected model"),
+        ("sensor_combination", "Selected sensor combination"),
+        ("feature_set", "Selected feature set"),
+    ]
+    fig, axes = plt.subplots(1, 3, figsize=(15.5, 5.2))
+    for ax, (column, title) in zip(axes, columns):
+        counts = selections[column].astype(str).value_counts().sort_values()
+        ax.barh(counts.index, counts.values, color=COLOURS["blue"])
+        for index, value in enumerate(counts.values):
+            ax.text(value + 0.15, index, str(int(value)), va="center", fontsize=9)
+        ax.set_title(title)
+        ax.set_xlabel("Number of outer folds")
+        ax.set_xlim(0, max(counts.max() * 1.18, 1))
+    fig.suptitle("Configuration-selection frequency across outer folds", fontsize=14, fontweight="semibold")
+    save_figure(fig, path)
+
+
+def plot_model_sensor_selection_matrix(selections: pd.DataFrame, path: Path) -> None:
+    """Count how often each model–sensor pairing wins an outer-fold inner CV."""
+    matrix = pd.crosstab(
+        selections["model"].astype(str),
+        selections["sensor_combination"].astype(str),
+    )
+    rows = [name for name in MODEL_ORDER if name in matrix.index]
+    columns = [name for name in SENSOR_ORDER if name in matrix.columns]
+    matrix = matrix.reindex(index=rows, columns=columns, fill_value=0)
+    fig, ax = plt.subplots(figsize=(11.8, 6.3))
+    maximum = max(1, int(matrix.to_numpy().max()))
+    image = ax.imshow(matrix.to_numpy(), cmap="Blues", vmin=0, vmax=maximum, aspect="auto")
+    for row in range(matrix.shape[0]):
+        for column in range(matrix.shape[1]):
+            value = int(matrix.iloc[row, column])
+            colour = "white" if value >= maximum * 0.55 else COLOURS["dark"]
+            ax.text(column, row, str(value), ha="center", va="center", color=colour)
+    ax.set_xticks(np.arange(len(columns)), columns, rotation=30, ha="right")
+    ax.set_yticks(np.arange(len(rows)), rows)
+    ax.set_xlabel("Selected sensor combination")
+    ax.set_ylabel("Selected model")
+    ax.set_title("Model–sensor selection frequency across outer folds")
+    ax.grid(False)
+    fig.colorbar(image, ax=ax, fraction=0.035, pad=0.02, label="Outer folds selected")
+    save_figure(fig, path)
+
+
+def plot_feature_stability(selections: pd.DataFrame, path: Path) -> pd.DataFrame:
+    counts = Counter()
+    for value in selections["selected_features"].fillna(""):
+        counts.update(feature for feature in str(value).split("|") if feature)
+    table = pd.DataFrame(counts.items(), columns=["feature", "outer_folds_selected"])
+    table = table.sort_values(["outer_folds_selected", "feature"], ascending=[False, True])
+    shown = table.head(20).sort_values("outer_folds_selected")
+    fig, ax = plt.subplots(figsize=(9.5, 6.5))
+    ax.barh(shown["feature"], shown["outer_folds_selected"], color=COLOURS["blue"])
+    ax.set_xlabel("Number of winning outer-fold configurations containing feature")
+    ax.set_title("Feature-selection stability across outer folds\nTop 20 fold-fitted ANOVA features")
+    save_figure(fig, path)
+    return table
+
+
+def plot_inner_macro_f1_heatmaps(candidate_scores: pd.DataFrame, directory: Path) -> None:
+    averaged = (
+        candidate_scores.groupby(["feature_set", "model", "sensor_combination"], as_index=False)["mean_macro_f1"]
         .mean()
-        .rename(columns=available)
     )
-    if save_table:
-        diagnostic.to_csv(
-            NESTED_OUTPUT_DIR / "inner_cv_mean_candidate_scores_for_plots.csv",
-            index=False,
-        )
-    return diagnostic
-
-
-def _ordered_values(values: pd.Series, preferred: List[str]) -> List[str]:
-    present = list(dict.fromkeys(values.astype(str)))
-    return [value for value in preferred if value in present] + [value for value in present if value not in preferred] # type: ignore
-
-
-def save_nested_metric_heatmaps(diagnostic: pd.DataFrame, metric: str) -> None:
-    """Recreate model-by-sensor heatmaps from leakage-safe inner-CV scores."""
-    feature_order = _ordered_values(
-        diagnostic["feature_set"],
-        ["All features", "Top 5 RFE features", "Top 10 RFE features", "Top 15 RFE features"],
-    )
-    for feature_set in feature_order:
-        subset = diagnostic[diagnostic["feature_set"] == feature_set]
-        pivot = subset.pivot(index="model", columns="sensor_combination", values=metric)
-        sensors = [name for name in SOURCE_ORDER if name in pivot.columns]
-        pivot = pivot.reindex(columns=sensors)
-        fig_width = max(11, 1.55 * len(sensors))
-        fig_height = max(6, 0.65 * len(pivot.index) + 2.5)
-        fig, ax = plt.subplots(figsize=(fig_width, fig_height))
-        values = pivot.to_numpy(dtype=float)
-        finite_values = pd.Series(values.ravel()).dropna()
-        colour_min, colour_max = _score_axis_limits(finite_values, padding=0.03)
-        image = ax.imshow(
-            values,
-            cmap="YlGnBu",
-            vmin=colour_min,
-            vmax=colour_max,
-            aspect="auto",
-        )
-        colour_bar = fig.colorbar(image, ax=ax, pad=0.025)
-        colour_bar.set_label(_metric_label(metric), color=PLOT_TEXT_COLOUR)
-        colour_bar.ax.tick_params(colors=PLOT_MUTED_COLOUR, length=0)
-        text_threshold = colour_min + 0.58 * (colour_max - colour_min)
-        for row in range(len(pivot.index)):
-            for column in range(len(pivot.columns)):
+    for feature_set, subset in averaged.groupby("feature_set", sort=False):
+        pivot = subset.pivot(index="model", columns="sensor_combination", values="mean_macro_f1")
+        rows = [name for name in MODEL_ORDER if name in pivot.index]
+        columns = [name for name in SENSOR_ORDER if name in pivot.columns]
+        pivot = pivot.reindex(index=rows, columns=columns)
+        fig, ax = plt.subplots(figsize=(11.5, 6.2))
+        image = ax.imshow(pivot.to_numpy(), cmap="Blues", vmin=max(0, np.nanmin(pivot.to_numpy()) - 0.03), vmax=min(1, np.nanmax(pivot.to_numpy()) + 0.03), aspect="auto")
+        for row in range(pivot.shape[0]):
+            for column in range(pivot.shape[1]):
                 value = pivot.iloc[row, column]
                 if pd.notna(value):
-                    ax.text(column, row, f"{value:.3f}", ha="center", va="center",
-                            color="white" if value > text_threshold else PLOT_TEXT_COLOUR,
-                            fontsize=9, fontweight="semibold")
-        ax.set(
-            xticks=np.arange(len(pivot.columns)),
-            yticks=np.arange(len(pivot.index)),
-            xticklabels=pivot.columns,
-            yticklabels=pivot.index,
-            xlabel="Sensor combination",
-            ylabel="Model",
-            title=(f"{_metric_label(metric)} by model and sensor: {feature_set}\n"
-                   "Inner-CV selection diagnostic; "),
-        )
+                    ax.text(column, row, f"{value:.3f}", ha="center", va="center", fontsize=8)
+        ax.set_xticks(range(len(columns)), columns, rotation=30, ha="right")
+        ax.set_yticks(range(len(rows)), rows)
+        ax.set_title(f"Mean inner CV macro F1 by model and sensor\n{feature_set} — selection diagnostic only")
         ax.grid(False)
-        ax.tick_params(length=0, colors=PLOT_TEXT_COLOUR)
-        for spine in ax.spines.values():
-            spine.set_visible(False)
-        plt.setp(ax.get_xticklabels(), rotation=35, ha="right")
-        _finish_nested_plot(
-            fig,
-            NESTED_PLOTS_DIR / f"heatmap_inner_cv_{metric}_{safe_filename(feature_set)}.png",
-        )
+        fig.colorbar(image, ax=ax, fraction=0.03, pad=0.02, label="Mean inner CV macro F1")
+        safe = re.sub(r"[^a-z0-9]+", "_", feature_set.lower()).strip("_") # type: ignore
+        save_figure(fig, directory / f"supp_inner_macro_f1_{safe}.png")
 
 
-def _best_inner_candidates(diagnostic: pd.DataFrame, metric: str) -> pd.DataFrame:
-    ordered = diagnostic.sort_values(metric, ascending=False)
-    return ordered.groupby(["sensor_combination", "feature_set"], as_index=False).first()
+def averaged_inner_macro_f1(candidate_scores: pd.DataFrame) -> pd.DataFrame:
+    """Average each candidate's inner-CV macro F1 across outer training sets."""
+    return (candidate_scores.groupby(["sensor_combination", "feature_set", "model"], as_index=False)["mean_macro_f1"].mean().rename(columns={"mean_macro_f1": "macro_f1"})) # type: ignore
 
 
-def save_nested_best_model_barplot(diagnostic: pd.DataFrame, metric: str) -> None:
-    """Plot best candidates as readable feature-set small multiples."""
-    best = _best_inner_candidates(diagnostic, metric)
-    feature_order = _ordered_values(
-        best["feature_set"],
-        ["All features", "Top 5 RFE features", "Top 10 RFE features", "Top 15 RFE features"],
+def plot_best_model_inner_macro_f1(candidate_scores: pd.DataFrame, path: Path) -> None:
+    """Show the best inner-CV model for every sensor and feature-set pairing."""
+    diagnostic = averaged_inner_macro_f1(candidate_scores)
+    best = diagnostic.loc[
+        diagnostic.groupby(["sensor_combination", "feature_set"])["macro_f1"].idxmax()
+    ].copy()
+    feature_sets = list(dict.fromkeys(candidate_scores["feature_set"].astype(str)))
+    model_names = [name for name in MODEL_ORDER if name in set(best["model"])]
+    model_colours = dict(
+        zip(model_names, plt.cm.tab10(np.linspace(0, 1, max(1, len(model_names))))) # type: ignore
     )
-    model_order = list(dict.fromkeys(best["model"].astype(str)))
-    model_colours = {
-        model: MODEL_COLOURS.get(model, PLOT_MUTED_COLOUR) for model in model_order
-    }
-
-    n_columns = 2
-    n_rows = int(np.ceil(len(feature_order) / n_columns))
     fig, axes = plt.subplots(
-        n_rows,
-        n_columns,
-        figsize=(17, 5.2 * n_rows),
-        sharex=True,
-        squeeze=False,
+        1, len(feature_sets), figsize=(4.2 * len(feature_sets), 6.6), sharex=True, sharey=True
     )
-    lower, upper = _score_axis_limits(best[metric].astype(float), padding=0.05)
-
-    for ax, feature_set in zip(axes.flat, feature_order):
-        subset = best[best["feature_set"] == feature_set].copy()
-        subset["sensor_order"] = subset["sensor_combination"].map(
-            {sensor: index for index, sensor in enumerate(SOURCE_ORDER)}
-        )
-        subset = subset.sort_values("sensor_order", ascending=False)
-        y = np.arange(len(subset))
-        colours = [model_colours[str(model)] for model in subset["model"]]
-        ax.scatter(
-            subset[metric], y, c=colours, s=90, edgecolor="white",
-            linewidth=0.9, zorder=3,
-        )
-        for row, (_, candidate) in enumerate(subset.iterrows()):
-            ax.text(
-                float(candidate[metric]) + 0.008,
-                row,
-                f"{float(candidate[metric]):.3f}",
-                va="center",
-                fontsize=10,
-                fontweight="semibold",
+    axes = np.atleast_1d(axes)
+    sensors = [name for name in SENSOR_ORDER if name in set(best["sensor_combination"])]
+    y = np.arange(len(sensors))
+    for ax, feature_set in zip(axes, feature_sets):
+        subset = best[best["feature_set"] == feature_set].set_index("sensor_combination")
+        for index, sensor in enumerate(sensors):
+            if sensor not in subset.index:
+                continue
+            row = subset.loc[sensor]
+            ax.scatter(
+                float(row["macro_f1"]),
+                index,
+                s=65,
+                color=model_colours[str(row["model"])],
+                edgecolor="white",
+                linewidth=0.6,
             )
-        ax.set(
-            yticks=y,
-            yticklabels=subset["sensor_combination"],
-            xlim=(lower, upper),
-            title=feature_set,
-        )
-        _style_nested_axis(ax, grid_axis="x")
-        for row in range(len(subset)):
-            if row % 2 == 0:
-                ax.axhspan(row - 0.5, row + 0.5, color="#f3f6f8", zorder=0)
-
-    for ax in axes.flat[len(feature_order):]:
-        ax.set_visible(False)
-    for ax in axes[-1, :]:
-        if ax.get_visible():
-            ax.set_xlabel(_metric_label(metric))
-
-    legend_handles = [
-        Line2D(
-            [0], [0], marker="o", linestyle="", markersize=8,
-            markerfacecolor=model_colours[model], markeredgecolor="white", label=model,
-        )
-        for model in model_order
+            ax.text(float(row["macro_f1"]) + 0.008, index, f"{float(row['macro_f1']):.3f}", va="center", fontsize=8)
+        ax.set_title(feature_set)
+        ax.set_xlabel("Mean inner-CV macro F1")
+        ax.set_xlim(0, 1.04)
+    axes[0].set_yticks(y, sensors)
+    axes[0].set_ylabel("Sensor combination")
+    handles = [
+        plt.Line2D([0], [0], marker="o", linestyle="", color=colour, label=model) # type: ignore
+        for model, colour in model_colours.items()
     ]
+    fig.legend(handles=handles, loc="lower center", ncol=min(4, len(handles)), frameon=False)
     fig.suptitle(
-        "Best model per sensor and feature set\n"
-        "Mean inner-CV selection score;",
-        fontsize=17,
-        y=0.995,
+        "Best model for each sensor and feature-set combination\n"
+        "Inner-CV macro F1 — selection diagnostic only",
+        fontsize=14,
+        fontweight="semibold",
     )
-    fig.legend(
-        handles=legend_handles,
-        loc="lower center",
-        ncol=min(5, len(legend_handles)),
-        frameon=False,
-        title="Selected model",
-    )
-    _finish_nested_plot(
-        fig,
-        NESTED_PLOTS_DIR / f"best_model_inner_cv_{metric}.png",
-        layout_rect=(0, 0.09, 1, 0.93),
-    )
+    fig.subplots_adjust(bottom=0.16)
+    save_figure(fig, path)
 
 
-def save_nested_model_ranking(diagnostic: pd.DataFrame, metric: str) -> None:
-    ranking = diagnostic.groupby("model", as_index=False)[metric].mean().sort_values(metric) # type: ignore
-    fig, ax = plt.subplots(figsize=(10.5, 7))
+def plot_model_ranking_inner_macro_f1(candidate_scores: pd.DataFrame, path: Path) -> None:
+    """Rank models by mean inner-CV macro F1 across sensor and feature conditions."""
+    diagnostic = averaged_inner_macro_f1(candidate_scores)
+    ranking = diagnostic.groupby("model", as_index=False)["macro_f1"].mean().sort_values("macro_f1") # type: ignore
+    fig, ax = plt.subplots(figsize=(8.8, 5.8))
     y = np.arange(len(ranking))
-    colours = [
-        MODEL_COLOURS.get(str(model), PLOT_MUTED_COLOUR) for model in ranking["model"]
+    ax.hlines(y, 0, ranking["macro_f1"], color=COLOURS["grid"], linewidth=2)
+    ax.scatter(ranking["macro_f1"], y, color=COLOURS["blue"], s=65)
+    for index, value in enumerate(ranking["macro_f1"]):
+        ax.text(float(value) + 0.008, index, f"{float(value):.3f}", va="center", fontsize=9)
+    ax.set_yticks(y, ranking["model"])
+    ax.set_xlim(0, 1.04)
+    ax.set_xlabel("Mean inner-CV macro F1")
+    ax.set_title("Average model ranking\nInner-CV selection diagnostic only")
+    save_figure(fig, path)
+
+
+def plot_feature_set_inner_macro_f1(candidate_scores: pd.DataFrame, path: Path) -> None:
+    """Compare feature sets after retaining the best model for each sensor pairing."""
+    diagnostic = averaged_inner_macro_f1(candidate_scores)
+    best = diagnostic.loc[
+        diagnostic.groupby(["sensor_combination", "feature_set"])["macro_f1"].idxmax()
     ]
-    ax.hlines(
-        y,
-        ranking[metric].min(),
-        ranking[metric],
-        color="#D9E2EC",
-        linewidth=2,
-        zorder=1,
-    )
-    ax.scatter(ranking[metric], y, c=colours, s=105, edgecolor="white", zorder=3)
-    lower, upper = _score_axis_limits(ranking[metric], padding=0.05)
-    ax.set(
-        yticks=y,
-        yticklabels=ranking["model"],
-        xlim=(lower, upper),
-        xlabel=f"Mean {_metric_label(metric)}",
-    )
-    ax.set_title("Average model ranking\nInner-CV diagnostic; ")
-    for row, value in enumerate(ranking[metric]):
-        ax.text(
-            value + 0.008, row, f"{value:.3f}", va="center",
-            fontweight="semibold", color=PLOT_TEXT_COLOUR,
-        )
-    _style_nested_axis(ax, grid_axis="x")
-    _finish_nested_plot(fig, NESTED_PLOTS_DIR / f"model_ranking_inner_cv_{metric}.png")
-
-
-def save_nested_feature_set_comparison(diagnostic: pd.DataFrame, metric: str) -> None:
-    best = _best_inner_candidates(diagnostic, metric)
-    comparison = best.groupby("feature_set", as_index=False)[metric].mean().sort_values(metric)  # type: ignore
-    fig, ax = plt.subplots(figsize=(10.5, 6.5))
+    comparison = best.groupby("feature_set", as_index=False)["macro_f1"].mean().sort_values("macro_f1")
+    fig, ax = plt.subplots(figsize=(8.5, 4.9))
     y = np.arange(len(comparison))
-    colours = [
-        FEATURE_SET_COLOURS.get(str(name), PLOT_ACCENT_COLOUR)
-        for name in comparison["feature_set"]
-    ]
-    ax.scatter(comparison[metric], y, c=colours, s=130, edgecolor="white", zorder=3)
-    lower, upper = _score_axis_limits(comparison[metric], padding=0.05)
-    ax.set(
-        yticks=y,
-        yticklabels=comparison["feature_set"],
-        xlim=(lower, upper),
-        xlabel=f"Mean best-model {_metric_label(metric)}",
-    )
-    ax.set_title("Feature-set comparison\nInner-CV diagnostic; ")
-    for row, value in enumerate(comparison[metric]):
-        ax.text(
-            value + 0.006, row, f"{value:.3f}", va="center",
-            fontweight="semibold", color=PLOT_TEXT_COLOUR,
-        )
-    _style_nested_axis(ax, grid_axis="x")
-    _finish_nested_plot(fig, NESTED_PLOTS_DIR / f"feature_set_comparison_inner_cv_{metric}.png")
+    ax.hlines(y, 0, comparison["macro_f1"], color=COLOURS["grid"], linewidth=2)
+    ax.scatter(comparison["macro_f1"], y, color=COLOURS["blue"], s=70)
+    for index, value in enumerate(comparison["macro_f1"]):
+        ax.text(float(value) + 0.008, index, f"{float(value):.3f}", va="center", fontsize=9)
+    ax.set_yticks(y, comparison["feature_set"])
+    ax.set_xlim(0, 1.04)
+    ax.set_xlabel("Mean best-model inner-CV macro F1 across sensors")
+    ax.set_title("Feature-set comparison\nInner-CV selection diagnostic only")
+    save_figure(fig, path)
 
 
-def save_nested_sensor_feature_matrix(diagnostic: pd.DataFrame, metric: str) -> None:
-    best = _best_inner_candidates(diagnostic, metric)
-    pivot = best.pivot(index="sensor_combination", columns="feature_set", values=metric)
-    pivot = pivot.reindex([sensor for sensor in SOURCE_ORDER if sensor in pivot.index])
-    feature_order = [
-        feature for feature in
-        ["All features", "Top 5 RFE features", "Top 10 RFE features", "Top 15 RFE features"]
-        if feature in pivot.columns
-    ]
-    pivot = pivot.reindex(columns=feature_order)
-    fig, ax = plt.subplots(figsize=(11, 8))
-    values = pivot.to_numpy(dtype=float)
-    finite_values = pd.Series(values.ravel()).dropna()
-    colour_min, colour_max = _score_axis_limits(finite_values, padding=0.03)
+def plot_sensor_feature_inner_macro_f1(candidate_scores: pd.DataFrame, path: Path) -> None:
+    """Matrix of the best-model inner-CV macro F1 for each sensor/feature pair."""
+    diagnostic = averaged_inner_macro_f1(candidate_scores)
+    best = diagnostic.groupby(["sensor_combination", "feature_set"], as_index=False)["macro_f1"].max()
+    matrix = best.pivot(index="sensor_combination", columns="feature_set", values="macro_f1")
+    rows = [name for name in SENSOR_ORDER if name in matrix.index]
+    feature_sets = list(dict.fromkeys(candidate_scores["feature_set"].astype(str)))
+    matrix = matrix.reindex(index=rows, columns=feature_sets)
+    fig, ax = plt.subplots(figsize=(9.8, 6.3))
+    values = matrix.to_numpy(dtype=float)
     image = ax.imshow(
         values,
-        cmap="YlGnBu",
-        vmin=colour_min,
-        vmax=colour_max,
+        cmap="Blues",
+        vmin=max(0, float(np.nanmin(values)) - 0.03),
+        vmax=min(1, float(np.nanmax(values)) + 0.03),
         aspect="auto",
     )
-    colour_bar = fig.colorbar(image, ax=ax, pad=0.025)
-    colour_bar.set_label(_metric_label(metric), color=PLOT_TEXT_COLOUR)
-    colour_bar.ax.tick_params(colors=PLOT_MUTED_COLOUR, length=0)
-    text_threshold = colour_min + 0.58 * (colour_max - colour_min)
-    for row in range(len(pivot.index)):
-        for column in range(len(pivot.columns)):
-            value = pivot.iloc[row, column]
-            if pd.notna(value):
-                ax.text(column, row, f"{value:.3f}", ha="center", va="center",
-                        color="white" if value > text_threshold else PLOT_TEXT_COLOUR,
-                        fontweight="semibold")
-    ax.set(
-        xticks=np.arange(len(pivot.columns)),
-        yticks=np.arange(len(pivot.index)),
-        xticklabels=pivot.columns,
-        yticklabels=pivot.index,
-        xlabel="Feature set",
-        ylabel="Sensor combination",
-        title=("Best model by sensor and feature set\n"
-               "Mean inner-CV diagnostic; "),
-    )
-    ax.grid(False)
-    ax.tick_params(length=0, colors=PLOT_TEXT_COLOUR)
-    for spine in ax.spines.values():
-        spine.set_visible(False)
-    plt.setp(ax.get_xticklabels(), rotation=25, ha="right")
-    _finish_nested_plot(fig, NESTED_PLOTS_DIR / f"sensor_feature_matrix_inner_cv_{metric}.png")
-
-
-def save_selection_frequency_plots(selections: pd.DataFrame) -> None:
-    """Show how often nested CV selected each model, sensor and feature set."""
-    specifications = [
-        ("model", "Selected model", "selection_frequency_models.png"),
-        ("sensor_combination", "Selected sensor combination", "selection_frequency_sensors.png"),
-        ("feature_set", "Selected feature set", "selection_frequency_feature_sets.png"),
-    ]
-    for column, label, filename in specifications:
-        counts = selections[column].value_counts().sort_values()
-        fig, ax = plt.subplots(figsize=(10, max(6, 0.55 * len(counts) + 2)))
-        if column == "model":
-            colours = [
-                MODEL_COLOURS.get(str(name), PLOT_MUTED_COLOUR) for name in counts.index
-            ]
-        elif column == "feature_set":
-            colours = [
-                FEATURE_SET_COLOURS.get(str(name), PLOT_ACCENT_COLOUR)
-                for name in counts.index
-            ]
-        else:
-            colours = plt.cm.viridis(np.linspace(0.3, 0.75, len(counts))) # type: ignore
-        bars = ax.barh(
-            counts.index.astype(str), counts.values, color=colours,
-            height=0.62, edgecolor="white",
-        ) # type: ignore
-        ax.set_xlabel("Number of outer folds selected")
-        ax.set_title(f"{label} frequency\nAcross outer-LOSO folds")
-        ax.set_xlim(0, max(counts.max() * 1.18, 1))
-        for bar, value in zip(bars, counts.values):
-            ax.text(
-                value + max(counts.max() * 0.02, 0.08),
-                bar.get_y() + bar.get_height() / 2,
-                str(value),
-                va="center",
-                fontweight="semibold",
-                color=PLOT_TEXT_COLOUR,
-            )
-        _style_nested_axis(ax, grid_axis="x")
-        _finish_nested_plot(fig, NESTED_PLOTS_DIR / filename)
-
-    matrix = pd.crosstab(selections["model"], selections["sensor_combination"])
-    matrix = matrix.reindex(columns=[name for name in SOURCE_ORDER if name in matrix.columns])
-    fig, ax = plt.subplots(figsize=(12, max(6, 0.65 * len(matrix.index) + 2)))
-    matrix_values = matrix.to_numpy(dtype=float)
-    image = ax.imshow(matrix_values, cmap="YlGnBu", aspect="auto", vmin=0)
-    colour_bar = fig.colorbar(image, ax=ax, pad=0.025)
-    colour_bar.set_label("Outer folds selected", color=PLOT_TEXT_COLOUR)
-    colour_bar.ax.tick_params(colors=PLOT_MUTED_COLOUR, length=0)
-    threshold = matrix_values.max() * 0.55 if matrix_values.size else 0
-    for row in range(len(matrix.index)):
-        for column in range(len(matrix.columns)):
+    for row in range(matrix.shape[0]):
+        for column in range(matrix.shape[1]):
             value = matrix.iloc[row, column]
-            ax.text(
-                column, row, str(value), ha="center", va="center",
-                color="white" if value > threshold else PLOT_TEXT_COLOUR,
-                fontweight="semibold",
-            )
-    ax.set(
-        xticks=np.arange(len(matrix.columns)),
-        yticks=np.arange(len(matrix.index)),
-        xticklabels=matrix.columns,
-        yticklabels=matrix.index,
-        xlabel="Sensor combination",
-        ylabel="Model",
-        title="Selected model × sensor frequency across outer LOSO folds",
-    )
+            if pd.notna(value):
+                ax.text(column, row, f"{float(value):.3f}", ha="center", va="center", fontsize=8.5)
+    ax.set_xticks(np.arange(len(feature_sets)), feature_sets, rotation=25, ha="right") # type: ignore
+    ax.set_yticks(np.arange(len(rows)), rows)
+    ax.set_xlabel("Feature set")
+    ax.set_ylabel("Sensor combination")
+    ax.set_title("Best-model macro F1 by sensor and feature set\nInner-CV selection diagnostic only")
     ax.grid(False)
-    ax.tick_params(length=0, colors=PLOT_TEXT_COLOUR)
-    for spine in ax.spines.values():
-        spine.set_visible(False)
-    plt.setp(ax.get_xticklabels(), rotation=35, ha="right")
-    _finish_nested_plot(fig, NESTED_PLOTS_DIR / "selection_frequency_model_sensor_matrix.png")
+    fig.colorbar(image, ax=ax, fraction=0.04, pad=0.02, label="Mean inner-CV macro F1")
+    save_figure(fig, path)
 
 
-def save_feature_selection_stability(
-    selections: pd.DataFrame,
-    save_table: bool = True,
-) -> None:
-    """Plot how often individual features appeared in the outer-fold winners."""
-    counts: Dict[str, int] = {}
-    for value in selections["selected_features"].fillna(""):
-        for feature in str(value).split("|"):
-            if feature:
-                counts[feature] = counts.get(feature, 0) + 1
-    if not counts:
-        return
-    stability = pd.DataFrame(
-        sorted(counts.items(), key=lambda item: (-item[1], item[0])),
-        columns=["feature", "outer_folds_selected"],
-    )
-    if save_table:
-        stability.to_csv(
-            NESTED_OUTPUT_DIR / "selected_feature_stability.csv", index=False
-        )
-    shown = stability.head(30).sort_values("outer_folds_selected")
-    fig, ax = plt.subplots(figsize=(11, max(8, 0.38 * len(shown))))
-    colour_scale = plt.Normalize(
-        shown["outer_folds_selected"].min(), shown["outer_folds_selected"].max()
-    )
-    colours = plt.cm.viridis(colour_scale(shown["outer_folds_selected"])) # type: ignore
-    bars = ax.barh(
-        shown["feature"], shown["outer_folds_selected"],
-        color=colours, height=0.66, edgecolor="white",
-    )
-    ax.set_xlabel("Number of outer folds containing feature")
-    ax.set_title("Feature-selection stability\nTop 30 features across outer-LOSO folds")
-    maximum = shown["outer_folds_selected"].max()
-    ax.set_xlim(0, maximum * 1.13)
-    for bar, value in zip(bars, shown["outer_folds_selected"]):
-        ax.text(
-            value + maximum * 0.015,
-            bar.get_y() + bar.get_height() / 2,
-            str(value),
-            va="center",
-            fontsize=9,
-            fontweight="semibold",
-            color=PLOT_TEXT_COLOUR,
-        )
-    _style_nested_axis(ax, grid_axis="x")
-    _finish_nested_plot(fig, NESTED_PLOTS_DIR / "selected_feature_stability_top30.png")
+def write_manifest(output: Path) -> None:
+    text = """JOURNAL FIGURE SET
+
+Primary figures
+1. primary_01_outer_loso_metrics_with_ci.png
+2. primary_02_outer_loso_per_class_with_ci.png
+3. primary_03_outer_loso_confusion_matrix.png
+4. primary_04_outer_loso_model_comparison.png
+
+Optional main-text or supplementary transparency figure
+5. supplementary_01_outer_subject_outcomes.png
+
+Selection diagnostics for supplementary material
+6. supplementary_02_selection_frequency.png
+7. supplementary_03_feature_stability.png
+8. supplementary_04_outer_prediction_grid.png
+9. supplementary_05_selected_configuration_by_subject.png
+10. supplementary_06_model_sensor_selection_matrix.png
+11. supplementary_07_best_model_inner_cv_macro_f1.png
+12. supplementary_08_model_ranking_inner_cv_macro_f1.png
+13. supplementary_09_feature_set_comparison_inner_cv_macro_f1.png
+14. supplementary_10_sensor_feature_matrix_inner_cv_macro_f1.png
+15. supp_inner_macro_f1_*.png
+
+Interpretation rule
+Only the primary outer-LOSO figures estimate final performance on unseen
+subjects. Inner-CV heatmaps and selection-frequency figures are diagnostic and
+must not be reported as independent test performance.
+"""
+    (output / "FIGURE_MANIFEST.txt").write_text(text, encoding="utf-8")
 
 
-def create_all_nested_plots(
-    predictions: pd.DataFrame,
-    selections: pd.DataFrame,
-    inner_scores: pd.DataFrame,
-    metrics: Dict[str, float],
-    save_derived_tables: bool = True,
-) -> None:
-    """Create final unbiased plots and all restored comparison diagnostics."""
-    NESTED_PLOTS_DIR.mkdir(parents=True, exist_ok=True)
-    NESTED_CONFUSION_DIR.mkdir(parents=True, exist_ok=True)
-    y_true = predictions["true_label"].to_numpy(dtype=int)
-    y_pred = predictions["predicted_label"].to_numpy(dtype=int)
-    save_nested_confusion_matrix(y_true, y_pred)
-    save_final_metric_summary(metrics)
-    save_per_class_metrics(y_true, y_pred, save_table=save_derived_tables)
-    save_outer_performance_by_selected_configuration(predictions)
-    save_outer_configuration_heatmaps(predictions)
-    save_outer_metric_confidence_intervals(predictions, metrics)
-    diagnostic = aggregate_inner_candidate_scores(
-        inner_scores, save_table=save_derived_tables
-    )
-    for metric in ["accuracy", "balanced_accuracy", "macro_f1"]:
-        save_nested_metric_heatmaps(diagnostic, metric)
-        save_nested_best_model_barplot(diagnostic, metric)
-        save_nested_model_ranking(diagnostic, metric)
-        save_nested_feature_set_comparison(diagnostic, metric)
-        save_nested_sensor_feature_matrix(diagnostic, metric)
-    save_selection_frequency_plots(selections)
-    save_feature_selection_stability(
-        selections, save_table=save_derived_tables
-    )
+def run(data_path: Path, output: Path, bootstrap_replicates: int) -> None:
+    configure_plot_style()
+    output.mkdir(parents=True, exist_ok=True)
+    figures = output / "journal_figures"
+    primary = figures / "primary"
+    supplementary = figures / "supplementary"
+    tables = output / "tables"
+    for directory in (primary, supplementary, tables):
+        directory.mkdir(parents=True, exist_ok=True)
 
-
-def plot_only_main() -> None:
-    """Rebuild nested-CV plots entirely from existing result tables."""
-    # Plot-only mode is commonly run non-interactively (including over SSH).
-    # An explicit raster backend avoids depending on an available GUI session.
-    plt.switch_backend("Agg")
-    paths = {
-        "predictions": NESTED_OUTPUT_DIR / "outer_loso_predictions.csv",
-        "selections": NESTED_OUTPUT_DIR / "configuration_selected_in_each_outer_fold.csv",
-        "inner_scores": NESTED_OUTPUT_DIR / "inner_cv_candidate_scores.csv",
-        "metrics": NESTED_OUTPUT_DIR / "unbiased_final_performance.csv",
-    }
-    missing = [str(path) for path in paths.values() if not path.is_file()]
-    if missing:
-        formatted = "\n  - ".join(missing)
-        raise FileNotFoundError(
-            "Plot-only mode needs the existing nested-CV result files. "
-            f"Missing:\n  - {formatted}"
-        )
-
-    predictions = pd.read_csv(paths["predictions"])
-    selections = pd.read_csv(paths["selections"])
-    inner_scores = pd.read_csv(paths["inner_scores"])
-    metric_table = pd.read_csv(paths["metrics"])
-    if metric_table.empty:
-        raise ValueError(f"No metric row found in {paths['metrics']}")
-
-    required_columns = {
-        "predictions": {
-            "outer_fold", "sample_index", "subject", "true_label", "true_class",
-            "predicted_label", "predicted_class", "correct", "selected_model",
-            "selected_sensor_combination", "selected_feature_set",
-        },
-        "selections": {
-            "outer_fold", "held_out_subject", "model", "sensor_combination",
-            "feature_set", "inner_macro_f1", "selected_features",
-        },
-        "inner_scores": {
-            "sensor_combination", "feature_set", "model",
-            "inner_accuracy", "inner_balanced_accuracy", "inner_macro_f1",
-        },
-    }
-    tables = {
-        "predictions": predictions,
-        "selections": selections,
-        "inner_scores": inner_scores,
-    }
-    for name, required in required_columns.items():
-        absent = sorted(required.difference(tables[name].columns))
-        if absent:
-            raise ValueError(
-                f"{paths[name]} is missing required columns: {', '.join(absent)}"
-            )
-
-    metric_keys = [
-        "accuracy", "balanced_accuracy", "macro_precision", "macro_recall",
-        "macro_f1", "weighted_f1", "mcc",
-    ]
-    absent_metrics = [key for key in metric_keys if key not in metric_table.columns]
-    if absent_metrics:
-        raise ValueError(
-            f"{paths['metrics']} is missing required columns: "
-            f"{', '.join(absent_metrics)}"
-        )
-    metrics = {key: float(metric_table.iloc[0][key]) for key in metric_keys}
-
-    print("Rebuilding plots from existing nested-CV result files")
-    create_all_nested_plots(
+    df = read_dataset(data_path)
+    groups = df[ID_COLUMN].map(infer_subject).to_numpy(dtype=str)
+    subject_summary = validate_subject_structure(df, groups)
+    sensor_columns = get_sensor_columns(df)
+    missing_sensors = [name for name, columns in sensor_columns.items() if not columns]
+    if missing_sensors:
+        warnings.warn(f"No matching columns for: {missing_sensors}")
+    models = build_models()
+    (
         predictions,
         selections,
-        inner_scores,
-        metrics,
-        save_derived_tables=False,
-    )
-    print(f"[SAVED] Plots: {NESTED_PLOTS_DIR}")
-    print(f"[SAVED] Confusion matrix: {NESTED_CONFUSION_DIR}")
+        candidates,
+        fold_scores,
+        model_predictions,
+    ) = nested_evaluation(df, groups, sensor_columns, models)
 
+    final_metrics = metrics(predictions["true_label"], predictions["predicted_label"]) # type: ignore
+    bootstrap_overall, bootstrap_classes = subject_stratified_bootstrap(
+        predictions, subject_summary, bootstrap_replicates
+    )
+    overall_table = plot_overall_metrics(
+        final_metrics,
+        bootstrap_overall,
+        primary / "primary_01_outer_loso_metrics_with_ci.png",
+    )
+    class_estimates = per_class_estimates(predictions)
+    class_table = plot_per_class_metrics(
+        class_estimates,
+        bootstrap_classes,
+        primary / "primary_02_outer_loso_per_class_with_ci.png",
+    )
+    confusion_table = plot_confusion(
+        predictions, primary / "primary_03_outer_loso_confusion_matrix.png"
+    )
+    model_comparison_table = model_comparison_with_intervals(
+        model_predictions, subject_summary, bootstrap_replicates
+    )
+    plot_outer_model_comparison(
+        model_comparison_table,
+        primary / "primary_04_outer_loso_model_comparison.png",
+    )
+    subject_table = plot_subject_outcomes(
+        predictions, supplementary / "supplementary_01_outer_subject_outcomes.png"
+    )
+    plot_selection_frequency(
+        selections, supplementary / "supplementary_02_selection_frequency.png"
+    )
+    stability_table = plot_feature_stability(
+        selections, supplementary / "supplementary_03_feature_stability.png"
+    )
+    plot_outer_prediction_grid(
+        predictions, supplementary / "supplementary_04_outer_prediction_grid.png"
+    )
+    plot_selected_configuration_by_subject(
+        selections,
+        predictions,
+        supplementary / "supplementary_05_selected_configuration_by_subject.png",
+    )
+    plot_model_sensor_selection_matrix(
+        selections,
+        supplementary / "supplementary_06_model_sensor_selection_matrix.png",
+    )
+    plot_best_model_inner_macro_f1(
+        candidates,
+        supplementary / "supplementary_07_best_model_inner_cv_macro_f1.png",
+    )
+    plot_model_ranking_inner_macro_f1(
+        candidates,
+        supplementary / "supplementary_08_model_ranking_inner_cv_macro_f1.png",
+    )
+    plot_feature_set_inner_macro_f1(
+        candidates,
+        supplementary / "supplementary_09_feature_set_comparison_inner_cv_macro_f1.png",
+    )
+    plot_sensor_feature_inner_macro_f1(
+        candidates,
+        supplementary / "supplementary_10_sensor_feature_matrix_inner_cv_macro_f1.png",
+    )
+    plot_inner_macro_f1_heatmaps(candidates, supplementary)
 
-def nested_main() -> None:
-    NESTED_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-    # infer_groups writes its diagnostic table under the legacy output root.
-    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-    print("=" * 80)
-    print("NESTED SUBJECT-LEVEL EVALUATION")
-    print("Outer LOSO evaluation; inner grouped CV configuration selection")
-    print("=" * 80)
-    df = read_dataset(DATA_PATH)
-    groups = infer_groups(df)
-    predictions, selections, inner_scores = nested_subject_evaluation(
-        df, groups, get_sensor_columns(df), build_models()
+    predictions.to_csv(tables / "outer_loso_predictions.csv", index=False)
+    selections.to_csv(tables / "outer_fold_selected_configurations.csv", index=False)
+    candidates.to_csv(tables / "inner_cv_candidate_mean_scores.csv", index=False)
+    fold_scores.to_csv(tables / "inner_cv_fold_scores.csv", index=False)
+    model_predictions.to_csv(
+        tables / "outer_loso_predictions_by_model.csv", index=False
     )
-    y_true = predictions["true_label"].to_numpy(dtype=int)
-    y_pred = predictions["predicted_label"].to_numpy(dtype=int)
-    metrics = evaluate_predictions(y_true, y_pred)
-    pd.DataFrame([{
-        "validation_method": (
-            "Nested subject CV: outer LOSO, inner StratifiedGroupKFold"
-        ),
-        "selection_metric": PRIMARY_SELECTION_METRIC,
-        "n_outer_subjects": predictions["subject"].nunique(),
-        **metrics,
-    }]).to_csv(NESTED_OUTPUT_DIR / "unbiased_final_performance.csv", index=False)
-    predictions.to_csv(NESTED_OUTPUT_DIR / "outer_loso_predictions.csv", index=False)
-    selections.to_csv(
-        NESTED_OUTPUT_DIR / "configuration_selected_in_each_outer_fold.csv",
-        index=False,
+    subject_summary.to_csv(tables / "subject_structure.csv", index=False)
+    overall_table.to_csv(tables / "outer_loso_metrics_with_ci.csv", index=False)
+    class_table.to_csv(tables / "outer_loso_per_class_metrics_with_ci.csv", index=False)
+    confusion_table.to_csv(tables / "outer_loso_confusion_matrix.csv", index=False)
+    model_comparison_table.to_csv(
+        tables / "outer_loso_model_comparison_with_ci.csv", index=False
     )
-    inner_scores.to_csv(
-        NESTED_OUTPUT_DIR / "inner_cv_candidate_scores.csv", index=False
+    subject_table.to_csv(tables / "outer_loso_subject_outcomes.csv", index=False)
+    stability_table.to_csv(tables / "selected_feature_stability.csv", index=False)
+    pd.DataFrame([{"validation": "outer LOSO with inner 5-fold StratifiedGroupKFold", "selection_metric": PRIMARY_METRIC, "n_subjects": subject_summary.shape[0], "bootstrap_replicates": bootstrap_replicates, **final_metrics}]).to_csv(
+        tables / "final_outer_loso_performance.csv", index=False
     )
-    report = classification_report(
-        y_true, y_pred, labels=CLASS_LABELS, target_names=CLASS_LABEL_NAMES,
-        zero_division=0,
+    (tables / "final_classification_report.txt").write_text(
+        classification_report(predictions["true_label"], predictions["predicted_label"], labels=CLASS_LABELS, target_names=[CLASS_NAMES[label] for label in CLASS_LABELS], zero_division=0,), encoding="utf-8", # type: ignore
     )
-    (NESTED_OUTPUT_DIR / "final_classification_report.txt").write_text(
-        report, encoding="utf-8" # type: ignore
-    )
-    print("\nCreating restored plots")
-    create_all_nested_plots(predictions, selections, inner_scores, metrics)
-    print("\nFinal unbiased outer-LOSO performance")
-    for name, value in metrics.items():
+    metadata = {
+        "data_path": str(data_path),
+        "n_rows": len(df),
+        "n_subjects": int(subject_summary.shape[0]),
+        "n_healthy_subjects": int((subject_summary["phenotype"] == "healthy").sum()),
+        "n_stroke_subjects": int((subject_summary["phenotype"] == "stroke").sum()),
+        "outer_validation": "Leave-One-Subject-Out",
+        "inner_validation": f"{INNER_SPLITS}-fold StratifiedGroupKFold",
+        "selection_metric": PRIMARY_METRIC,
+        "feature_selection": "ANOVA F-score fitted independently in each training fold",
+        "bootstrap": "Subject-stratified percentile bootstrap",
+        "bootstrap_replicates": bootstrap_replicates,
+        "models": list(models),
+        "sensor_combinations": {name: len(columns) for name, columns in sensor_columns.items()},
+    }
+    (output / "analysis_metadata.json").write_text(json.dumps(metadata, indent=2), encoding="utf-8")
+    write_manifest(output)
+    print("\nFinal outer-LOSO metrics")
+    for name, value in final_metrics.items():
         print(f"  {name}: {value:.4f}")
-    print(f"[SAVED] {NESTED_OUTPUT_DIR}")
-    print(f"[SAVED] Plots: {NESTED_PLOTS_DIR}")
-    print(f"[SAVED] Confusion matrix: {NESTED_CONFUSION_DIR}")
+    print(f"\nSaved results to {output}")
 
 
-# Legacy exhaustive comparison below is exploratory only. It must not be used
-# as an unbiased estimate after choosing its best-scoring configuration.
-# =============================================================================
+def rebuild_plots(output: Path, bootstrap_replicates: int) -> None:
+    """Recreate every journal figure from previously saved result tables."""
+    configure_plot_style()
+    figures = output / "journal_figures"
+    primary = figures / "primary"
+    supplementary = figures / "supplementary"
+    tables = output / "tables"
+    for directory in (primary, supplementary):
+        directory.mkdir(parents=True, exist_ok=True)
 
-def main() -> None:
-    ensure_directories()
-
-    print("=" * 80)
-    print("Loading dataset")
-    print("=" * 80)
-
-    df = read_dataset(DATA_PATH)
-
-    print(f"Dataset shape after basic cleaning: {df.shape}")
-    print(f"Columns: {len(df.columns)}")
-
-    print()
-    print("=" * 80)
-    print("Label distribution")
-    print("=" * 80)
-
-    label_counts = df[LABEL_COLUMN].value_counts().sort_index()
-
-    for label, count in label_counts.items():
-        print(f"{label} - {CLASS_NAMES.get(int(label), 'Unknown')}: {count}") # type: ignore
-
-    groups = infer_groups(df)
-
-    sensor_columns = get_sensor_columns(df)
-
-    print()
-    print("=" * 80)
-    print("Feature counts by source")
-    print("=" * 80)
-
-    for source in SOURCE_ORDER:
-        print(f"{source}: {len(sensor_columns[source])} features")
-
-    selected_df = load_selected_features(SELECTED_FEATURES_PATH)
-
-    print()
-    print("=" * 80)
-    print("Building models")
-    print("=" * 80)
-
-    models = build_models()
-
-    all_result_rows = []
-    all_prediction_tables = []
-
-    prediction_store = {}
-
-    for source_name in SOURCE_ORDER:
-        print()
-        print("=" * 80)
-        print(f"Evaluating sensor combination: {source_name}")
-        print("=" * 80)
-
-        all_features_for_source = sensor_columns[source_name]
-
-        if len(all_features_for_source) == 0:
-            print(f"[SKIP] No features found for {source_name}")
-            continue
-
-        feature_sets = build_feature_sets_for_source(
-            source_name=source_name,
-            all_features=all_features_for_source,
-            selected_df=selected_df,
+    required = {
+        "predictions": tables / "outer_loso_predictions.csv",
+        "selections": tables / "outer_fold_selected_configurations.csv",
+        "candidates": tables / "inner_cv_candidate_mean_scores.csv",
+        "subjects": tables / "subject_structure.csv",
+        "model_predictions": tables / "outer_loso_predictions_by_model.csv",
+    }
+    missing = [str(path) for path in required.values() if not path.is_file()]
+    if missing:
+        raise FileNotFoundError(
+            "Plot-only mode requires these saved tables:\n  - " + "\n  - ".join(missing)
         )
 
-        for feature_set_name, feature_columns in feature_sets.items():
-            print()
-            print("-" * 80)
-            print(f"Feature set: {feature_set_name}")
-            print("-" * 80)
+    predictions = pd.read_csv(required["predictions"])
+    selections = pd.read_csv(required["selections"])
+    candidates = pd.read_csv(required["candidates"])
+    subject_summary = pd.read_csv(required["subjects"])
+    model_predictions = pd.read_csv(required["model_predictions"])
 
-            X, y = clean_feature_matrix(df, feature_columns)
-
-            if X.shape[1] == 0:
-                print(f"[SKIP] No usable features for {source_name} | {feature_set_name}")
-                continue
-
-            print(f"Usable samples: {X.shape[0]}")
-            print(f"Usable features: {X.shape[1]}")
-
-            for model_name, model in models.items():
-                print(f"  - Model: {model_name}")
-
-                try:
-                    metrics, predictions_df, y_pred, validation_method = evaluate_model_with_loso(
-                        model=model,
-                        X=X,
-                        y=y,
-                        groups=groups,
-                    )
-
-                    result_row = {
-                        "sensor_combination": source_name,
-                        "feature_set": feature_set_name,
-                        "model": model_name,
-                        "validation_method": validation_method,
-                        "n_samples": X.shape[0],
-                        "n_features": X.shape[1],
-                        **metrics,
-                    }
-
-                    all_result_rows.append(result_row)
-
-                    predictions_df.insert(0, "sensor_combination", source_name)
-                    predictions_df.insert(1, "feature_set", feature_set_name)
-                    predictions_df.insert(2, "model", model_name)
-                    predictions_df.insert(3, "validation_method", validation_method)
-
-                    all_prediction_tables.append(predictions_df)
-
-                    prediction_store[(source_name, feature_set_name, model_name)] = {
-                        "y_true": y.values,
-                        "y_pred": y_pred,
-                    }
-
-                    save_classification_report(
-                        y_true=y.values, # type: ignore
-                        y_pred=y_pred,
-                        source_name=source_name,
-                        feature_set_name=feature_set_name,
-                        model_name=model_name,
-                    )
-
-                    print(
-                        f"    accuracy={metrics['accuracy']:.3f}, "
-                        f"macro_f1={metrics['macro_f1']:.3f}, "
-                        f"balanced_accuracy={metrics['balanced_accuracy']:.3f}"
-                    )
-
-                except Exception as exc:
-                    print(
-                        f"    [ERROR] {source_name} | {feature_set_name} | "
-                        f"{model_name}: {exc}"
-                    )
-
-    results_df = pd.DataFrame(all_result_rows)
-
-    if results_df.empty:
-        raise RuntimeError("No model results were generated. Check feature columns and labels.")
-
-    predictions_all_df = pd.concat(all_prediction_tables, ignore_index=True)
-
-    results_df = results_df.sort_values(
-        by=["macro_f1", "accuracy", "balanced_accuracy"],
-        ascending=False,
+    final_metrics = metrics(
+        predictions["true_label"], predictions["predicted_label"] # type: ignore
     )
-
-    final_results_path = OUTPUT_DIR / "final_model_comparison.csv"
-    results_df.to_csv(final_results_path, index=False)
-
-    predictions_path = OUTPUT_DIR / "loo_predictions.csv"
-    predictions_all_df.to_csv(predictions_path, index=False)
-
-    print()
-    print("=" * 80)
-    print("Selecting best model per sensor combination and feature set")
-    print("=" * 80)
-
-    best_rows = []
-
-    grouped = results_df.groupby(["sensor_combination", "feature_set"], sort=False)
-
-    for (source_name, feature_set_name), subset in grouped:
-        best_row = subset.sort_values(
-            by=["macro_f1", "accuracy", "balanced_accuracy"],
-            ascending=False,
-        ).iloc[0]
-
-        best_rows.append(best_row)
-
-        key = (
-            best_row["sensor_combination"],
-            best_row["feature_set"],
-            best_row["model"],
-        )
-
-        y_true = prediction_store[key]["y_true"]
-        y_pred = prediction_store[key]["y_pred"]
-
-        save_confusion_matrix_plot(
-            y_true=y_true,
-            y_pred=y_pred,
-            source_name=best_row["sensor_combination"],
-            feature_set_name=best_row["feature_set"],
-            model_name=best_row["model"],
-        )
-
-        print(
-            f"{best_row['sensor_combination']} | {best_row['feature_set']}: "
-            f"{best_row['model']} | "
-            f"accuracy={best_row['accuracy']:.3f}, "
-            f"macro_f1={best_row['macro_f1']:.3f}"
-        )
-
-    best_df = pd.DataFrame(best_rows)
-    best_df = best_df.sort_values(
-        by=["macro_f1", "accuracy", "balanced_accuracy"],
-        ascending=False,
+    bootstrap_overall, bootstrap_classes = subject_stratified_bootstrap(
+        predictions, subject_summary, bootstrap_replicates
     )
-
-    best_path = OUTPUT_DIR / "best_model_per_sensor_combination_and_feature_set.csv"
-    best_df.to_csv(best_path, index=False)
-
-    print()
-    print("=" * 80)
-    print("Creating summary plots")
-    print("=" * 80)
-
-    for feature_set_name in FEATURE_SET_ORDER:
-        if feature_set_name not in results_df["feature_set"].unique():
-            continue
-
-        safe_feature_set = safe_filename(feature_set_name)
-
-        save_metric_heatmap(
-            results_df=results_df,
-            metric="accuracy",
-            feature_set_name=feature_set_name,
-            filename=f"heatmap_accuracy_{safe_feature_set}.png",
-            title=f"Accuracy by model and sensor combination: {feature_set_name}",
-        )
-
-        save_metric_heatmap(
-            results_df=results_df,
-            metric="macro_f1",
-            feature_set_name=feature_set_name,
-            filename=f"heatmap_macro_f1_{safe_feature_set}.png",
-            title=f"Macro F1-score by model and sensor combination: {feature_set_name}",
-        )
-
-        save_metric_heatmap(
-            results_df=results_df,
-            metric="balanced_accuracy",
-            feature_set_name=feature_set_name,
-            filename=f"heatmap_balanced_accuracy_{safe_feature_set}.png",
-            title=f"Balanced accuracy by model and sensor combination: {feature_set_name}",
-        )
-
-    save_best_model_barplot(
-        best_df=best_df,
-        metric="macro_f1",
+    plot_overall_metrics(
+        final_metrics,
+        bootstrap_overall,
+        primary / "primary_01_outer_loso_metrics_with_ci.png",
     )
-
-    save_model_ranking_barplot(
-        results_df=results_df,
-        metric="macro_f1",
+    plot_per_class_metrics(
+        per_class_estimates(predictions),
+        bootstrap_classes,
+        primary / "primary_02_outer_loso_per_class_with_ci.png",
     )
-
-    save_feature_set_comparison_barplot(
-        results_df=results_df,
-        metric="macro_f1",
+    plot_confusion(
+        predictions, primary / "primary_03_outer_loso_confusion_matrix.png"
     )
-
-    save_sensor_feature_set_matrix_plot(
-        best_df=best_df,
-        metric="macro_f1",
+    model_comparison_table = model_comparison_with_intervals(
+        model_predictions, subject_summary, bootstrap_replicates
     )
+    plot_outer_model_comparison(
+        model_comparison_table,
+        primary / "primary_04_outer_loso_model_comparison.png",
+    )
+    plot_subject_outcomes(
+        predictions, supplementary / "supplementary_01_outer_subject_outcomes.png"
+    )
+    plot_selection_frequency(
+        selections, supplementary / "supplementary_02_selection_frequency.png"
+    )
+    plot_feature_stability(
+        selections, supplementary / "supplementary_03_feature_stability.png"
+    )
+    plot_outer_prediction_grid(
+        predictions, supplementary / "supplementary_04_outer_prediction_grid.png"
+    )
+    plot_selected_configuration_by_subject(
+        selections,
+        predictions,
+        supplementary / "supplementary_05_selected_configuration_by_subject.png",
+    )
+    plot_model_sensor_selection_matrix(
+        selections,
+        supplementary / "supplementary_06_model_sensor_selection_matrix.png",
+    )
+    plot_best_model_inner_macro_f1(
+        candidates,
+        supplementary / "supplementary_07_best_model_inner_cv_macro_f1.png",
+    )
+    plot_model_ranking_inner_macro_f1(
+        candidates,
+        supplementary / "supplementary_08_model_ranking_inner_cv_macro_f1.png",
+    )
+    plot_feature_set_inner_macro_f1(
+        candidates,
+        supplementary / "supplementary_09_feature_set_comparison_inner_cv_macro_f1.png",
+    )
+    plot_sensor_feature_inner_macro_f1(
+        candidates,
+        supplementary / "supplementary_10_sensor_feature_matrix_inner_cv_macro_f1.png",
+    )
+    plot_inner_macro_f1_heatmaps(candidates, supplementary)
+    write_manifest(output)
+    print(f"Rebuilt journal figures from saved tables in {figures}")
 
-    print()
-    print("=" * 80)
-    print("Machine learning comparison completed")
-    print("=" * 80)
-    print(f"[SAVED] Final results: {final_results_path}")
-    print(f"[SAVED] Best models: {best_path}")
-    print(f"[SAVED] Leave-one-out predictions: {predictions_path}")
-    print(f"[SAVED] Plots: {OUTPUT_DIR / 'plots'}")
-    print(f"[SAVED] Confusion matrices: {OUTPUT_DIR / 'confusion_matrices'}")
-    print(f"[SAVED] Classification reports: {OUTPUT_DIR / 'classification_reports'}")
-    print(f"[SAVED] Selected feature lists: {OUTPUT_DIR / 'selected_feature_lists'}")
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--data", type=Path, default=Path("data.csv"))
+    parser.add_argument(
+        "--output", type=Path, default=Path("outputs/ml_results_nested_journal")
+    )
+    parser.add_argument(
+        "--bootstrap-replicates", type=int, default=BOOTSTRAP_REPLICATES
+    )
+    parser.add_argument(
+        "--plots-only",
+        action="store_true",
+        help="Rebuild all figures from existing tables without refitting models.",
+    )
+    return parser.parse_args()
 
 
 if __name__ == "__main__":
-    required_plot_files = [
-        NESTED_OUTPUT_DIR / "outer_loso_predictions.csv",
-        NESTED_OUTPUT_DIR / "configuration_selected_in_each_outer_fold.csv",
-        NESTED_OUTPUT_DIR / "inner_cv_candidate_scores.csv",
-        NESTED_OUTPUT_DIR / "unbiased_final_performance.csv",
-    ]
-    if all(path.is_file() for path in required_plot_files):
-        plot_only_main()
+    arguments = parse_args()
+    if arguments.plots_only:
+        rebuild_plots(arguments.output, arguments.bootstrap_replicates)
     else:
-        nested_main()
+        run(arguments.data, arguments.output, arguments.bootstrap_replicates)
