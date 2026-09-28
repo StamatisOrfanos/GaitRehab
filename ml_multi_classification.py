@@ -18,7 +18,7 @@ diagnostics.
 
 Example
 -------
-python ml_multi_classification_nested_journal.py --data data.csv
+python ml_multi_classification_nested_journal.py --data features_dataset.csv
 """
 
 from __future__ import annotations
@@ -1437,69 +1437,25 @@ def rebuild_plots(output: Path, bootstrap_replicates: int) -> None:
     subject_summary = pd.read_csv(required["subjects"])
     model_predictions = pd.read_csv(required["model_predictions"])
 
-    final_metrics = metrics(
-        predictions["true_label"], predictions["predicted_label"] # type: ignore
+    final_metrics = metrics(predictions["true_label"], predictions["predicted_label"] # type: ignore
     )
-    bootstrap_overall, bootstrap_classes = subject_stratified_bootstrap(
-        predictions, subject_summary, bootstrap_replicates
-    )
-    plot_overall_metrics(
-        final_metrics,
-        bootstrap_overall,
-        primary / "primary_01_outer_loso_metrics_with_ci.png",
-    )
-    plot_per_class_metrics(
-        per_class_estimates(predictions),
-        bootstrap_classes,
-        primary / "primary_02_outer_loso_per_class_with_ci.png",
-    )
-    plot_confusion(
-        predictions, primary / "primary_03_outer_loso_confusion_matrix.png"
-    )
-    model_comparison_table = model_comparison_with_intervals(
-        model_predictions, subject_summary, bootstrap_replicates
-    )
-    plot_outer_model_comparison(
-        model_comparison_table,
-        primary / "primary_04_outer_loso_model_comparison.png",
-    )
-    plot_subject_outcomes(
-        predictions, supplementary / "supplementary_01_outer_subject_outcomes.png"
-    )
-    plot_selection_frequency(
-        selections, supplementary / "supplementary_02_selection_frequency.png"
-    )
-    plot_feature_stability(
-        selections, supplementary / "supplementary_03_feature_stability.png"
-    )
-    plot_outer_prediction_grid(
-        predictions, supplementary / "supplementary_04_outer_prediction_grid.png"
-    )
-    plot_selected_configuration_by_subject(
-        selections,
-        predictions,
-        supplementary / "supplementary_05_selected_configuration_by_subject.png",
-    )
-    plot_model_sensor_selection_matrix(
-        selections,
-        supplementary / "supplementary_06_model_sensor_selection_matrix.png",
-    )
-    plot_best_model_inner_macro_f1(
-        candidates,
-        supplementary / "supplementary_07_best_model_inner_cv_macro_f1.png",
-    )
-    plot_model_ranking_inner_macro_f1(
-        candidates,
-        supplementary / "supplementary_08_model_ranking_inner_cv_macro_f1.png",
-    )
-    plot_feature_set_inner_macro_f1(
-        candidates,
-        supplementary / "supplementary_09_feature_set_comparison_inner_cv_macro_f1.png",
-    )
-    plot_sensor_feature_inner_macro_f1(
-        candidates,
-        supplementary / "supplementary_10_sensor_feature_matrix_inner_cv_macro_f1.png",
-    )
+    
+    bootstrap_overall, bootstrap_classes = subject_stratified_bootstrap(predictions, subject_summary, bootstrap_replicates)
+    plot_overall_metrics(final_metrics, bootstrap_overall, primary / "primary_01_outer_loso_metrics_with_ci.png")
+    plot_per_class_metrics(per_class_estimates(predictions), bootstrap_classes, primary / "primary_02_outer_loso_per_class_with_ci.png")
+    plot_confusion(predictions, primary / "primary_03_outer_loso_confusion_matrix.png")
+    model_comparison_table = model_comparison_with_intervals(model_predictions, subject_summary, bootstrap_replicates)
+    plot_outer_model_comparison(model_comparison_table, primary / "primary_04_outer_loso_model_comparison.png")
+    plot_subject_outcomes(predictions, supplementary / "supplementary_01_outer_subject_outcomes.png")
+    plot_selection_frequency(selections, supplementary / "supplementary_02_selection_frequency.png")
+    plot_feature_stability(selections, supplementary / "supplementary_03_feature_stability.png")
+    plot_outer_prediction_grid(predictions, supplementary / "supplementary_04_outer_prediction_grid.png")
+    plot_selected_configuration_by_subject(selections, predictions, supplementary / "supplementary_05_selected_configuration_by_subject.png")
+    plot_model_sensor_selection_matrix(selections, supplementary / "supplementary_06_model_sensor_selection_matrix.png")
+    plot_best_model_inner_macro_f1(candidates, supplementary / "supplementary_07_best_model_inner_cv_macro_f1.png")
+    plot_model_ranking_inner_macro_f1(candidates, supplementary / "supplementary_08_model_ranking_inner_cv_macro_f1.png")
+    plot_feature_set_inner_macro_f1(candidates,supplementary / "supplementary_09_feature_set_comparison_inner_cv_macro_f1.png")
+    plot_sensor_feature_inner_macro_f1(candidates, supplementary / "supplementary_10_sensor_feature_matrix_inner_cv_macro_f1.png")
     plot_inner_macro_f1_heatmaps(candidates, supplementary)
     write_manifest(output)
     print(f"Rebuilt journal figures from saved tables in {figures}")
@@ -1507,18 +1463,10 @@ def rebuild_plots(output: Path, bootstrap_replicates: int) -> None:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--data", type=Path, default=Path("data.csv"))
-    parser.add_argument(
-        "--output", type=Path, default=Path("outputs/ml_results_nested_journal")
-    )
-    parser.add_argument(
-        "--bootstrap-replicates", type=int, default=BOOTSTRAP_REPLICATES
-    )
-    parser.add_argument(
-        "--plots-only",
-        action="store_true",
-        help="Rebuild all figures from existing tables without refitting models.",
-    )
+    parser.add_argument("--data", type=Path, default=Path("features_dataset.csv"))
+    parser.add_argument( "--output", type=Path, default=Path("outputs/ml_results_nested_journal"))
+    parser.add_argument("--bootstrap-replicates", type=int, default=BOOTSTRAP_REPLICATES)
+    parser.add_argument("--plots-only", action="store_true", help="Rebuild all figures from existing tables without refitting models.")
     return parser.parse_args()
 
 
