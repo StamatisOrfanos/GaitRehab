@@ -30,6 +30,8 @@ Method:
 
 Important interpretation:
     The output represents sensor-derived gait-asymmetry severity. It is not a clinically validated stroke-severity score.
+    The current study scope is IMU-only. EMG is not used because raw EMG data
+    and a verified participant mapping are unavailable.
 
 Primary outputs:
     sensor_derived_gait_asymmetry_severity.csv
@@ -53,12 +55,11 @@ import sys
 import warnings
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Dict, Iterable, List, Optional, Sequence, Tuple
+from typing import Dict, Iterable, List, Sequence, Tuple
 
 import numpy as np
 import pandas as pd
 from scipy.signal import butter, find_peaks, sosfiltfilt
-from sklearn.mixture import GaussianMixture
 
 
 REQUIRED_FILES = (
@@ -98,11 +99,7 @@ class AnalysisConfig:
     minimum_peak_prominence_deg_s: float = 3.0
     minimum_cycles_per_leg: int = 10
     waveform_points: int = 101
-    # Retained for backward compatibility with SGAS-v1 outputs. SGAS-v2 does
-    # not hard-cap component values.
-    maximum_component_z: float = 10.0
     healthy_cutoff_method: str = "maximum"
-    gmm_initialisations: int = 50
     bootstrap_iterations: int = 500
     random_state: int = 42
     positive_z_soft_scale: float = 3.0
@@ -592,12 +589,14 @@ def process_participant(
     valid_seconds = float(
         gyro_valid.sum() / config.sampling_rate_hz
     )
+    valid_fraction = float(gyro_valid.mean())
     row: Dict[str, object] = {
         "participant_key": participant_key,
         "cohort": cohort,
         "patient_folder": participant_dir.name,
         "common_overlap_seconds": float(synchronized["elapsed_common_s"].iloc[-1]),
         "valid_bilateral_gyro_seconds": valid_seconds,
+        "bilateral_gyro_valid_fraction": valid_fraction,
         "left_cycle_count": left.cycle_count,
         "right_cycle_count": right.cycle_count,
         "left_median_stride_seconds": left.median_stride_seconds,
@@ -627,9 +626,7 @@ def build_cycle_quality_row(
     right_count = int(participant_row["right_cycle_count"])  # type: ignore
     smaller_count = min(left_count, right_count)
     count_ratio = max(left_count, right_count) / max(smaller_count, 1)
-    overlap_seconds = float(participant_row["common_overlap_seconds"])  # type: ignore
-    valid_seconds = float(participant_row["valid_bilateral_gyro_seconds"])  # type: ignore
-    valid_fraction = valid_seconds / max(overlap_seconds, 1e-12)
+    valid_fraction = float(participant_row["bilateral_gyro_valid_fraction"])  # type: ignore
 
     durations = np.asarray([float(row["stride_duration_seconds"]) for row in cycle_rows], dtype=float)  # type: ignore
     
@@ -777,50 +774,6 @@ def add_healthy_referenced_scores(
                 held_out_index, "healthy_leave_one_out_reference_score"
             ] = float(np.mean(contributions))
     return output, pd.DataFrame(references)
-
-
-def fit_gmm_boundary(values: np.ndarray, config: AnalysisConfig, seed: Optional[int] = None) -> Tuple[float, GaussianMixture]:
-    array = np.asarray(values, dtype=float).reshape(-1, 1)
-    if len(array) < 2 or len(np.unique(array)) < 2:
-        raise ValueError("At least two distinct scores are required for GMM.")
-    
-    model = GaussianMixture(n_components=2, covariance_type="full", n_init=config.gmm_initialisations, random_state=config.random_state if seed is None else seed, reg_covar=1e-6).fit(array)
-    means = model.means_.ravel() # type: ignore
-    low_component, high_component = np.argsort(means)
-    labels = model.predict(array)
-    low_values = array.ravel()[labels == low_component]
-    high_values = array.ravel()[labels == high_component]
-    
-    if len(low_values) == 0 or len(high_values) == 0:
-        raise ValueError("GMM produced an empty severity subgroup.")
-    if np.max(low_values) < np.min(high_values):
-        boundary = float((np.max(low_values) + np.min(high_values)) / 2.0)
-    else:
-        boundary = float((means[low_component] + means[high_component]) / 2.0)
-    
-    return boundary, model
-
-
-def bootstrap_gmm_boundaries(values: np.ndarray, config: AnalysisConfig) -> np.ndarray:
-    
-    if config.bootstrap_iterations <= 0 or len(values) < 4:
-        return np.asarray([], dtype=float)
-    
-    rng = np.random.default_rng(config.random_state)
-    boundaries: List[float] = []
-    
-    for iteration in range(config.bootstrap_iterations):
-        sample = rng.choice(values, size=len(values), replace=True)
-        if len(np.unique(sample)) < 2:
-            continue
-        try:
-            boundary, _ = fit_gmm_boundary(sample, config, seed=config.random_state + iteration + 1)
-            if np.isfinite(boundary):
-                boundaries.append(boundary)
-        except Exception:
-            continue
-    
-    return np.asarray(boundaries, dtype=float)
 
 
 def select_stroke_boundary(
@@ -1174,6 +1127,15 @@ def main() -> int:
             "Sensor-derived gait-asymmetry severity; not a clinically validated "
             "stroke-severity scale."
         ),
+        "data_scope": {
+            "included_modalities": (
+                "Bilateral shank accelerometer and gyroscope recordings."
+            ),
+            "emg_status": (
+                "EMG is excluded from the current study because raw EMG data "
+                "and a verified participant mapping are unavailable."
+            ),
+        },
         "data_directory": str(DATA_DIR),
         "valid_participants": int(len(final_frame)),
         "excluded_participants": int(len(exclusion_rows)),
@@ -1218,7 +1180,8 @@ def main() -> int:
             "primary_classifier_rule": (
                 "Do not use the exact gyroscope-z variables used to define the "
                 "severity score as predictors in the primary classification "
-                "experiment. Use accelerometer, gyroscope x/y and EMG features; "
+                "experiment. Use accelerometer and gyroscope x/y features with "
+                "verified participant identities; "
                 "an all-feature model may be reported only as an index-"
                 "reconstruction sensitivity analysis."
             ),
