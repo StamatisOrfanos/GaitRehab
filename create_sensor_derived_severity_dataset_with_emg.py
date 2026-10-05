@@ -1,7 +1,12 @@
 """
-Create sensor-derived gait-asymmetry severity classes from raw bilateral IMU data.
-The script intentionally does not read the existing feature dataset. It discovers
-participants from this directory structure:
+Create sensor-derived gait-asymmetry severity classes from raw bilateral IMU data
+and map participant-level EMG predictors from the verified feature table.
+
+The severity score and class labels are still constructed exclusively from raw
+bilateral IMU recordings. The existing feature table is joined only after those
+labels have been created, so EMG cannot influence or redefine the target.
+
+The script discovers participants from this directory structure:
     Data/
         Healthy/Patient_1/...Patient_N/
         Stroke/Patient_1/...Patient_N/
@@ -30,8 +35,16 @@ Method:
 
 Important interpretation:
     The output represents sensor-derived gait-asymmetry severity. It is not a clinically validated stroke-severity score.
-    The current study scope is IMU-only. EMG is not used because raw EMG data
-    and a verified participant mapping are unavailable.
+    EMG is available only as previously extracted features, not as raw signals.
+    The verified mapping is ID 1-15 -> Healthy Patient 1-15 and ID 16-30 ->
+    Stroke Patient 1-15. Each source participant has two limb rows. Their
+    features are converted to bilateral means and absolute bilateral
+    differences, which are invariant to limb-row order.
+
+    Source gyroscope-z features are deliberately excluded from every
+    classifier-ready mapped-feature output because raw gyroscope-z defines the
+    SGAS-v2 target. Source ID and Label columns are retained only as audit
+    metadata and must never be used as predictors.
 
 Primary outputs:
     sensor_derived_gait_asymmetry_severity.csv
@@ -43,6 +56,11 @@ Primary outputs:
     cycle_validation_plots/*.png (when SAVE_CYCLE_VALIDATION_PLOTS is True)
     frozen_score_definition.json
     synchronised/*.csv (when SAVE_SYNCHRONISED is True)
+    participant_level_mapped_external_features.csv
+    feature_mapping_quality_control.csv
+    sensor_derived_gait_asymmetry_severity_with_emg.csv
+    sensor_derived_gait_asymmetry_severity_with_emg_complete_cases.csv
+    sensor_derived_gait_asymmetry_severity_with_emg_and_eligible_legacy_imu.csv
 """
 
 from __future__ import annotations
@@ -84,6 +102,31 @@ CLASS_NAMES = {
 
 SCORE_DEFINITION_VERSION = "SGAS-v2.0"
 
+FEATURE_ID_MIN = 1
+FEATURE_ID_MAX = 30
+HEALTHY_FEATURE_ID_MAX = 15
+EXPECTED_FEATURE_ROWS_PER_PARTICIPANT = 2
+
+EMG_PREFIXES = (
+    "GMinter_",
+    "RFinter_",
+    "BFinter_",
+    "MGinter_",
+    "TAinter_",
+    "PLinter_",
+    "PLLinter_",  # Three source headings contain this apparent PL typo.
+)
+
+ELIGIBLE_LEGACY_IMU_PREFIXES = (
+    "gyrox_",
+    "gyroy_",
+    "accx_",
+    "accy_",
+    "accz_",
+)
+
+PROHIBITED_TARGET_RECONSTRUCTION_PREFIXES = ("gyroz_",)
+
 
 @dataclass(frozen=True)
 class AnalysisConfig:
@@ -119,7 +162,8 @@ class AnalysisConfig:
 # used.
 # -----------------------------------------------------------------------------
 DATA_DIR = Path("Data")
-OUTPUT_DIR = Path("third_article/outputs/sensor_derived_severity")
+FEATURES_DATASET_PATH = Path("features_dataset.csv")
+OUTPUT_DIR = Path("third_article/outputs/sensor_derived_severity_with_emg")
 SAVE_SYNCHRONISED = True
 SAVE_CYCLE_VALIDATION_PLOTS = True
 OVERWRITE = False
@@ -976,6 +1020,360 @@ def assign_severity_classes(
     return output, threshold_summary
 
 
+def feature_id_to_participant_key(feature_id: int) -> str:
+    """Apply the verified one-to-one source-ID mapping.
+
+    IDs 1-15 represent Healthy Patient_1-Patient_15. IDs 16-30 represent
+    Stroke Patient_1-Patient_15. Patient_16 in either raw-data cohort has no
+    corresponding row under this mapping and is therefore reported explicitly
+    by the mapping QC table.
+    """
+    if FEATURE_ID_MIN <= feature_id <= HEALTHY_FEATURE_ID_MAX:
+        return f"Healthy_Patient_{feature_id}"
+    if HEALTHY_FEATURE_ID_MAX < feature_id <= FEATURE_ID_MAX:
+        return f"Stroke_Patient_{feature_id - HEALTHY_FEATURE_ID_MAX}"
+    raise ValueError(
+        f"Feature-table ID {feature_id} is outside the verified range "
+        f"{FEATURE_ID_MIN}-{FEATURE_ID_MAX}."
+    )
+
+
+def expected_feature_labels(feature_id: int) -> Tuple[int, int]:
+    if FEATURE_ID_MIN <= feature_id <= HEALTHY_FEATURE_ID_MAX:
+        return (0, 0)
+    if HEALTHY_FEATURE_ID_MAX < feature_id <= FEATURE_ID_MAX:
+        return (1, 2)
+    raise ValueError(
+        f"Feature-table ID {feature_id} is outside the verified range "
+        f"{FEATURE_ID_MIN}-{FEATURE_ID_MAX}."
+    )
+
+
+def canonical_external_feature_name(column: str) -> str:
+    """Normalise the three apparent PLLinter source-header typos to PLinter."""
+    if column.startswith("PLLinter_"):
+        return "PLinter_" + column.removeprefix("PLLinter_")
+    return column
+
+
+def classify_external_feature_column(column: str) -> str:
+    if column.startswith(PROHIBITED_TARGET_RECONSTRUCTION_PREFIXES):
+        return "prohibited_gyroscope_z"
+    if column.startswith(ELIGIBLE_LEGACY_IMU_PREFIXES):
+        return "eligible_legacy_imu"
+    if column.startswith(EMG_PREFIXES):
+        return "emg"
+    return "unknown"
+
+
+def load_and_summarise_external_features(
+    path: Path,
+) -> Tuple[pd.DataFrame, Dict[str, object]]:
+    """Read, validate, and aggregate the limb-level feature table.
+
+    The source file is semicolon-delimited and uses decimal commas. Each
+    participant must have exactly two rows. We intentionally avoid naming those
+    rows left/right because no explicit side column exists. Instead, every
+    eligible source feature produces a bilateral mean and an absolute bilateral
+    difference. Both operations are unchanged if the two limb rows are swapped.
+    """
+    if not path.is_file():
+        raise FileNotFoundError(f"Missing mapped feature dataset: {path}")
+
+    source = pd.read_csv(path, sep=";", decimal=",")
+    required_columns = {"ID", "Label"}
+    missing_required = required_columns.difference(source.columns)
+    if missing_required:
+        raise ValueError(
+            "Mapped feature dataset is missing required columns: "
+            + ", ".join(sorted(missing_required))
+        )
+    if source.columns.duplicated().any():
+        duplicates = source.columns[source.columns.duplicated()].tolist()
+        raise ValueError(
+            "Mapped feature dataset has duplicate headings: "
+            + ", ".join(str(value) for value in duplicates)
+        )
+
+    numeric_id = pd.to_numeric(source["ID"], errors="raise")
+    numeric_label = pd.to_numeric(source["Label"], errors="raise")
+    if not np.allclose(numeric_id, np.round(numeric_id)):
+        raise ValueError("Every feature-table ID must be an integer.")
+    if not np.allclose(numeric_label, np.round(numeric_label)):
+        raise ValueError("Every feature-table Label must be an integer.")
+    source["ID"] = numeric_id.astype(int)
+    source["Label"] = numeric_label.astype(int)
+
+    observed_ids = set(source["ID"].tolist())
+    expected_ids = set(range(FEATURE_ID_MIN, FEATURE_ID_MAX + 1))
+    if observed_ids != expected_ids:
+        missing_ids = sorted(expected_ids.difference(observed_ids))
+        unexpected_ids = sorted(observed_ids.difference(expected_ids))
+        raise ValueError(
+            "Feature-table IDs do not match the frozen mapping. "
+            f"Missing IDs: {missing_ids or 'none'}; "
+            f"unexpected IDs: {unexpected_ids or 'none'}."
+        )
+
+    feature_columns = [
+        column for column in source.columns if column not in {"ID", "Label"}
+    ]
+    modality = {
+        column: classify_external_feature_column(str(column))
+        for column in feature_columns
+    }
+    unknown_columns = [
+        column for column, group in modality.items() if group == "unknown"
+    ]
+    if unknown_columns:
+        raise ValueError(
+            "Feature-table columns have unrecognised modality prefixes: "
+            + ", ".join(str(value) for value in unknown_columns)
+        )
+
+    numeric_features = source[feature_columns].apply(
+        pd.to_numeric,
+        errors="coerce",
+    )
+    nonfinite_mask = ~np.isfinite(numeric_features.to_numpy(dtype=float))
+    if nonfinite_mask.any():
+        row_positions, column_positions = np.where(nonfinite_mask)
+        examples = [
+            f"row {int(row) + 2}, column {feature_columns[int(column)]}"
+            for row, column in zip(row_positions[:10], column_positions[:10])
+        ]
+        raise ValueError(
+            "Feature-table predictors contain missing or non-finite values: "
+            + "; ".join(examples)
+        )
+    source.loc[:, feature_columns] = numeric_features
+
+    emg_columns = [
+        column for column in feature_columns if modality[column] == "emg"
+    ]
+    eligible_legacy_imu_columns = [
+        column
+        for column in feature_columns
+        if modality[column] == "eligible_legacy_imu"
+    ]
+    prohibited_gyroscope_z_columns = [
+        column
+        for column in feature_columns
+        if modality[column] == "prohibited_gyroscope_z"
+    ]
+
+    canonical_names = {
+        column: canonical_external_feature_name(str(column))
+        for column in emg_columns + eligible_legacy_imu_columns
+    }
+    canonical_values = list(canonical_names.values())
+    if len(canonical_values) != len(set(canonical_values)):
+        raise ValueError(
+            "Canonical feature names are not unique after correcting source "
+            "header spelling. Review the feature table before continuing."
+        )
+
+    participant_records: List[Dict[str, object]] = []
+    for feature_id, group in source.groupby("ID", sort=True):
+        feature_id = int(feature_id) # type: ignore
+        if len(group) != EXPECTED_FEATURE_ROWS_PER_PARTICIPANT:
+            raise ValueError(
+                f"Feature-table ID {feature_id} has {len(group)} rows; expected "
+                f"exactly {EXPECTED_FEATURE_ROWS_PER_PARTICIPANT}."
+            )
+        observed_labels = tuple(sorted(int(value) for value in group["Label"]))
+        expected_labels = expected_feature_labels(feature_id)
+        if observed_labels != expected_labels:
+            raise ValueError(
+                f"Feature-table ID {feature_id} has labels {observed_labels}; "
+                f"expected {expected_labels} under the frozen mapping."
+            )
+
+        record: Dict[str, object] = {
+            "participant_key": feature_id_to_participant_key(feature_id),
+            "feature_source_id": feature_id,
+            "feature_source_row_labels": "|".join(
+                str(value) for value in observed_labels
+            ),
+            "feature_source_row_count": int(len(group)),
+            "mapped_emg_data_available": 1,
+        }
+        for column in emg_columns:
+            values = group[column].to_numpy(dtype=float)
+            canonical = canonical_names[column]
+            record[f"emg__bilateral_mean__{canonical}"] = float(
+                np.mean(values)
+            )
+            record[
+                f"emg__bilateral_abs_difference__{canonical}"
+            ] = float(abs(values[0] - values[1]))
+        for column in eligible_legacy_imu_columns:
+            values = group[column].to_numpy(dtype=float)
+            canonical = canonical_names[column]
+            record[f"legacy_imu__bilateral_mean__{canonical}"] = float(
+                np.mean(values)
+            )
+            record[
+                f"legacy_imu__bilateral_abs_difference__{canonical}"
+            ] = float(abs(values[0] - values[1]))
+        participant_records.append(record)
+
+    participant_features = pd.DataFrame(participant_records)
+    if participant_features["participant_key"].duplicated().any():
+        raise RuntimeError(
+            "Verified feature mapping produced duplicate participant keys."
+        )
+
+    emg_derived_columns = [
+        column for column in participant_features if column.startswith("emg__") # type: ignore
+    ]
+    legacy_imu_derived_columns = [
+        column
+        for column in participant_features
+        if column.startswith("legacy_imu__") # type: ignore
+    ]
+    summary: Dict[str, object] = {
+        "source_path": str(path),
+        "source_delimiter": "semicolon",
+        "source_decimal_mark": "comma",
+        "source_rows": int(len(source)),
+        "source_participants": int(source["ID"].nunique()),
+        "source_rows_per_participant": EXPECTED_FEATURE_ROWS_PER_PARTICIPANT,
+        "verified_mapping": (
+            "IDs 1-15 -> Healthy Patient_1-Patient_15; IDs 16-30 -> "
+            "Stroke Patient_1-Patient_15"
+        ),
+        "source_emg_columns": int(len(emg_columns)),
+        "derived_order_invariant_emg_columns": int(len(emg_derived_columns)),
+        "source_eligible_legacy_imu_columns": int(
+            len(eligible_legacy_imu_columns)
+        ),
+        "derived_order_invariant_legacy_imu_columns": int(
+            len(legacy_imu_derived_columns)
+        ),
+        "excluded_source_gyroscope_z_columns": int(
+            len(prohibited_gyroscope_z_columns)
+        ),
+        "excluded_source_gyroscope_z_column_names": [
+            str(column) for column in prohibited_gyroscope_z_columns
+        ],
+        "aggregation": (
+            "For each source feature, bilateral mean and absolute bilateral "
+            "difference across the two limb rows."
+        ),
+        "source_label_role": (
+            "Audit and row-pair validation only; never used as a predictor."
+        ),
+    }
+    return participant_features, summary
+
+
+def build_feature_mapping_quality_control(
+    severity_frame: pd.DataFrame,
+    mapped_features: pd.DataFrame,
+) -> pd.DataFrame:
+    severity_records = {
+        str(row["participant_key"]): row
+        for row in severity_frame.to_dict(orient="records")
+    }
+    mapped_records = {
+        str(row["participant_key"]): row
+        for row in mapped_features.to_dict(orient="records")
+    }
+    all_keys = sorted(
+        set(severity_records).union(mapped_records),
+        key=natural_sort_key,
+    )
+    rows: List[Dict[str, object]] = []
+    for key in all_keys:
+        severity_record = severity_records.get(key)
+        mapped_record = mapped_records.get(key)
+        present_in_severity = severity_record is not None
+        present_in_features = mapped_record is not None
+        if present_in_severity and present_in_features:
+            status = "matched"
+            note = "Verified one-to-one participant match."
+        elif present_in_features:
+            status = "feature_only_no_valid_severity_record"
+            note = (
+                "Mapped features exist, but this participant has no valid "
+                "SGAS-v2 record. Review excluded_participants.csv."
+            )
+        else:
+            status = "severity_only_no_feature_record"
+            note = (
+                "A valid SGAS-v2 record exists, but no source feature-table "
+                "ID exists under the verified mapping."
+            )
+        rows.append(
+            {
+                "participant_key": key,
+                "present_in_severity_dataset": int(present_in_severity),
+                "present_in_mapped_feature_dataset": int(present_in_features),
+                "feature_source_id": (
+                    mapped_record.get("feature_source_id")
+                    if mapped_record is not None
+                    else np.nan
+                ),
+                "feature_source_row_labels": (
+                    mapped_record.get("feature_source_row_labels")
+                    if mapped_record is not None
+                    else ""
+                ),
+                "mapping_status": status,
+                "eligible_for_emg_complete_case_analysis": int(
+                    present_in_severity and present_in_features
+                ),
+                "notes": note,
+            }
+        )
+    return pd.DataFrame(rows)
+
+
+def merge_external_features(
+    severity_frame: pd.DataFrame,
+    mapped_features: pd.DataFrame,
+) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    emg_columns = [
+        column for column in mapped_features if column.startswith("emg__") # type: ignore
+    ]
+    legacy_imu_columns = [
+        column
+        for column in mapped_features
+        if column.startswith("legacy_imu__") # type: ignore
+    ]
+
+    emg_frame = severity_frame.merge(
+        mapped_features[["participant_key"] + emg_columns],
+        on="participant_key",
+        how="left",
+        validate="one_to_one",
+    )
+    emg_frame["mapped_emg_data_status"] = np.where(
+        emg_frame[emg_columns].notna().all(axis=1),
+        "available",
+        "not_available",
+    )
+    emg_complete_cases = emg_frame.loc[
+        emg_frame["mapped_emg_data_status"] == "available"
+    ].copy()
+
+    all_eligible_features = severity_frame.merge(
+        mapped_features[
+            ["participant_key"] + emg_columns + legacy_imu_columns
+        ],
+        on="participant_key",
+        how="left",
+        validate="one_to_one",
+    )
+    all_eligible_features["mapped_emg_data_status"] = np.where(
+        all_eligible_features[emg_columns].notna().all(axis=1),
+        "available",
+        "not_available",
+    )
+    return emg_frame, emg_complete_cases, all_eligible_features
+
+
 def serialize_json(value: object) -> object:
     if isinstance(value, (np.integer,)):
         return int(value)
@@ -1046,6 +1444,14 @@ def build_frozen_score_definition(
 
 def main() -> int:
     config = ANALYSIS_CONFIG
+    mapped_features, mapped_feature_summary = (
+        load_and_summarise_external_features(FEATURES_DATASET_PATH)
+    )
+    print(
+        "Validated mapped feature table: "
+        f"{mapped_feature_summary['source_participants']} participants, "
+        f"{mapped_feature_summary['source_emg_columns']} source EMG features."
+    )
     prepare_output_directory(OUTPUT_DIR, OVERWRITE)
     participants = discover_participants(DATA_DIR)
     print(f"Found {len(participants)} participant folders.")
@@ -1108,10 +1514,51 @@ def main() -> int:
     cycle_quality_path = OUTPUT_DIR / "cycle_detection_quality_control.csv"
     score_definition_path = OUTPUT_DIR / "frozen_score_definition.json"
     summary_path = OUTPUT_DIR / "severity_method_summary.json"
+    mapped_features_path = (
+        OUTPUT_DIR / "participant_level_mapped_external_features.csv"
+    )
+    feature_mapping_qc_path = OUTPUT_DIR / "feature_mapping_quality_control.csv"
+    emg_path = (
+        OUTPUT_DIR
+        / "sensor_derived_gait_asymmetry_severity_with_emg.csv"
+    )
+    emg_complete_cases_path = (
+        OUTPUT_DIR
+        / "sensor_derived_gait_asymmetry_severity_with_emg_complete_cases.csv"
+    )
+    emg_and_legacy_imu_path = (
+        OUTPUT_DIR
+        / (
+            "sensor_derived_gait_asymmetry_severity_with_emg_and_"
+            "eligible_legacy_imu.csv"
+        )
+    )
+
+    emg_frame, emg_complete_cases, emg_and_legacy_imu_frame = (
+        merge_external_features(final_frame, mapped_features)
+    )
+    feature_mapping_qc = build_feature_mapping_quality_control(
+        final_frame,
+        mapped_features,
+    )
+
     final_frame.to_csv(final_path, index=False)
     pd.DataFrame(cycle_rows).to_csv(cycles_path, index=False)
     reference_frame.to_csv(references_path, index=False)
     pd.DataFrame(cycle_quality_rows).to_csv(cycle_quality_path, index=False)
+    mapped_predictor_columns = ["participant_key"] + [
+        column
+        for column in mapped_features.columns
+        if column.startswith(("emg__", "legacy_imu__"))
+    ]
+    mapped_features[mapped_predictor_columns].to_csv(
+        mapped_features_path,
+        index=False,
+    )
+    feature_mapping_qc.to_csv(feature_mapping_qc_path, index=False)
+    emg_frame.to_csv(emg_path, index=False)
+    emg_complete_cases.to_csv(emg_complete_cases_path, index=False)
+    emg_and_legacy_imu_frame.to_csv(emg_and_legacy_imu_path, index=False)
     score_definition_path.write_text(
         json.dumps(score_definition, indent=2, default=serialize_json),
         encoding="utf-8",
@@ -1129,16 +1576,25 @@ def main() -> int:
         ),
         "data_scope": {
             "included_modalities": (
-                "Bilateral shank accelerometer and gyroscope recordings."
+                "Bilateral raw shank accelerometer/gyroscope recordings for "
+                "SGAS-v2 construction, plus mapped participant-level EMG "
+                "features for subsequent classification."
             ),
             "emg_status": (
-                "EMG is excluded from the current study because raw EMG data "
-                "and a verified participant mapping are unavailable."
+                "Previously extracted EMG features are mapped after label "
+                "construction. Raw EMG is unavailable, so raw-signal EMG "
+                "processing and EMG gait-cycle alignment cannot be verified."
             ),
+            "mapped_feature_summary": mapped_feature_summary,
         },
         "data_directory": str(DATA_DIR),
+        "features_dataset_path": str(FEATURES_DATASET_PATH),
         "valid_participants": int(len(final_frame)),
         "excluded_participants": int(len(exclusion_rows)),
+        "participants_with_mapped_emg": int(len(emg_complete_cases)),
+        "participants_without_mapped_emg": int(
+            len(emg_frame) - len(emg_complete_cases)
+        ),
         "valid_participants_by_cohort": {
             str(key): int(value)
             for key, value in final_frame["cohort"].value_counts().to_dict().items()
@@ -1175,15 +1631,22 @@ def main() -> int:
         "circularity_prevention": {
             "label_definition": (
                 "Severity labels are derived only from bilateral raw gyroscope-z "
-                "gait-cycle measurements."
+                "gait-cycle measurements. Mapped EMG and legacy feature-table "
+                "variables are joined only after labels are frozen."
             ),
             "primary_classifier_rule": (
                 "Do not use the exact gyroscope-z variables used to define the "
                 "severity score as predictors in the primary classification "
                 "experiment. Use accelerometer and gyroscope x/y features with "
-                "verified participant identities; "
+                "verified participant identities, with or without mapped EMG; "
                 "an all-feature model may be reported only as an index-"
                 "reconstruction sensitivity analysis."
+            ),
+            "mapped_feature_safeguards": (
+                "All source gyroscope-z columns are omitted from mapped "
+                "classifier-ready outputs. Source ID and Label are retained "
+                "only as audit metadata. Limb-row features are represented by "
+                "order-invariant bilateral means and absolute differences."
             ),
             "affected_side_rule": (
                 "No affected-side inference is used. All label components are "
@@ -1199,6 +1662,17 @@ def main() -> int:
             "cycle_validation_plots_saved": SAVE_CYCLE_VALIDATION_PLOTS,
             "frozen_score_definition": str(score_definition_path),
             "synchronised_files_saved": SAVE_SYNCHRONISED,
+            "participant_level_mapped_external_features": str(
+                mapped_features_path
+            ),
+            "feature_mapping_quality_control": str(feature_mapping_qc_path),
+            "severity_with_emg": str(emg_path),
+            "severity_with_emg_complete_cases": str(
+                emg_complete_cases_path
+            ),
+            "severity_with_emg_and_eligible_legacy_imu": str(
+                emg_and_legacy_imu_path
+            ),
         },
     }
     
@@ -1210,6 +1684,17 @@ def main() -> int:
     print(f"Saved gait-cycle audit data: {cycles_path}")
     print(f"Saved cycle-detection QC table: {cycle_quality_path}")
     print(f"Saved frozen score definition: {score_definition_path}")
+    print(f"Saved mapped participant features: {mapped_features_path}")
+    print(f"Saved feature-mapping QC table: {feature_mapping_qc_path}")
+    print(f"Saved severity + EMG dataset: {emg_path}")
+    print(
+        "Saved severity + EMG complete cases: "
+        f"{emg_complete_cases_path} ({len(emg_complete_cases)} participants)"
+    )
+    print(
+        "Saved severity + EMG + eligible legacy IMU dataset: "
+        f"{emg_and_legacy_imu_path}"
+    )
     print(f"Saved method summary: {summary_path}")
     if exclusion_rows:
         print(f"Warning: {len(exclusion_rows)} participant(s) were excluded. Review excluded_participants.csv before analysis.")
