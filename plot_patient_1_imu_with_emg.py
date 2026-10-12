@@ -55,20 +55,14 @@ def find_column(columns: Iterable[str], candidates: Iterable[str]) -> str:
 
 def read_sensor(path: Path) -> pd.DataFrame:
     """Read one accelerometer or gyroscope CSV into standard columns."""
+    
     if not path.is_file():
         raise FileNotFoundError(f"Missing sensor file: {path}")
 
     raw = pd.read_csv(path)
-    epoch = find_column(
-        raw.columns, ("epoc (ms)", "epoch (ms)", "epoch_ms", "epoc_ms")
-    )
-    axes = {
-        axis: find_column(
-            raw.columns,
-            (f"{axis}-axis (g)", f"{axis}-axis (deg/s)", axis),
-        )
-        for axis in "xyz"
-    }
+    epoch = find_column(raw.columns, ("epoc (ms)", "epoch (ms)", "epoch_ms", "epoc_ms"))
+    axes = { axis: find_column( raw.columns, (f"{axis}-axis (g)", f"{axis}-axis (deg/s)", axis)) for axis in "xyz" }
+    
     clean = pd.DataFrame(
         {
             "epoch_ms": pd.to_numeric(raw[epoch], errors="coerce"),
@@ -78,21 +72,23 @@ def read_sensor(path: Path) -> pd.DataFrame:
             },
         }
     ).dropna()
+    
     clean = clean.sort_values("epoch_ms").drop_duplicates("epoch_ms")
+    
     if len(clean) < 10:
         raise ValueError(f"Too few valid rows in {path}")
+    
     return clean.reset_index(drop=True)
 
 
 def load_native_streams(data_dir: Path) -> dict[str, pd.DataFrame]:
     """Load all four files without resampling or synchronizing them."""
-    streams = {
-        name: read_sensor(data_dir / filename)
-        for name, filename in STREAM_FILES.items()
-    }
+    streams = {name: read_sensor(data_dir / filename) for name, filename in STREAM_FILES.items()}
     earliest_epoch = min(float(frame["epoch_ms"].iloc[0]) for frame in streams.values())
+    
     for frame in streams.values():
         frame["time_s"] = (frame["epoch_ms"] - earliest_epoch) / 1000.0
+    
     return streams
 
 
@@ -103,10 +99,12 @@ def lowpass(values: np.ndarray, cutoff_hz: float) -> np.ndarray:
     finite = np.isfinite(values)
     changes = np.flatnonzero(np.diff(np.r_[False, finite, False]))
     sos = butter(2, cutoff_hz / (SAMPLE_RATE_HZ / 2.0), btype="low", output="sos")
+    
     for start, end in zip(changes[0::2], changes[1::2]):
         block = values[start:end]
         if len(block) > 15:
             output[start:end] = sosfiltfilt(sos, block)
+    
     return output
 
 
@@ -114,6 +112,7 @@ def detect_gait_events(gyro_z: np.ndarray) -> np.ndarray:
     """Detect dominant shank angular-velocity peaks with automatic polarity."""
     filtered = lowpass(gyro_z, cutoff_hz=6.0)
     finite = np.isfinite(filtered)
+    
     if finite.sum() < SAMPLE_RATE_HZ:
         return np.array([], dtype=int)
 
@@ -126,23 +125,15 @@ def detect_gait_events(gyro_z: np.ndarray) -> np.ndarray:
     center = float(np.median(oriented[finite]))
     mad = float(np.median(np.abs(oriented[finite] - center)))
     robust_sigma = max(1.4826 * mad, 1e-6)
-    events, _ = find_peaks(
-        oriented,
-        height=center + max(20.0, 1.5 * robust_sigma),
-        prominence=max(15.0, 0.75 * robust_sigma),
-        distance=int(0.80 * SAMPLE_RATE_HZ),
-    )
+    events, _ = find_peaks(oriented, height=center + max(20.0, 1.5 * robust_sigma), prominence=max(15.0, 0.75 * robust_sigma), distance=int(0.80 * SAMPLE_RATE_HZ))
+    
     return events[finite[events]]
 
 
-def synthetic_emg_envelope(
-    time_s: np.ndarray,
-    gyro_z: np.ndarray,
-    acceleration: np.ndarray,
-    events: np.ndarray,
-) -> np.ndarray:
+def synthetic_emg_envelope(time_s: np.ndarray, gyro_z: np.ndarray, acceleration: np.ndarray, events: np.ndarray) -> np.ndarray:
     """Create a deterministic TA-like envelope tied to measured gait events."""
     envelope = np.full_like(time_s, 0.025, dtype=float)
+    
     if not len(events):
         return envelope
 
@@ -157,6 +148,7 @@ def synthetic_emg_envelope(
             stride = time_s[event] - time_s[events[number - 1]]
         else:
             stride = 1.1
+    
         stride = float(np.clip(stride, 0.65, 1.8))
         intensity = 0.55 + 0.25 * min(abs(gyro_z[event]) / gyro_scale, 1.5)
         intensity += 0.20 * min(acc_dynamic[event] / acc_scale, 1.5)
@@ -166,43 +158,26 @@ def synthetic_emg_envelope(
         main_center = time_s[event]
         stance_center = main_center + 0.18 * stride
         envelope += intensity * np.exp(-0.5 * ((time_s - main_center) / 0.075) ** 2)
-        envelope += 0.38 * intensity * np.exp(
-            -0.5 * ((time_s - stance_center) / 0.10) ** 2
-        )
+        envelope += 0.38 * intensity * np.exp(-0.5 * ((time_s - stance_center) / 0.10) ** 2)
 
     maximum = float(np.nanmax(envelope))
+    
     return envelope / maximum if maximum > 0 else envelope
 
 
-def synthetic_raw_emg(
-    time_s: np.ndarray,
-    gyro_z: np.ndarray,
-    acceleration: np.ndarray,
-    events: np.ndarray,
-    random_seed: int,
-) -> tuple[np.ndarray, np.ndarray]:
+def synthetic_raw_emg(time_s: np.ndarray, gyro_z: np.ndarray, acceleration: np.ndarray, events: np.ndarray, random_seed: int) -> tuple[np.ndarray, np.ndarray]:
     """Simulate bipolar, raw-style surface EMG from the gait-linked envelope."""
     envelope = synthetic_emg_envelope(time_s, gyro_z, acceleration, events)
-    emg_time = np.arange(
-        time_s[0], time_s[-1] + 0.5 / EMG_SAMPLE_RATE_HZ, 1.0 / EMG_SAMPLE_RATE_HZ
-    )
+    emg_time = np.arange(time_s[0], time_s[-1] + 0.5 / EMG_SAMPLE_RATE_HZ, 1.0 / EMG_SAMPLE_RATE_HZ)
     interpolated = np.interp(emg_time, time_s, envelope)
     baseline = float(np.min(interpolated))
-    activation = (interpolated - baseline) / max(
-        float(np.max(interpolated) - baseline), 1e-9
-    )
+    activation = (interpolated - baseline) / max(float(np.max(interpolated) - baseline), 1e-9)
 
     # Band-limited stochastic interference approximates the summation of many
     # motor-unit action potentials. A fixed seed makes every run reproducible.
     rng = np.random.default_rng(random_seed)
     white_noise = rng.standard_normal(len(emg_time))
-    bandpass = butter(
-        4,
-        (20.0, 450.0),
-        btype="bandpass",
-        fs=EMG_SAMPLE_RATE_HZ,
-        output="sos",
-    )
+    bandpass = butter(4, (20.0, 450.0), btype="bandpass", fs=EMG_SAMPLE_RATE_HZ, output="sos")
     interference = sosfiltfilt(bandpass, white_noise)
     interference /= max(float(np.std(interference)), 1e-9)
 
@@ -212,12 +187,11 @@ def synthetic_raw_emg(
     raw_emg = amplitude * interference
     scale = max(float(np.percentile(np.abs(raw_emg), 99.8)), 1e-9)
     raw_emg /= scale
+    
     return emg_time, raw_emg
 
 
-def select_native_intervals(
-    streams: dict[str, pd.DataFrame], start_s: float, duration_s: float | None
-) -> dict[str, pd.DataFrame]:
+def select_native_intervals(streams: dict[str, pd.DataFrame], start_s: float, duration_s: float | None) -> dict[str, pd.DataFrame]:
     """Select a display interval without changing any native samples."""
     if start_s < 0:
         raise ValueError("start_s must be non-negative")
@@ -229,23 +203,19 @@ def select_native_intervals(
         else start_s + duration_s
     )
     selected = {
-        name: frame.loc[frame["time_s"].between(start_s, end_s)].copy()
-        for name, frame in streams.items()
+        name: frame.loc[frame["time_s"].between(start_s, end_s)].copy() for name, frame in streams.items()
     }
     empty = [name for name, frame in selected.items() if frame.empty]
     if empty:
         raise ValueError(f"Requested interval contains no data for: {', '.join(empty)}")
+    
     return selected
 
 
-def add_xyz_panel(
-    axis: plt.Axes,
-    stream: pd.DataFrame,
-    ylabel: str,
-    cutoff_hz: float,
-) -> None:
+def add_xyz_panel(axis: plt.Axes, stream: pd.DataFrame, ylabel: str, cutoff_hz: float) -> None:
     """Plot a native stream's filtered x/y/z channels."""
     time_s = stream["time_s"].to_numpy(float)
+    
     for coordinate in "xyz":
         axis.plot(
             time_s,
@@ -259,9 +229,7 @@ def add_xyz_panel(
     axis.legend(loc="upper right", ncols=3, fontsize=7, framealpha=0.9)
 
 
-def make_plots(
-    streams: dict[str, pd.DataFrame], output_dir: Path
-) -> tuple[int, int, list[Path]]:
+def make_plots(streams: dict[str, pd.DataFrame], output_dir: Path) -> tuple[int, int, list[Path]]:
     """Save three plots while preserving every file's native timestamps."""
     left_acc = streams["left_acc"]
     right_acc = streams["right_acc"]
@@ -270,14 +238,11 @@ def make_plots(
     left_events = detect_gait_events(left_gyro["z"].to_numpy(float))
     right_events = detect_gait_events(right_gyro["z"].to_numpy(float))
 
-    def acceleration_at_gyro_times(
-        acceleration: pd.DataFrame, gyroscope: pd.DataFrame
-    ) -> np.ndarray:
+    def acceleration_at_gyro_times(acceleration: pd.DataFrame, gyroscope: pd.DataFrame) -> np.ndarray:
         # This is used only to scale the illustrative EMG bursts. The plotted
         # IMU streams themselves remain entirely raw.
-        magnitude = np.sqrt(
-            sum(acceleration[axis].to_numpy(float) ** 2 for axis in "xyz")
-        )
+        magnitude = np.sqrt(sum(acceleration[axis].to_numpy(float) ** 2 for axis in "xyz"))
+        
         return np.interp(
             gyroscope["epoch_ms"].to_numpy(float),
             acceleration["epoch_ms"].to_numpy(float),
@@ -300,6 +265,7 @@ def make_plots(
         right_events,
         random_seed=1102,
     )
+    
     x_min = min(float(frame["time_s"].iloc[0]) for frame in streams.values())
     x_max = max(float(frame["time_s"].iloc[-1]) for frame in streams.values())
 
@@ -377,6 +343,7 @@ def make_plots(
     fig.tight_layout()
     fig.savefig(output_paths[2], dpi=150)
     plt.close(fig)
+    
     return len(left_events), len(right_events), output_paths
 
 
@@ -389,16 +356,14 @@ def main() -> None:
     output_dir = Path("third_article/outputs/sensor_derived_severity_with_emg")
     start_s = 0.0
     duration_s = None
-
     native_streams = load_native_streams(data_dir)
     selected = select_native_intervals(native_streams, start_s, duration_s)
     left_count, right_count, output_paths = make_plots(selected, output_dir)
+    
     for output_path in output_paths:
         print(f"Saved {output_path}")
-    print(
-        f"Plotted raw streams from {start_s:.2f} s; "
-        f"detected {left_count} left and {right_count} right gait events."
-    )
+    
+    print(f"Plotted raw streams from {start_s:.2f} s; detected {left_count} left and {right_count} right gait events.")
 
 
 if __name__ == "__main__":
