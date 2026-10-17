@@ -4,8 +4,8 @@ Leakage-safe nested subject-level evaluation for three-class gait classification
 Classes
 -------
 0: Healthy leg
-1: Affected side
-2: Non-affected side
+1: Non-affected side
+2: Affected side
 
 The script treats each participant as an indivisible group. The outer loop is
 Leave-One-Subject-Out (LOSO) and estimates final generalisation. The inner loop
@@ -18,7 +18,7 @@ diagnostics.
 
 Example
 -------
-python ml_multi_classification_nested_journal.py --data features_dataset.csv
+python ml_multi_classification.py --data feature_data.csv
 """
 
 from __future__ import annotations
@@ -66,8 +66,8 @@ LABEL_COLUMN = "Label"
 CLASS_LABELS = [0, 1, 2]
 CLASS_NAMES = {
     0: "Healthy leg",
-    1: "Affected side",
-    2: "Non-affected side",
+    1: "Non-affected side",
+    2: "Affected side",
 }
 RANDOM_STATE = 42
 INNER_SPLITS = 5
@@ -75,9 +75,9 @@ BOOTSTRAP_REPLICATES = 5000
 FEATURE_COUNTS: Tuple[Optional[int], ...] = (5, 10, 15, None)
 PRIMARY_METRIC = "macro_f1"
 
-GYRO_PREFIXES = ("gyrox", "gyroy", "gyroz")
-ACC_PREFIXES = ("accx", "accy", "accz")
-EMG_PREFIXES = ("GMinter", "RFinter", "BFinter", "MGinter", "TAinter", "PLinter")
+GYRO_PREFIXES = ("Gyrox", "Gyroy", "Gyroz")
+ACC_PREFIXES = ("Accx", "Accy", "Accz")
+EMG_PREFIXES = ("GM", "RF", "BF", "MG", "TA", "PL")
 SENSOR_PREFIXES: Dict[str, Tuple[str, ...]] = {
     "Gyroscope": GYRO_PREFIXES,
     "Accelerometer": ACC_PREFIXES,
@@ -1463,7 +1463,7 @@ def rebuild_plots(output: Path, bootstrap_replicates: int) -> None:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--data", type=Path, default=Path("features_dataset.csv"))
+    parser.add_argument("--data", type=Path, default=Path("feature_data.csv"))
     parser.add_argument( "--output", type=Path, default=Path("outputs/ml_results_nested_journal"))
     parser.add_argument("--bootstrap-replicates", type=int, default=BOOTSTRAP_REPLICATES)
     parser.add_argument("--plots-only", action="store_true", help="Rebuild all figures from existing tables without refitting models.")

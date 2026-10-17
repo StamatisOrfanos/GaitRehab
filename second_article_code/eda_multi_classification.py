@@ -3,26 +3,26 @@ EDA and feature-selection script for 3-class gait classification.
 
 Classes:
     0 = Healthy leg
-    1 = Affected side
-    2 = Non-affected side
+    1 = Non-affected side
+    2 = Affected side
 
 Input:
-    data.csv
+    feature_data.csv
 
 This version is adapted for the updated dataset format:
     - Semicolon-separated CSV files are supported.
     - Decimal-comma numeric values are converted correctly.
     - Known PL muscle typo columns are normalized:
           PLLinter_* -> PLinter_*
-    - The new ID structure is checked explicitly:
-          IDs 1-15  = healthy subjects
-          IDs 16-30 = stroke subjects
+    - The subject structure is checked explicitly:
+          IDs 1-16  = healthy subjects
+          IDs 17-32 = stroke subjects
     - Whole-dataset RFE outputs are exploratory only. They must not be supplied
       to final validation; the ML script repeats RFE inside nested CV folds.
       and additional feature counts configured below.
 
 Outputs:
-    outputs/eda_plots/
+    eda/
         eda_feature_summary.csv
         subject_id_summary.csv
         top_features_by_source/
@@ -51,7 +51,7 @@ from sklearn.linear_model import LogisticRegression
 # Configuration
 # =============================================================================
 
-DATA_PATH = Path("data.csv")
+DATA_PATH = Path("feature_data.csv")
 OUTPUT_DIR = Path("eda")
 
 ID_COLUMN = "ID"
@@ -59,13 +59,13 @@ LABEL_COLUMN = "Label"
 
 CLASS_NAMES = {
     0: "Healthy leg",
-    1: "Affected side",
-    2: "Non-affected side",
+    1: "Non-affected side",
+    2: "Affected side",
 }
 
-GYRO_PREFIXES = ["gyrox", "gyroy", "gyroz"]
-ACC_PREFIXES = ["accx", "accy", "accz"]
-EMG_PREFIXES = ["GMinter", "RFinter", "BFinter", "MGinter", "TAinter", "PLinter"]
+GYRO_PREFIXES = ["Gyrox", "Gyroy", "Gyroz"]
+ACC_PREFIXES = ["Accx", "Accy", "Accz"]
+EMG_PREFIXES = ["GM", "RF", "BF", "MG", "TA", "PL"]
 
 SENSOR_PREFIXES = {
     "Gyroscope": GYRO_PREFIXES,
@@ -1223,9 +1223,9 @@ def create_subject_id_summary_table(df: pd.DataFrame) -> pd.DataFrame:
     """
     Creates a subject-level summary from the ID column.
 
-    For the updated dataset, the expected structure is:
-        IDs 1-15  -> healthy subjects, two healthy rows each
-        IDs 16-30 -> stroke subjects, one affected and one non-affected row each
+    For this dataset, the expected structure is:
+        IDs 1-16  -> healthy subjects, two healthy rows each
+        IDs 17-32 -> stroke subjects, one non-affected and one affected row each
     """
 
     if ID_COLUMN not in df.columns:
@@ -1241,8 +1241,8 @@ def create_subject_id_summary_table(df: pd.DataFrame) -> pd.DataFrame:
                 "subject_id": subject_id,
                 "n_rows": len(group),
                 "n_healthy_label_0": int(label_counts.get(0, 0)),
-                "n_affected_label_1": int(label_counts.get(1, 0)),
-                "n_non_affected_label_2": int(label_counts.get(2, 0)),
+                "n_non_affected_label_1": int(label_counts.get(1, 0)),
+                "n_affected_label_2": int(label_counts.get(2, 0)),
                 "label_pattern": ",".join(str(int(value)) for value in group[LABEL_COLUMN].tolist()),
             }
         )
@@ -1257,7 +1257,7 @@ def create_subject_id_summary_table(df: pd.DataFrame) -> pd.DataFrame:
 
 def validate_updated_id_structure(df: pd.DataFrame) -> None:
     """
-    Prints warnings if the updated 30-subject ID structure is not present.
+    Prints warnings if the 32-subject ID structure is not present.
     """
 
     if ID_COLUMN not in df.columns:
@@ -1279,7 +1279,7 @@ def validate_updated_id_structure(df: pd.DataFrame) -> None:
     print("Rows per subject distribution:")
     print(subject_summary["n_rows"].value_counts().sort_index().to_string())
 
-    expected_subject_count = 30
+    expected_subject_count = 32
 
     if unique_subjects != expected_subject_count:
         print()
@@ -1291,14 +1291,14 @@ def validate_updated_id_structure(df: pd.DataFrame) -> None:
 
     healthy_subjects = subject_summary[
         (subject_summary["n_healthy_label_0"] == 2)
-        & (subject_summary["n_affected_label_1"] == 0)
-        & (subject_summary["n_non_affected_label_2"] == 0)
+        & (subject_summary["n_non_affected_label_1"] == 0)
+        & (subject_summary["n_affected_label_2"] == 0)
     ]
 
     stroke_subjects = subject_summary[
         (subject_summary["n_healthy_label_0"] == 0)
-        & (subject_summary["n_affected_label_1"] == 1)
-        & (subject_summary["n_non_affected_label_2"] == 1)
+        & (subject_summary["n_non_affected_label_1"] == 1)
+        & (subject_summary["n_affected_label_2"] == 1)
     ]
 
     print(f"Healthy-like subjects with two label-0 rows: {len(healthy_subjects)}")
