@@ -179,27 +179,26 @@ The table also supplies 170 eligible legacy IMU predictors. These are reserved f
 
 ## 8. Matched multimodal cohort
 
-The full frozen SGAS-v2 dataset contains 30 participants. The EMG mapping and frozen labels intersect for 28 participants.
+The full frozen SGAS-v2 dataset contains 30 participants. The corrected EMG
+mapping contains 32 participants; 30 intersect with the frozen labels.
 
-The expected matched class distribution is:
-
-| Class | Participants |
-|---|---:|
-| Low/reference | 14 |
-| Moderate | 6 |
-| High | 8 |
-
-The code requires exactly 28 matched participants and verifies that all three classes remain represented.
+The code requires exactly 30 matched participants and verifies that all three
+classes remain represented. Class counts are recorded from the frozen labels
+used in each run.
 
 An `emg_mapping_quality_control.csv` file identifies:
 
-- 28 matched participants;
-- two frozen-label-only participants;
-- two mapped-feature-only participants.
+- 30 matched participants;
+- no frozen-label-only participants;
+- two mapped-feature-only participants (`Healthy_Patient_10` and
+  `Stroke_Patient_8`) because their raw-IMU records were excluded.
 
-The crucial comparison rule is that matched IMU-only, EMG-only and IMU+EMG experiments all use the same 28 participants and therefore the same 28 outer LOSO test cases.
+The crucial comparison rule is that matched IMU-only, EMG-only and IMU+EMG
+experiments all use the same 30 participants and therefore the same 30 outer
+LOSO test cases.
 
-The original 30-participant IMU result remains useful as the full-cohort primary analysis, but it must not be directly interpreted as a controlled modality comparison with the 28-participant EMG models.
+Use the explicit matched IMU-only, EMG-only and IMU+EMG analyses for controlled
+modality comparisons; they use the same participants and held-out LOSO folds.
 
 ## 9. Leakage barriers
 
@@ -251,7 +250,8 @@ Uses all 30 frozen participants and non-waveform cycle-aligned IMU features. Inn
 matched_imu_only_three_class
 ```
 
-Repeats the non-waveform IMU analysis on only the 28 EMG-matched participants. This is the correct baseline for evaluating whether EMG adds information.
+Repeats the non-waveform IMU analysis on only the 30 EMG-matched participants.
+This is the correct baseline for evaluating whether EMG adds information.
 
 ### 10.3 EMG-only analysis
 
@@ -259,7 +259,7 @@ Repeats the non-waveform IMU analysis on only the 28 EMG-matched participants. T
 matched_emg_only_three_class
 ```
 
-Uses the 312 mapped EMG predictors on the same 28 participants.
+Uses the 312 mapped EMG predictors on the same 30 participants.
 
 ### 10.4 IMU+EMG analysis
 
@@ -267,7 +267,8 @@ Uses the 312 mapped EMG predictors on the same 28 participants.
 matched_imu_emg_three_class
 ```
 
-Combines non-waveform cycle-aligned IMU predictors with mapped EMG predictors for the same 28 participants.
+Combines non-waveform cycle-aligned IMU predictors with mapped EMG predictors
+for the same 30 participants.
 
 The combined candidate pool is allowed to select the most informative 5 or 10 predictors within each outer-training fold. Therefore, selected features may come from either or both modalities without exposing the held-out participant.
 
@@ -449,7 +450,7 @@ Every model family also receives its own metrics, confusion matrix, probability 
 The root output includes:
 
 - `analysis_comparison.csv` and `analysis_comparison.png` for all analyses;
-- `matched_modality_comparison.csv` and `matched_modality_comparison.png` for the controlled 28-participant IMU, EMG and IMU+EMG comparison.
+- `matched_modality_comparison.csv` and `matched_modality_comparison.png` for the controlled 30-participant IMU, EMG and IMU+EMG comparison.
 
 ## 16. Main audit and predictor outputs
 
@@ -462,7 +463,7 @@ Before model results, the classifier saves:
 | `classification_protocol.json` | Preprocessing, validation and leakage-control protocol |
 | `eligible_imu_predictors.csv` | Cycle-aligned raw-IMU predictors for the full cohort |
 | `mapped_external_predictors_used.csv` | Validated EMG and eligible legacy IMU predictors |
-| `matched_emg_frozen_labels.csv` | Frozen labels for the 28 matched participants |
+| `matched_emg_frozen_labels.csv` | Frozen labels for the 30 matched participants |
 | `emg_mapping_quality_control.csv` | Matched and unmatched participant audit |
 | `matched_imu_predictors.csv` | IMU predictors for the matched comparison |
 | `matched_emg_predictors.csv` | EMG-only predictor table |
@@ -504,7 +505,7 @@ The detailed tables allow every outer prediction, inner choice and frequently se
 The results should be interpreted in this order:
 
 1. Report the full-cohort IMU result as the main 30-participant IMU analysis.
-2. Use only the matched 28-participant analyses to compare modalities.
+2. Use only the matched 30-participant analyses to compare modalities.
 3. Compare matched IMU-only with EMG-only.
 4. Compare matched IMU-only with IMU+EMG to assess incremental multimodal value.
 5. Check balanced accuracy, macro-F1 and per-class recall rather than relying only on accuracy.
@@ -532,7 +533,7 @@ The legacy-IMU sensitivity is disabled by default. Individual analyses can be di
 
 ## 20. Limitations
 
-- Only 28 participants have both valid SGAS-v2 labels and mapped EMG features.
+- Only 30 participants have both valid SGAS-v2 labels and mapped EMG features.
 - The Moderate class contains fewer matched participants than Low or High.
 - EMG is available as previously extracted features rather than raw synchronized signals.
 - The feature dimension is large relative to the sample size, even though only 5 or 10 predictors are selected inside each training fold.

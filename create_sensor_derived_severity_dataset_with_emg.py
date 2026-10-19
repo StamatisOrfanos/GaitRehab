@@ -36,8 +36,8 @@ Method:
 Important interpretation:
     The output represents sensor-derived gait-asymmetry severity. It is not a clinically validated stroke-severity score.
     EMG is available only as previously extracted features, not as raw signals.
-    The verified mapping is ID 1-15 -> Healthy Patient 1-15 and ID 16-30 ->
-    Stroke Patient 1-15. Each source participant has two limb rows. Their
+    The verified mapping is ID 1-16 -> Healthy Patient 1-16 and ID 17-32 ->
+    Stroke Patient 1-16. Each source participant has two limb rows. Their
     features are converted to bilateral means and absolute bilateral
     differences, which are invariant to limb-row order.
 
@@ -103,11 +103,17 @@ CLASS_NAMES = {
 SCORE_DEFINITION_VERSION = "SGAS-v2.0"
 
 FEATURE_ID_MIN = 1
-FEATURE_ID_MAX = 30
-HEALTHY_FEATURE_ID_MAX = 15
+FEATURE_ID_MAX = 32
+HEALTHY_FEATURE_ID_MAX = 16
 EXPECTED_FEATURE_ROWS_PER_PARTICIPANT = 2
 
 EMG_PREFIXES = (
+    "gm_",
+    "rf_",
+    "bf_",
+    "mg_",
+    "ta_",
+    "pl_",
     "GMinter_",
     "RFinter_",
     "BFinter_",
@@ -162,7 +168,7 @@ class AnalysisConfig:
 # used.
 # -----------------------------------------------------------------------------
 DATA_DIR = Path("Data")
-FEATURES_DATASET_PATH = Path("features_dataset.csv")
+FEATURES_DATASET_PATH = Path("feature_data.csv")
 OUTPUT_DIR = Path("third_article/outputs/sensor_derived_severity_with_emg")
 SAVE_SYNCHRONISED = True
 SAVE_CYCLE_VALIDATION_PLOTS = True
@@ -1023,10 +1029,8 @@ def assign_severity_classes(
 def feature_id_to_participant_key(feature_id: int) -> str:
     """Apply the verified one-to-one source-ID mapping.
 
-    IDs 1-15 represent Healthy Patient_1-Patient_15. IDs 16-30 represent
-    Stroke Patient_1-Patient_15. Patient_16 in either raw-data cohort has no
-    corresponding row under this mapping and is therefore reported explicitly
-    by the mapping QC table.
+    IDs 1-16 represent Healthy Patient_1-Patient_16. IDs 17-32 represent
+    Stroke Patient_1-Patient_16.
     """
     if FEATURE_ID_MIN <= feature_id <= HEALTHY_FEATURE_ID_MAX:
         return f"Healthy_Patient_{feature_id}"
@@ -1051,17 +1055,18 @@ def expected_feature_labels(feature_id: int) -> Tuple[int, int]:
 
 def canonical_external_feature_name(column: str) -> str:
     """Normalise the three apparent PLLinter source-header typos to PLinter."""
-    if column.startswith("PLLinter_"):
-        return "PLinter_" + column.removeprefix("PLLinter_")
+    if column.casefold().startswith("pllinter_"):
+        return "PLinter_" + column[len("PLLinter_") :]
     return column
 
 
 def classify_external_feature_column(column: str) -> str:
-    if column.startswith(PROHIBITED_TARGET_RECONSTRUCTION_PREFIXES):
+    normalized = column.casefold()
+    if normalized.startswith(PROHIBITED_TARGET_RECONSTRUCTION_PREFIXES):
         return "prohibited_gyroscope_z"
-    if column.startswith(ELIGIBLE_LEGACY_IMU_PREFIXES):
+    if normalized.startswith(ELIGIBLE_LEGACY_IMU_PREFIXES):
         return "eligible_legacy_imu"
-    if column.startswith(EMG_PREFIXES):
+    if normalized.startswith(tuple(prefix.casefold() for prefix in EMG_PREFIXES)):
         return "emg"
     return "unknown"
 
@@ -1071,16 +1076,16 @@ def load_and_summarise_external_features(
 ) -> Tuple[pd.DataFrame, Dict[str, object]]:
     """Read, validate, and aggregate the limb-level feature table.
 
-    The source file is semicolon-delimited and uses decimal commas. Each
-    participant must have exactly two rows. We intentionally avoid naming those
-    rows left/right because no explicit side column exists. Instead, every
-    eligible source feature produces a bilateral mean and an absolute bilateral
+    The source file is comma-delimited and uses decimal points. Each participant
+    must have exactly two rows. We intentionally avoid naming those rows
+    left/right because no explicit side column exists. Instead, every eligible
+    source feature produces a bilateral mean and an absolute bilateral
     difference. Both operations are unchanged if the two limb rows are swapped.
     """
     if not path.is_file():
         raise FileNotFoundError(f"Missing mapped feature dataset: {path}")
 
-    source = pd.read_csv(path, sep=";", decimal=",")
+    source = pd.read_csv(path)
     required_columns = {"ID", "Label"}
     missing_required = required_columns.difference(source.columns)
     if missing_required:
@@ -1234,14 +1239,14 @@ def load_and_summarise_external_features(
     ]
     summary: Dict[str, object] = {
         "source_path": str(path),
-        "source_delimiter": "semicolon",
-        "source_decimal_mark": "comma",
+        "source_delimiter": "comma",
+        "source_decimal_mark": "period",
         "source_rows": int(len(source)),
         "source_participants": int(source["ID"].nunique()),
         "source_rows_per_participant": EXPECTED_FEATURE_ROWS_PER_PARTICIPANT,
         "verified_mapping": (
-            "IDs 1-15 -> Healthy Patient_1-Patient_15; IDs 16-30 -> "
-            "Stroke Patient_1-Patient_15"
+            "IDs 1-16 -> Healthy Patient_1-Patient_16; IDs 17-32 -> "
+            "Stroke Patient_1-Patient_16"
         ),
         "source_emg_columns": int(len(emg_columns)),
         "derived_order_invariant_emg_columns": int(len(emg_derived_columns)),

@@ -42,27 +42,28 @@ The raw files must provide an epoch timestamp and x, y and z sensor axes. The re
 
 ### 2.2 Extracted feature table
 
-The mapped feature table is expected at:
+The corrected mapped feature table is expected at:
 
 ```text
-features_dataset.csv
+feature_data.csv
 ```
 
-It is read as a semicolon-delimited file with decimal commas. The table contains previously extracted IMU and EMG features at limb-row level.
+It is read as a comma-delimited file with decimal points. The table contains
+previously extracted IMU and EMG features at limb-row level.
 
 The verified participant mapping is frozen as follows:
 
 | Feature-table ID | Raw-data participant |
 |---|---|
-| 1–15 | `Healthy_Patient_1` to `Healthy_Patient_15` |
-| 16–30 | `Stroke_Patient_1` to `Stroke_Patient_15` |
+| 1–16 | `Healthy_Patient_1` to `Healthy_Patient_16` |
+| 17–32 | `Stroke_Patient_1` to `Stroke_Patient_16` |
 
 Each feature-table participant must have exactly two rows:
 
 | Cohort | Expected source labels |
 |---|---|
-| Healthy IDs 1–15 | `(0, 0)` |
-| Stroke IDs 16–30 | `(1, 2)` |
+| Healthy IDs 1–16 | `(0, 0)` |
+| Stroke IDs 17–32 | `(1, 2)` |
 
 These source labels are used only to validate the expected row pair. They are not severity labels and are never exported as classifier predictors.
 
@@ -72,7 +73,7 @@ The default main paths are:
 
 ```python
 DATA_DIR = Path("Data")
-FEATURES_DATASET_PATH = Path("features_dataset.csv")
+FEATURES_DATASET_PATH = Path("feature_data.csv")
 OUTPUT_DIR = Path("third_article/outputs/sensor_derived_severity_with_emg")
 ```
 
@@ -108,7 +109,7 @@ The feature table is checked before processing the raw IMU participants. The scr
 - the presence of `ID` and `Label`;
 - unique column headings;
 - integer participant IDs and labels;
-- the exact ID range 1–30;
+- the exact ID range 1–32;
 - two rows for every ID;
 - the expected `(0, 0)` or `(1, 2)` row-label pattern;
 - recognized IMU or EMG feature prefixes;
@@ -117,11 +118,12 @@ The feature table is checked before processing the raw IMU participants. The scr
 
 The source columns are divided into three groups:
 
-1. EMG features from `GMinter`, `RFinter`, `BFinter`, `MGinter`, `TAinter` and `PLinter`.
-2. Eligible legacy IMU summaries from gyroscope x/y and accelerometer x/y/z.
-3. Prohibited gyroscope-z summaries.
+1. Six-muscle EMG features prefixed `GM_`, `RF_`, `BF_`, `MG_`, `TA_` and `PL_`.
+2. Eligible legacy IMU summaries prefixed `Gyrox_`, `Gyroy_`, `Accx_`, `Accy_` and `Accz_`.
+3. Prohibited gyroscope-z summaries prefixed `Gyroz_`.
 
-Three source headings use `PLLinter` rather than `PLinter`. These names are standardized to `PLinter` after checking that the corrected names remain unique.
+Feature-name matching is case-insensitive. Gyroscope-z features are recognized
+and excluded before any mapped predictors are exported.
 
 ## 5. Stage B: synchronize the four raw IMU streams
 
@@ -363,12 +365,15 @@ The script creates a one-to-one mapping QC table containing:
 For the current frozen study data, the expected outcome is:
 
 - 30 valid SGAS-v2 participants;
-- 30 mapped feature-table participants;
-- 28 participants in the intersection;
+- 32 mapped feature-table participants;
+- 30 participants in the intersection;
 - `Healthy_Patient_10` and `Stroke_Patient_8` are feature-only because their raw-IMU records were excluded;
-- `Healthy_Patient_16` and `Stroke_Patient_16` are severity-only because the verified feature mapping ends at Patient 15.
+- no valid severity participant is missing a feature record.
 
-This gives an EMG complete-case classification cohort of 28 participants. The classifier performs a matched IMU-only analysis on these same 28 participants so modality comparisons are not confounded by different participant membership.
+This gives an EMG complete-case classification cohort of 30 participants. The
+classifier performs a matched IMU-only analysis on these same 30 participants
+so modality comparisons are not confounded by different participant
+membership.
 
 ## 16. Main outputs
 
